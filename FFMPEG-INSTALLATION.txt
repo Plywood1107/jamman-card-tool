@@ -12,7 +12,7 @@ Weg 1 - mit Windows-Bordmitteln (empfohlen)
          winget install --id Gyan.FFmpeg
 
   3. Warten, bis "Successfully installed" erscheint
-  4. Das JamMan-Werkzeug neu starten
+  4. Das JamMan Card Tool neu starten
 
 Weg 2 - ohne Installation
 

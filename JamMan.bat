@@ -1,5 +1,5 @@
 @echo off
-rem JamMan-Werkzeug starten (Windows). Doppelklick.
+rem JamMan Card Tool starten (Windows). Doppelklick.
 cd /d "%~dp0"
 
 where py >nul 2>&1

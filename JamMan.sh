@@ -1,5 +1,5 @@
 #!/bin/sh
-# JamMan-Werkzeug starten (Linux). Ausführbar machen: chmod +x JamMan.sh
+# JamMan Card Tool starten (Linux). Ausführbar machen: chmod +x JamMan.sh
 cd "$(dirname "$0")" || exit 1
 
 for P in python3 /usr/bin/python3 /usr/local/bin/python3; do

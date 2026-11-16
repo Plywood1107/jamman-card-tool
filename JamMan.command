@@ -1,5 +1,5 @@
 #!/bin/bash
-# JamMan-Werkzeug starten (macOS). Doppelklick im Finder.
+# JamMan Card Tool starten (macOS). Doppelklick im Finder.
 #
 # Gesucht wird ein Python 3 mit Tk 8.6 oder neuer. Apples Python 3.9
 # bringt Tk 8.5 mit; das zeichnet auf macOS 26/27 Beschriftungen und

@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.107 — 2026-11-16
+
+Der Name ist jetzt überall derselbe.
+
+* Das Werkzeug meldete sich als „JamMan-Werkzeug“ (`--version`, die
+  Startdateien, ein Hinweis in der FFMPEG-Anleitung). Der Ordner und das
+  Projekt heißen dagegen „JamMan Card Tool“ — beim Entpacken des ZIP sah man
+  also den einen Namen, beim Start den anderen. Alle fünf Stellen nennen
+  jetzt „JamMan Card Tool“.
+* Keine Änderung am Verhalten. Wer die Fassung 3.106 benutzt, verliert
+  nichts; die Karte wird nicht angefasst.
+
 ## 3.106 — 2026-11-13
 
 Fix: several places still spoke German in every language.

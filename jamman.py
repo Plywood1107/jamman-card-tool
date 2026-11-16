@@ -83,7 +83,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.106 (13.11.2026)"
+FASSUNG = "3.107 (16.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -589,7 +589,7 @@ Weg 1 - mit Windows-Bordmitteln (empfohlen)
          winget install --id Gyan.FFmpeg
 
   3. Warten, bis "Successfully installed" erscheint
-  4. Das JamMan-Werkzeug neu starten
+  4. Das JamMan Card Tool neu starten
 
 Weg 2 - ohne Installation
 
@@ -6522,7 +6522,7 @@ def main():
         description=T("JamMan Solo XT — Speicherkarte verwalten"),
         epilog=befehlsliste(),
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--version", action="version", version="JamMan-Werkzeug " + FASSUNG)
+    p.add_argument("--version", action="version", version="JamMan Card Tool " + FASSUNG)
     p.add_argument("befehl", metavar=T("BEFEHL"),
                    choices=sorted(list(BEFEHLE) + list(BEFEHL_ALIAS)),
                    help=T("was zu tun ist (Liste unten; englische Namen gehen auch)"))
