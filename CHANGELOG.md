@@ -2,15 +2,19 @@
 
 ## 3.107 — 2026-11-16
 
-Der Name ist jetzt überall derselbe.
+One name everywhere.
 
-* Das Werkzeug meldete sich als „JamMan-Werkzeug“ (`--version`, die
-  Startdateien, ein Hinweis in der FFMPEG-Anleitung). Der Ordner und das
-  Projekt heißen dagegen „JamMan Card Tool“ — beim Entpacken des ZIP sah man
-  also den einen Namen, beim Start den anderen. Alle fünf Stellen nennen
-  jetzt „JamMan Card Tool“.
-* Keine Änderung am Verhalten. Wer die Fassung 3.106 benutzt, verliert
-  nichts; die Karte wird nicht angefasst.
+The tool called itself "JamMan-Werkzeug" in `--version`, in the launchers and
+in a note inside the FFMPEG instructions, while the folder and the project are
+named `jamman-card-tool`. Unpacking the ZIP showed one name, starting the tool
+showed the other.
+
+All five places now say **JamMan Card Tool**.
+
+* `--version`, `JamMan.command`, `JamMan.sh`, `JamMan.bat` and
+  `FFMPEG-INSTALLATION.txt`: "JamMan-Werkzeug" → "JamMan Card Tool"
+* No behaviour changes. Anyone on 3.106 loses nothing, and the card is not
+  touched.
 
 ## 3.106 — 2026-11-13
 
