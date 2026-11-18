@@ -71,7 +71,8 @@ RHYTHMUS = {"silence": ("Silence", "0"), "kick": ("StudioKickAndHighHat", "1")}
 # "Single" oder "Loop" steht NICHT in patch.xml, sondern in phrase.xml
 # unter <IsLoop>. Am 26.10.2026 in allen Sicherungen gefunden: 181× 1,
 # 185× 0.
-WIEDERGABE = {"loop": "1", "single": "0"}
+WIEDERGABE = {"loop": "1", "single": "0",
+              "loop \u21ba": "1", "single \u21ba": "0"}
 
 # Handbuch JamMan Solo XT, Seite 60 (Spezifikationen):
 #   "Max. Individual Loop Time: 10 minutes (stereo)"
@@ -83,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.107 (16.11.2026)"
+FASSUNG = "3.110 (18.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -310,16 +311,6 @@ def stoppen_ton(griff):
                 guff.wait(timeout=2)
             except Exception:
                 guff.kill()
-
-
-def ton_laeuft(griff):
-    if not griff:
-        return False
-    if not hasattr(griff, "poll"):
-        # Windows (winsound) meldet nichts zurück. Die Oberfläche rechnet
-        # dort mit der bekannten Länge weiter.
-        return True
-    return griff.poll() is None
 
 
 def fade_ausblenden(pfad, sekunden):
@@ -869,6 +860,35 @@ def wandle_nach_44k(quelle, ziel):
         return False
 
 
+def einhaengepunkt(pfad):
+    """Einhängepunkt des Datenträgers, in dem `pfad` liegt.
+
+    Ohne fremde Programme: vom Ordner nach oben gehen, bis sich die
+    Gerätekennung (st_dev) ändert. Leerer Rückgabewert heißt: der Pfad ist
+    nicht (mehr) eingehängt — dann gibt es nichts auszuwerfen.
+    Anlaß (17.11.2026): Bei Karte im Pedal stand hier „/media", und der
+    Auswurfversuch scheiterte mit einer langen Fehlerkette.
+    """
+    try:
+        pfad = os.path.abspath(os.path.expanduser(str(pfad)))
+        if not os.path.exists(pfad):
+            return ""
+        kennung = os.stat(pfad).st_dev
+    except OSError:
+        return ""
+    aktuell = pfad
+    while True:
+        eltern = os.path.dirname(aktuell)
+        if eltern == aktuell:
+            return ""
+        try:
+            if os.stat(eltern).st_dev != kennung:
+                return aktuell
+        except OSError:
+            return aktuell
+        aktuell = eltern
+
+
 def auswerfen_datentraeger(karte):
     """Karte auswerfen. Gibt (erfolg, meldung) zurück."""
     wurzel = volumen_pfad(karte)
@@ -880,19 +900,53 @@ def auswerfen_datentraeger(karte):
                 "Karte ausgeworfen." if r.returncode == 0
                 else (r.stderr.strip() or r.stdout.strip()))
     if not (MAC or WINDOWS):
-        # Linux: Gerät zur Einhängestelle finden, dann über udisks2 abmelden
-        r = subprocess.run(["findmnt", "-n", "-o", "SOURCE", "--target", wurzel],
-                           capture_output=True, text=True)
-        geraet = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
-        if geraet and shutil.which("udisksctl"):
-            r = subprocess.run(["udisksctl", "unmount", "-b", geraet],
-                               capture_output=True, text=True)
+        # Linux, drei Wege von „braucht kein Recht" nach „braucht root".
+        # Am 17.11.2026 fragte udisksctl nach einem Paßwort und scheiterte
+        # danach — deshalb zuerst gio (läuft in der Benutzersitzung) und
+        # udisksctl nur ohne Rückfrage.
+        punkt = einhaengepunkt(karte)
+        if not punkt:
+            return False, T("Die Karte hängt nicht im Rechner — nichts "
+                            "auszuwerfen. Steckt sie im Pedal, führt das "
+                            "Pedal sie nicht als Laufwerk.")
+
+        def lauf(befehl):
+            """Befehl ausführen; ein fehlendes Programm ist kein Absturz."""
+            try:
+                return subprocess.run(befehl, capture_output=True, text=True)
+            except FileNotFoundError:
+                class _Fehlt:
+                    returncode = 127
+                    stdout = ""
+                    stderr = "%s ist nicht vorhanden" % befehl[0]
+                return _Fehlt()
+
+        fehler = []
+        if shutil.which("gio"):
+            r = lauf(["gio", "mount", "-u", punkt])
             if r.returncode == 0:
                 return True, "Karte abgemeldet."
-        r = subprocess.run(["umount", wurzel], capture_output=True, text=True)
+            fehler.append("gio: " + (r.stderr.strip().splitlines() or ["unbekannt"])[0])
+
+        r = lauf(["findmnt", "-n", "-o", "SOURCE", "--target", punkt])
+        geraet = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
+        if geraet and shutil.which("udisksctl"):
+            r = lauf(["udisksctl", "unmount", "-b", geraet,
+                      "--no-user-interaction"])
+            if r.returncode == 0:
+                lauf(["udisksctl", "power-off", "-b", geraet,
+                      "--no-user-interaction"])
+                return True, "Karte abgemeldet."
+            fehler.append("udisksctl: " + (r.stderr.strip().splitlines() or ["unbekannt"])[0])
+
+        r = lauf(["umount", punkt])
         if r.returncode == 0:
             return True, "Karte abgemeldet."
-        return False, (r.stderr.strip() or "umount braucht vermutlich root")
+        fehler.append("umount: " + (r.stderr.strip().splitlines() or ["unbekannt"])[0])
+
+        # Nur den ersten Grund nennen — die ganze Kette hilft niemandem
+        return False, (T("Auswerfen ging nicht. Bitte im Dateimanager auf "
+                         "„Auswerfen\" klicken.") + "\n\n" + fehler[0])
 
     if WINDOWS:
         r = subprocess.run(["powershell", "-NoProfile", "-Command",
@@ -1040,9 +1094,100 @@ def patch_name(pfad):
     return "(ohne Namen)"
 
 
+def patch_beschreibung(pfad):
+    """Die Beschreibungsfelder eines Patches lesen.
+
+    Rückgabe: dict mit name, artist, genre, rating, tags, description, bpm.
+    Was fehlt, kommt als leerer Text zurück; bpm als Zahl oder None.
+    """
+    werte = {"name": "", "artist": "", "genre": "", "rating": "",
+             "tags": "", "description": "", "bpm": None}
+    text, ptext = "", ""
+    try:
+        text = open(os.path.join(pfad, "patch.xml"), encoding="utf-8",
+                    errors="replace").read()
+    except OSError:
+        pass
+    try:
+        ptext = open(os.path.join(pfad, "PhraseA", "phrase.xml"),
+                     encoding="utf-8", errors="replace").read()
+    except OSError:
+        pass
+    for feld, tag in (("name", "PatchName"), ("artist", "Artist"),
+                      ("genre", "Genre"), ("rating", "Rating"),
+                      ("tags", "Tags"), ("description", "Description")):
+        m = re.search(r"<%s>([^<]*)</%s>" % (tag, tag), text)
+        if m:
+            werte[feld] = xml_entpacken(m.group(1).strip())
+    m = re.search(r"<BeatsPerMinute>([^<]*)</BeatsPerMinute>", ptext)
+    if m:
+        try:
+            werte["bpm"] = float(m.group(1))
+        except ValueError:
+            pass
+    return werte
+
+
+def xml_entpacken(text):
+    """&amp; → & usw. (die XML-Dateien des Pedals kodieren Sonderzeichen)."""
+    return (text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
+            .replace("&apos;", "'").replace("&amp;", "&"))
+
+
+def patch_beschreibung_setzen(pfad, werte):
+    """Beschreibungsfelder schreiben; was nicht in werte steht, bleibt.
+
+    Rückgabe: Felder, die es im XML noch nicht gab (dann wurden sie
+    eingefügt).
+    """
+    def kodiert(text):
+        return (str(text or "").replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;"))
+
+    px = os.path.join(pfad, "patch.xml")
+    ph = os.path.join(pfad, "PhraseA", "phrase.xml")
+    if not os.path.exists(px):
+        raise RuntimeError(T("Die Datei %s fehlt.") % px)
+
+    fehlend = []
+    text = open(px, encoding="utf-8", errors="replace").read()
+    for feld, tag in (("name", "PatchName"), ("artist", "Artist"),
+                      ("genre", "Genre"), ("rating", "Rating"),
+                      ("tags", "Tags"), ("description", "Description")):
+        if feld not in werte:
+            continue
+        wert = kodiert(werte[feld])
+        # Leere Felder stehen im Pedal-XML als <Description /> — das wird
+        # zuerst ersetzt, sonst bliebe der alte Inhalt stehen.
+        leer = r"<%s\s*/>" % tag
+        if re.search(leer, text):
+            text = re.sub(leer, "<%s>%s</%s>" % (tag, wert, tag), text, count=1)
+            continue
+        text, da = setze_wert(text, tag, wert)
+        if not da:
+            fehlend.append(tag)
+    open(px, "w", encoding="utf-8").write(text)
+
+    if werte.get("bpm") is not None and os.path.exists(ph):
+        ptext = open(ph, encoding="utf-8", errors="replace").read()
+        ptext, da = setze_wert(ptext, "BeatsPerMinute",
+                               "%.10f" % float(werte["bpm"]))
+        if not da:
+            fehlend.append("BeatsPerMinute")
+        ptext, _ = setze_wert(ptext, "BpmValidated", "1")
+        open(ph, "w", encoding="utf-8").write(ptext)
+    return fehlend
+
+
 def patch_einstellungen(pfad):
-    """Stopp-Verhalten, Rhythmus und Loop/Single eines Patches, kurz."""
+    """Stoppart, Rhythmus, Wiedergabe, rückwärts und Tempo eines Patches.
+
+    Rückgabe: (stop, rhy, loop, rueck, bpm) — rueck ist True/False, bpm eine
+    Zahl oder None. Am 18.11.2026 ergänzt: rückwärts (IsReversed) und Tempo
+    wurden gelesen, aber nirgends gezeigt.
+    """
     stop, rhy, loop = "?", "?", "?"
+    rueck, bpm = False, None
     px = os.path.join(pfad, "patch.xml")
     ph = os.path.join(pfad, "PhraseA", "phrase.xml")
     try:
@@ -1053,7 +1198,8 @@ def patch_einstellungen(pfad):
                     "StopAtEndOfLoop": "ende"}.get(m.group(1), m.group(1))
         m = re.search(r"<RhythmType>([^<]*)", t)
         if m:
-            rhy = {"Silence": "—", "StudioKickAndHighHat": "klick"}.get(m.group(1), m.group(1))
+            rhy = {"Silence": "ohne", "StudioKickAndHighHat": "klick"}.get(
+                m.group(1), m.group(1))
     except OSError:
         pass
     try:
@@ -1061,9 +1207,39 @@ def patch_einstellungen(pfad):
         m = re.search(r"<IsLoop>([^<]*)", t)
         if m:
             loop = "loop" if m.group(1) == "1" else "single"
+        m = re.search(r"<IsReversed>([^<]*)", t)
+        if m:
+            rueck = m.group(1).strip() == "1"
+        m = re.search(r"<BeatsPerMinute>([^<]*)", t)
+        if m:
+            try:
+                bpm = float(m.group(1))
+            except ValueError:
+                bpm = None
     except OSError:
         pass
-    return stop, rhy, loop
+    return stop, rhy, loop, rueck, bpm
+
+
+def wav_rueckwaerts(pfad, ziel=None):
+    """Eine WAV rückwärts schreiben und den Pfad zurückgeben.
+
+    Das Pedal spielt rückwärts, weil in seiner phrase.xml IsReversed steht.
+    Das Fenster spielte die Datei selbst ab — dort hörte man davon nichts
+    (Rückmeldung 18.11.2026). Mit ffmpeg (areverse) entsteht eine Hörprobe;
+    ohne ffmpeg bleibt es beim Original.
+    """
+    import tempfile
+
+    if not werkzeug_pfad("ffmpeg"):
+        return None
+    ziel = ziel or os.path.join(tempfile.mkdtemp(), "rueckwaerts.wav")
+    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", pfad,
+                        "-af", "areverse", ziel],
+                       capture_output=True)
+    if r.returncode != 0 or not os.path.exists(ziel):
+        return None
+    return ziel
 
 
 def wav_info(pfad):
@@ -1313,6 +1489,12 @@ def vorlage_finden(basis):
            os.path.exists(os.path.join(pfad, "PhraseA", "phrase.xml")):
             return pfad
     return None
+
+
+def wiedergabe_rueckwaerts(wiedergabe):
+    """Soll rückwärts gespielt werden? (IsReversed im phrase.xml)"""
+    return "1" if wiedergabe and ("↺" in wiedergabe
+                            or "rückwärts" in wiedergabe) else "0"
 
 
 def setze_wert(text, tag, wert):
@@ -1752,10 +1934,10 @@ def befehl_aufspielen(basis, wav, name, schreiben, stopp=None, rhythmus=None,
             print_pegel(ergebnis)
             if ergebnis.get("nachher") is not None:
                 schreibe_pegelprotokoll(basis, [{
-                    "ordner": os.path.basename(pfad), "name": patch_name(pfad),
+                    "ordner": os.path.basename(zielpfad), "name": patch_name(zielpfad),
                     "faktor": 10 ** ((ergebnis["nachher"] - ergebnis["vorher"]) / 20.0),
                     "vorher": ergebnis["vorher"], "nachher": ergebnis["nachher"]}],
-                    "pegel", wurzel)
+                    "pegel", basis)
         else:
             print(T("  Hinweis: Pegel ließ sich nicht ändern (kein 16-Bit-WAV?)."))
 
@@ -1862,6 +2044,8 @@ def befehl_aendern(basis, nummer, schreiben, stopp=None, rhythmus=None,
     if wiedergabe and os.path.exists(ph):
         ptext = open(ph, encoding="utf-8").read()
         ptext, _ = setze_wert(ptext, "IsLoop", WIEDERGABE[wiedergabe])
+        ptext, _ = setze_wert(ptext, "IsReversed",
+                               wiedergabe_rueckwaerts(wiedergabe))
         open(ph, "w", encoding="utf-8").write(ptext)
 
     if fade or gain or normieren:
@@ -2046,6 +2230,18 @@ BEFEHLE = {
     "aendern": ("Change name, stop mode, playback", "Name, Stoppart, Wiedergabe ändern"),
     "saeubern": ("Remove macOS clutter files", "macOS-Begleitdateien entfernen"),
     "auswerfen": ("Eject the card", "Karte auswerfen"),
+    "aktualisieren": ("Download the newest version", "Neueste Fassung holen"),
+    "speicherabbild": ("Write an inventory of the pedal (read only)",
+                       "Speicherabbild des Pedals schreiben (nur lesend)"),
+    "vergleich": ("Compare two inventories", "Zwei Speicherabbilder vergleichen"),
+    "firmware-holen": ("Fetch the pedal's firmware files (read only)",
+                       "Firmware-Dateien des Pedals holen (nur lesend)"),
+    "firmware-schreiben": ("Write firmware files into the pedal",
+                           "Firmware-Dateien ins Pedal schreiben"),
+    "jamlists": ("List the JamLists in a JamManager library",
+                 "JamLists einer JamManager-Bibliothek auflisten"),
+    "jamlist-holen": ("JamList as text setlist", "JamList als Textdatei holen"),
+    "jamlist-schreiben": ("Text setlist as JamList", "Textdatei als JamList ablegen"),
     "gui": ("Open the window", "Fenster öffnen"),
     "menu": ("Text menu", "Textmenü"),
     "selbsttest": ("Report what the tool sees", "Bericht, was das Werkzeug sieht"),
@@ -2075,6 +2271,555 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Beschreibung …':
+         'Description …',
+        'Rückwärts: ohne ffmpeg keine Hörprobe — das Pedal spielt es trotzdem rückwärts.':
+         'Reverse: without ffmpeg there is no preview — the pedal still plays it backwards.',
+        'Tempo':
+         'Tempo',
+        'Suchen …':
+         'Search …',
+        'Text im Namen (leer lassen = alles zeigen):':
+         'Text in the name (leave empty = show all):',
+        'Erst eine Karte oder eine geholte Kopie öffnen — dann läßt sich suchen.':
+         'Open a card or a fetched copy first — then you can search.',
+        'Suchen':
+         'Search',
+        'Suche fehlgeschlagen: %s':
+         'Search failed: %s',
+        'Suchen:':
+         'Search:',
+        'Karte:':
+         'Card:',
+        'Meldungen stehen im Fenster; Fehler zusätzlich in jamman-fehler.log.':
+         'Messages appear in the window; errors also in jamman-fehler.log.',
+        'Firmware-Dateien jetzt ins Pedal schreiben? Ein Abbruch mittendrin kann das Pedal unbrauchbar machen. [ja/nein] ':
+         'Write the firmware files to the pedal now? An interruption can make the pedal unusable. [yes/no] ',
+        'Zielordner für die Firmware':
+         'Target folder for the firmware',
+        'Ordner mit der geholten Firmware':
+         'Folder with the fetched firmware',
+        'In diesem Ordner liegt keine Firmware (usr/JamManUI, usr/loopengine …).':
+         'This folder contains no firmware (usr/JamManUI, usr/loopengine …).',
+        'Firmware übernehmen':
+         'Apply firmware',
+        'Firmware übernehmen …':
+         'Apply firmware …',
+        'Firmware dieses Pedals holen …':
+         "Fetch this pedal's firmware …",
+        '%s kam unvollständig (%d von %d Bytes).':
+         '%s came incomplete (%d of %d bytes).',
+        '%d Firmware-Dateien werden jetzt in das Pedal geschrieben. Vorher wird der jetzige Stand gesichert.\n\nEin Abbruch mittendrin kann das Pedal unbrauchbar machen — es gibt keinen Weg zurück.\n\nWirklich schreiben?':
+         '%d firmware files will now be written to the pedal. The current state is backed up first.\n\nAn interruption can make the pedal unusable — there is no way back.\n\nReally write?',
+        'Sichere den jetzigen Stand …':
+         'Backing up the current state …',
+        'Gesichert: %d Dateien nach %s':
+         'Backed up: %d files to %s',
+        'Firmware geholt: %d Dateien':
+         'Firmware fetched: %d files',
+        'Firmware geholt:\n%s\n%d Dateien':
+         'Firmware fetched:\n%s\n%d files',
+        'Fertig: %d Dateien geschrieben':
+         'Done: %d files written',
+        'Nicht bestätigt: %d':
+         'Not confirmed: %d',
+        'Firmware geschrieben: %d Dateien\nSicherung: %s\nJetzt das Pedal aus- und wieder einschalten.':
+         'Firmware written: %d files\nBackup: %s\nNow switch the pedal off and on again.',
+        'Schreibe':
+         'Writing',
+        'Hole':
+         'Fetching',
+        'JamList aus JamManager XT holen …':
+         'Fetch JamList from JamManager XT …',
+        'Setlist als JamList ablegen …':
+         'Store setlist as JamList …',
+        'Setlist speichern':
+         'Save setlist',
+        'Bibliothek von JamManager XT':
+         'JamManager XT library',
+        'JamList wählen':
+         'Choose a JamList',
+        'In dieser Bibliothek liegt keine JamList.':
+         'This library contains no JamList.',
+        'Geholt: %s\n%d Plätze\n%s':
+         'Fetched: %s\n%d slots\n%s',
+        'JamList ablegen':
+         'Store JamList',
+        '%s%s%s als neue JamList eintragen? Die Bibliothek wird dabei verändert — vorher eine Kopie anlegen.':
+         'Add %s%s%s as a new JamList? The library will be changed — make a copy first.',
+        'JamList %s angelegt (id %d, %d Plätze)':
+         'JamList %s created (id %d, %d slots)',
+        'Keine JamList mit dem Namen %s.':
+         'No JamList named %s.',
+        'belegte Plätze':
+         'occupied slots',
+        'Geschrieben: %s (%d Plätze)':
+         'Written: %s (%d slots)',
+        'Übernehmen':
+         'Apply',
+        'Speicherabbild':
+         'Memory image',
+        'Speicherabbild speichern':
+         'Save memory image',
+        'Speicherabbild aufnehmen …':
+         'Take a memory image …',
+        'Speicherabbilder vergleichen …':
+         'Compare memory images …',
+        'Speicherabbilder vergleichen':
+         'Compare memory images',
+        'Erstes Speicherabbild':
+         'First memory image',
+        'Zweites Speicherabbild':
+         'Second memory image',
+        'Nur im ersten Bild: %d':
+         'Only in the first image: %d',
+        'Nur im zweiten Bild: %d':
+         'Only in the second image: %d',
+        'Gleicher Pfad, andere Größe: %d':
+         'Same path, different size: %d',
+        'Die beiden Bilder sind gleich.':
+         'The two images are identical.',
+        'Erstes:':
+         'First:',
+        'Zweites:':
+         'Second:',
+        'Aufruf:':
+         'Usage:',
+        'Lese den Verzeichnisbaum …':
+         'Reading the directory tree …',
+        'Speicherabbild: %d Einträge':
+         'Memory image: %d entries',
+        'Speicherabbild geschrieben:\n%s':
+         'Memory image written:\n%s',
+        'Speicherabbild geschrieben: %d Einträge nach %s':
+         'Memory image written: %d entries to %s',
+        'Dateien für „speicherabbild“ und „vergleich“':
+         'Files for “speicherabbild” and “vergleich”',
+        'Suchen:':
+         'Search:',
+        'Sortierung':
+         'Sorting',
+        '%d von %d Patches passen zu „%s“.':
+         '%d of %d patches match “%s”.',
+        'Beschreibung':
+         'Description',
+        'Interpret':
+         'Artist',
+        'Genre':
+         'Genre',
+        'Stichwörter':
+         'Tags',
+        'Bewertung':
+         'Rating',
+        'Tempo (BPM)':
+         'Tempo (BPM)',
+        'Die Datei %s fehlt.':
+         'The file %s is missing.',
+        'Setlists anpassen':
+         'Adjust setlists',
+        '%d Setlist-Dateien in %s an die neuen Plätze anpassen? Jede Datei wird vorher daneben gesichert.':
+         'Adjust %d setlist files in %s to the new slots? Each file is backed up next to it first.',
+        'Keine Setlist nannte einen bewegten Platz.':
+         'No setlist mentioned a moved slot.',
+        'Setlists nicht angepaßt: ':
+         'Setlists not adjusted: ',
+        'Setlists angepaßt: ':
+         'Setlists adjusted: ',
+        'Plätze aufrücken':
+         'Close the gaps',
+        'Plätze aufrücken …':
+         'Close the gaps …',
+        'Es gibt keine Lücken — die Plätze sind schon lückenlos belegt.':
+         'There are no gaps — the slots are already contiguous.',
+        '%d Patches rücken in %s nach vorn: %s%s\n\nJeder bewegte Platz wird vorher auf den Rechner gesichert. Setlists im Pedal, die auf Platznummern zeigen, stimmen danach nicht mehr. Fortfahren?':
+         '%d patches move up in %s: %s%s\n\nEvery moved slot is backed up to the computer first. Setlists in the pedal that point at slot numbers will no longer match. Continue?',
+        'Rücke auf':
+         'Moving up',
+        'Fertig: %d Plätze aufgerückt, %d vorher gesichert':
+         'Done: %d slots moved up, %d backed up first',
+        'Aufgerückt: %d Plätze':
+         'Moved up: %d slots',
+        'Kopie auf dem Rechner — Änderungen hier wirken nicht auf das Pedal.':
+         'Copy on the computer — changes here do not affect the pedal.',
+        'Patch%d wird aus der Kopie auf dem Rechner entfernt. Das Pedal bleibt unverändert. Fortfahren?':
+         'Patch%d will be removed from the copy on the computer. The pedal stays unchanged. Continue?',
+        'Patch%d wird von der Karte entfernt. Vorher wird er auf dem Rechner gesichert. Fortfahren?':
+         'Patch%d will be removed from the card. It is backed up to the computer first. Continue?',
+        'Ja':
+         'Yes',
+        'Nein':
+         'No',
+        'Dem Python fehlen die Zertifikate. Auf macOS hilft „Install Certificates.command“ im Python-Ordner, oder: pip install certifi':
+         'Python has no certificates. On macOS run “Install Certificates.command” in the Python folder, or: pip install certifi',
+        'GitHub ist nicht erreichbar: %s':
+         'GitHub cannot be reached: %s',
+        'unbekannter Grund':
+         'unknown reason',
+        'Gelöscht: %s':
+         'Deleted: %s',
+        'Fehler:':
+         'Error:',
+        'Platz löschen':
+         'Delete slot',
+        'Welcher Platz soll gelöscht werden? (z. B. 30 oder Patch30)':
+         'Which slot should be deleted? (e.g. 30 or Patch30)',
+        'Platz löschen …':
+         'Delete slot …',
+        '%s ist nicht belegt — nichts zu löschen.':
+         '%s is empty — nothing to delete.',
+        '%s wird aus %s gelöscht. Das läßt sich nicht rückgängig machen. Fortfahren?':
+         '%s will be deleted from %s. This cannot be undone. Continue?',
+        'Lösche':
+         'Deleting',
+        'Gelöscht:':
+         'Deleted:',
+        'Fehler beim Löschen:':
+         'Error while deleting:',
+        'Die Datei ist %s lang — das Pedal nimmt höchstens 10 Minuten je Loop an. Bitte im Hauptfenster kürzen oder teilen.':
+         'The file is %s long — the pedal accepts at most 10 minutes per loop. Please shorten or split it in the main window.',
+        'Dieser Ordner ist nicht lesbar: %s':
+         'This folder cannot be read: %s',
+        'Auswahl:':
+         'Selection:',
+        'Pegelprotokoll wählen':
+         'Choose level log',
+        'Audiodatei zum Teilen auswählen':
+         'Choose the audio file to split',
+        'Dateiname:':
+         'File name:',
+        'Speichern':
+         'Save',
+        'Bitte einen Dateinamen angeben.':
+         'Please enter a file name.',
+        'Überschreiben':
+         'Overwrite',
+        '%s gibt es schon. Ersetzen?':
+         '%s already exists. Replace?',
+        'Speicherkarte des JamMan wählen':
+         'Choose the JamMan card',
+        'Zielordner für die Sicherung':
+         'Target folder for the backup',
+        'Dateien':
+         'Files',
+        'Nach oben':
+         'Up',
+        'Öffnen':
+         'Open',
+        'Bitte eine Datei auswählen.':
+         'Please choose a file.',
+        'Alle Dateien':
+         'All files',
+        'Die Datei konnte nicht geschrieben werden: %s':
+         'The file could not be written: %s',
+        'ohne':
+         'none',
+        'ende':
+         'end',
+        'klick':
+         'click',
+        '%d Patches ohne Ton — nur die Beschreibung ist geholt.':
+         '%d patches without audio — only the description has been fetched.',
+        'Ganzen Ordner aufs Pedal …':
+         'Whole folder to the pedal …',
+        'Ordner mit Patch-Ordnern wählen':
+         'Choose a folder containing patch folders',
+        'Ganzen Ordner aufs Pedal':
+         'Whole folder to the pedal',
+        '%d Patch-Ordner werden in %s geschrieben. Belegte Plätze werden vorher gesichert, unveränderte übersprungen. Fortfahren?':
+         '%d patch folders will be written to %s. Occupied slots are backed up first, unchanged ones are skipped. Continue?',
+        'internen Speicher':
+         'internal memory',
+        'der Karte':
+         'the card',
+        'Im Ordner liegen keine Patch-Ordner (erwartet: Patch01 … Patch200).':
+         'The folder contains no patch folders (expected: Patch01 … Patch200).',
+        'Schreibe':
+         'Writing',
+        'Fertig: %d Patches geschrieben, %d übersprungen, %d vorher gesichert':
+         'Done: %d patches written, %d skipped, %d backed up first',
+        'Fehler beim Schreiben:':
+         'Error while writing:',
+        'Übertragen: %d Dateien · unverändert übersprungen: %d':
+         'Transferred: %d files · skipped unchanged: %d',
+        'Zielplatz auf dem Pedal (z. B. 17 oder Patch17):':
+         'Target slot on the pedal (e.g. 17 or Patch17):',
+        'Unerwarteter Fehler':
+         'Unexpected error',
+        'Das Werkzeug wurde unerwartet beendet.':
+         'The tool stopped unexpectedly.',
+        'Protokoll:':
+         'Log:',
+        'Auswahl kopieren':
+         'Copy selection',
+        'Nichts markiert — bitte zuerst Text markieren.':
+         'Nothing selected — please select some text first.',
+        'In die Zwischenablage kopiert.':
+         'Copied to the clipboard.',
+        'Anleitung speichern':
+         'Save the instructions',
+        'Gespeichert.':
+         'Saved.',
+        'Alles kopieren':
+         'Copy all',
+        'Als Datei speichern':
+         'Save as file',
+        'Anleitung':
+         'Instructions',
+        'Zum Umwandeln fehlt ffmpeg.':
+         'ffmpeg is missing for the conversion.',
+        'Die Programmdateien lassen sich hier nicht ersetzen: %s':
+         'The program files cannot be replaced here: %s',
+        'Unerwarteter Fehler: %s':
+         'Unexpected error: %s',
+        'Aktualisieren':
+         'Update',
+        'Die neueste Fassung wird von GitHub geladen und ersetzt die Programmdateien. Ihre Einstellungen und Ihre Karte bleiben unberührt. Fortfahren?':
+         'The latest version is downloaded from GitHub and replaces the program files. Your settings and your card stay untouched. Continue?',
+        'Jetzt aktualisieren?':
+         'Update now?',
+        'Aktualisiert':
+         'Updated',
+        'Nicht aktualisiert':
+         'Not updated',
+        'Fenster jetzt schließen?':
+         'Close the window now?',
+        'GitHub ist nicht erreichbar.':
+         'GitHub cannot be reached.',
+        'Sie benutzen bereits die neueste Fassung (%s).':
+         'You are already using the latest version (%s).',
+        'Zur Fassung %s gibt es keine Datei zum Herunterladen.':
+         'Version %s has no file to download.',
+        'Lade Fassung %s …':
+         'Downloading version %s …',
+        'Herunterladen fehlgeschlagen: %s':
+         'Download failed: %s',
+        'Die heruntergeladene Datei ist kein gültiges ZIP.':
+         'The downloaded file is not a valid ZIP.',
+        'Die Datei ist beschädigt (%s).':
+         'The file is damaged (%s).',
+        'In der Datei fehlt jamman.py.':
+         'The file does not contain jamman.py.',
+        'Die Datei gehört nicht zur Fassung %s.':
+         'The file does not belong to version %s.',
+        'Fassung %s ist installiert (%d Dateien). Bitte das Fenster schließen und neu starten.':
+         'Version %s is installed (%d files). Please close the window and start again.',
+        'Die Karte hängt nicht im Rechner — nichts auszuwerfen. Steckt sie im Pedal, führt das Pedal sie nicht als Laufwerk.':
+         'The card is not in the computer — nothing to eject. If it is in the pedal, the pedal does not offer it as a drive.',
+        'Auswerfen ging nicht. Bitte im Dateimanager auf „Auswerfen" klicken.':
+         'Ejecting failed. Please use “Eject” in the file manager.',
+        'Keine Karte im Rechner gefunden.':
+         'No card found in the computer.',
+        'Karte im Rechner:  „Karte wählen“ drücken.':
+         'Card in the computer:  press “Choose card”.',
+        'Karte im Pedal:    oben rechts „Pedal über USB“ — dort sind Karte und interner Speicher erreichbar.':
+         'Card in the pedal:  top right “Pedal over USB” — the card and the internal memory are reachable there.',
+        'Speicherkarte': 'Memory card',
+        'Kopie vom Pedal': 'copy from the pedal',
+        'Speicherkarte des JamMan Stereo': 'Memory card of the JamMan Stereo',
+        'Im Pedal steckt keine Karte.': 'There is no card in the pedal.',
+        'Karte einlegen und dann „Karte wählen“ oder „Neu laden“ drücken.':
+         'Insert the card, then press “Choose card” or “Reload”.',
+        'keine Karte':
+         'no card',
+        'Dies ist eine Kopie vom Pedal, nicht die Karte selbst. Über „Karte wählen“ die Karte öffnen.':
+         'This is a copy taken from the pedal, not the card itself. Use “Choose card” to open the card.',
+        'JamMan Card Tool': 'JamMan Card Tool',
+        'Karte und interner Speicher': 'card and internal memory',
+        '(für Rückgängig nötig)':
+         '(needed for Undo)',
+        'Darunter ist die Sicherung für Rückgängig. Danach läßt sich der letzte Schreibvorgang nicht mehr zurücknehmen. Trotzdem löschen?':
+         'This includes the backup for Undo. The last write can then no longer be undone. Delete anyway?',
+        'Sicherungen aufräumen …':
+         'Clean up backups …',
+        'Sicherungen aufräumen':
+         'Clean up backups',
+        'Sicherungen im Zielordner':
+         'Backups in the target folder',
+        '%d Sicherungen · %.1f MB':
+         '%d backups · %.1f MB',
+        'Neueste behalten:':
+         'Keep newest:',
+        'Markierte löschen':
+         'Delete selected',
+        'Erst Sicherungen in der Liste markieren.':
+         'Select backups in the list first.',
+        '%d Sicherungen mit %.1f MB werden endgültig gelöscht. Fortsetzen?':
+         '%d backups totalling %.1f MB will be deleted permanently. Continue?',
+        '%d Sicherungen konnten nicht gelöscht werden.':
+         '%d backups could not be deleted.',
+        'Der Zielordner ist noch nicht angelegt.':
+         'The target folder does not exist yet.',
+        'Im Zielordner liegen keine Sicherungen.':
+         'There are no backups in the target folder.',
+        'Alle auswählen':
+         'Select all',
+        'Nichts markiert. Alle %d Patches in die Setlist?':
+         'Nothing selected. Put all %d patches into the setlist?',
+        'Warte auf das Ende des laufenden Vorgangs …':
+         'Waiting for the running operation to finish …',
+        'Der Vorgang reagiert nicht — Fenster schließen und neu öffnen.':
+         'The operation is not responding — close the window and open it again.',
+        'Hole Beschreibungen': 'Fetching descriptions',
+        'Es wurde kein Zielplatz eingegeben.':
+         'No target slot was entered.',
+        'Der Zielplatz muß wie Patch01 … Patch200 heißen, nicht „%s“.':
+         'The target slot has to be named like Patch01 … Patch200, not “%s”.',
+        'OK': 'OK',
+        'Ein Vorgang läuft noch — bitte abwarten.':
+         'An operation is still running — please wait.',
+        'Verbindung neu aufbauen':
+         'Reconnect',
+        'Verbindung wird neu aufgebaut …':
+         'Reconnecting …',
+        'Lesen und Schreiben über USB. Vor jedem Überschreiben wird der alte Platz auf den Rechner gesichert.':
+         'Reading and writing over USB. Before anything is overwritten, the old slot is saved to the computer.',
+        'Über USB fließen etwa 1,3 MB/s. Für eine ganze Karte ist ein Kartenleser viel schneller. Schreiben verändert die Karte — vorher wird gesichert.':
+         'Data flows over USB at about 1.3 MB/s. For a whole card a card reader is much faster. Writing changes the card — it is saved first.',
+        'Audio in den Speicher schreiben …': 'Write audio into the memory …',
+        'Beim JamMan Solo XT behält der FS3X seine Grundfunktionen. Eine eigene Belegung speichert das Pedal zwar, wertet sie aber nicht aus — deshalb wird sie hier nicht angeboten.':
+         'On the JamMan Solo XT the FS3X keeps its basic functions. The pedal does store a custom assignment but does not act on it, so it is not offered here.',
+        'Änderungen wirken nach einem Neustart des Pedals.': 'Changes take effect after restarting the pedal.',
+        'gewünscht': 'wanted',
+        'Pedal meldet': 'pedal reports',
+        '(nicht belegt)':
+         '(not assigned)',
+        'UndoRedo = Rückgängig/Wiederholen · Reverse = Rückwärts · Tempo = Tempo antippen':
+         'UndoRedo = undo/redo · Reverse = backwards · Tempo = tap tempo',
+        'Sichern': 'Save',
+        'Schreiben': 'Write',
+        'Setlists': 'Setlists',
+        'Pedal': 'Pedal',
+        'Ins Hauptfenster holen …': 'Fetch into the main window …',
+        'Einzelnen Patch sichern …': 'Save a single patch …',
+        'Patch-Ordner aufs Pedal …': 'Patch folder to the pedal …',
+        'Übernommen.': 'Applied.',
+        'Pedal spielt jetzt:': 'The pedal now plays:',
+        'Audio aufs Pedal …':
+         'Audio to the pedal …',
+        'Audio aufs Pedal':
+         'Audio to the pedal',
+        'Audiodatei wählen':
+         'Choose an audio file',
+        'Audio':
+         'Audio',
+        'Sichere den alten Platz …':
+         'Saving the old slot …',
+        'Wandle die Datei …':
+         'Converting the file …',
+        'Umwandeln fehlgeschlagen — die Datei muß 44,1 kHz, 16 Bit, Stereo werden.':
+         'Conversion failed — the file has to become 44.1 kHz, 16 bit, stereo.',
+        'Leere den Platz …': 'Clearing the slot …',
+        'Pedal spielt jetzt Bank/Patch:': 'The pedal now plays bank/patch:',
+        'Karte erkannt:': 'Card detected:',
+        'Als ZIP sichern …':
+         'Save as ZIP …',
+        'Als ZIP sichern':
+         'Save as ZIP',
+        'Sichere als ZIP …':
+         'Saving as ZIP …',
+        'Sichere:':
+         'Saving:',
+        'Fehler beim Sichern:':
+         'Error while saving:',
+        'Die Setlist ist leer.':
+         'The setlist is empty.',
+        'Erst Patches in der Liste markieren (⌘-Klick).':
+         'Select patches in the list first (⌘-click).',
+        'Es gibt nichts rückgängig zu machen.':
+         'There is nothing to undo.',
+        'Fußschalter …':
+         'Footswitch …',
+        'Fußschalter':
+         'Footswitch',
+        'Tastenbelegung des Pedals':
+         'Footswitch assignment of the pedal',
+        'Werte sind Geräteeinstellungen — nur ändern, wenn du weißt, was sie bedeuten.':
+         'These are device settings — only change them if you know what they mean.',
+        'Übernehmen':
+         'Apply',
+        'JamMan':
+         'JamMan',
+        'Karte':
+         'card',
+        'intern':
+         'internal',
+        'Liste als Textdatei sichern':
+         'Save list as a text file',
+        'Liste als Textdatei …':
+         'List as a text file …',
+        'Mitlaufen':
+         'Follow',
+        'Mitlaufen an — am Pedal einen Patch wählen.':
+         'Follow on — select a patch on the pedal.',
+        'Mitlaufen aus.':
+         'Follow off.',
+        'Rückgängig':
+         'Undo',
+        'Setlist holen …':
+         'Fetch setlist …',
+        'Setlist laden':
+         'Load setlist',
+        'Setlist sichern …':
+         'Save setlist …',
+        'Setlist sichern':
+         'Save setlist',
+        'Setlist.txt':
+         'Setlist.txt',
+        'Stelle wieder her:':
+         'Restoring:',
+        '%s wird durch die Sicherung ersetzt. Fortsetzen?':
+         '%s will be replaced by the backup. Continue?',
+        'Ordner des Patches wählen':
+         'Choose the patch folder',
+        'Aufs Pedal schreiben':
+         'Write to the pedal',
+        '%s ist schon belegt. Der Patch wird vorher auf den Rechner gesichert und dann überschrieben. Fortsetzen?':
+         '%s is already in use. That patch will be saved to the computer first and then overwritten. Continue?',
+        'Schreibe aufs Pedal …':
+         'Writing to the pedal …',
+        'Schreibe:':
+         'Writing:',
+        'Fehler beim Schreiben:':
+         'Error while writing:',
+        'Patch aufs Pedal schreiben …':
+         'Write patch to the pedal …',
+        '(Vorschlag)': '(suggested)',
+        'Ziel:': 'Target:',
+        'noch nicht gewählt': 'not chosen yet',
+        'Ziel ändern …': 'Change target …',
+        'Aufräumen':
+         'Clean up',
+        'Die angefangene Kopie entfernen? Nur die gerade geholten Dateien werden gelöscht, der Ordner bleibt.':
+         'Remove the unfinished copy? Only the files fetched just now are deleted; the folder stays.',
+        'Aufgeräumt:':
+         'Cleaned up:',
+        'Hole Beschreibungen …': 'Fetching descriptions …',
+        'Wird abgebrochen …': 'Cancelling …',
+        'Über USB fließen etwa 1,3 MB/s. Für eine ganze Karte ist ein Kartenleser viel schneller — steckt die Karte im Pedal, bleibt nur dieser Weg.':
+         'Data flows over USB at about 1.3 MB/s. For a whole card a card reader is much faster — if the card is in the pedal, this is the only way.',
+        'Abbrechen': 'Cancel',
+        'Abgebrochen.': 'Cancelled.',
+        'Fehler beim Öffnen:': 'Error while opening:',
+        'Alle ins Hauptfenster holen …': 'Fetch all into the main window …',
+        'Zielordner wählen': 'Choose a target folder',
+        'Hole Patch': 'Fetching patch',
+        'Fertig:': 'Done:',
+        'Im Hauptfenster öffnen?': 'Open in the main window?',
+        'Gesichert': 'Saved',
+        'Pedal über USB': 'Pedal over USB',
+        'Das USB-Modul fehlt: greenglass.py muß neben jamman.py liegen.': 'The USB module is missing: greenglass.py must sit next to jamman.py.',
+        'Gesichert nach:': 'Saved to:',
+        'Interner Speicher': 'Internal memory',
+        'SD-Karte': 'SD card',
+        'Kein JamMan gefunden — Pedal einschalten und Kabel prüfen.': 'No JamMan found — switch the pedal on and check the cable.',
+        '(ohne Namen)': '(no name)',
+        'Fehler beim Lesen:': 'Error while reading:',
+        'Erst „Neu laden“ drücken.': 'Press "Reload" first.',
+        'Lädt …': 'Loading …',
+        'Nur lesen: das Pedal wird nicht verändert.': 'Read-only: the pedal is not modified.',
+        'Ordner zum Sichern wählen': 'Choose a folder to save to',
+        'Patch sichern …': 'Save patch …',
+        'Verbinde mit dem Pedal …': 'Connecting to the pedal …',
         'Spenden': 'Donate',
         'Für dieses Werkzeug ist noch kein Spendenlink eingetragen.': 'No donation link has been entered for this tool yet.',
         'Er steht in jamman.py in der Zeile SPENDEN_LINK.': 'It goes into jamman.py, line SPENDEN_LINK.',
@@ -2652,6 +3397,555 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Beschreibung …':
+         'Description …',
+        'Rückwärts: ohne ffmpeg keine Hörprobe — das Pedal spielt es trotzdem rückwärts.':
+         "Inversé : sans ffmpeg pas d'écoute — la pédale le joue quand même à l'envers.",
+        'Tempo':
+         'Tempo',
+        'Suchen …':
+         'Rechercher …',
+        'Text im Namen (leer lassen = alles zeigen):':
+         'Texte dans le nom (vide = tout afficher) :',
+        'Erst eine Karte oder eine geholte Kopie öffnen — dann läßt sich suchen.':
+         "Ouvrez d'abord une carte ou une copie récupérée — ensuite la recherche fonctionne.",
+        'Suchen':
+         'Rechercher',
+        'Suche fehlgeschlagen: %s':
+         'Recherche échouée : %s',
+        'Suchen:':
+         'Rechercher :',
+        'Karte:':
+         'Carte :',
+        'Meldungen stehen im Fenster; Fehler zusätzlich in jamman-fehler.log.':
+         "Les messages s'affichent dans la fenêtre ; les erreurs aussi dans jamman-fehler.log.",
+        'Firmware-Dateien jetzt ins Pedal schreiben? Ein Abbruch mittendrin kann das Pedal unbrauchbar machen. [ja/nein] ':
+         'Écrire maintenant les fichiers de firmware dans la pédale ? Une interruption peut la rendre inutilisable. [oui/non] ',
+        'Zielordner für die Firmware':
+         'Dossier cible de la firmware',
+        'Ordner mit der geholten Firmware':
+         'Dossier de la firmware récupérée',
+        'In diesem Ordner liegt keine Firmware (usr/JamManUI, usr/loopengine …).':
+         'Ce dossier ne contient pas de firmware (usr/JamManUI, usr/loopengine …).',
+        'Firmware übernehmen':
+         'Appliquer la firmware',
+        'Firmware übernehmen …':
+         'Appliquer la firmware …',
+        'Firmware dieses Pedals holen …':
+         'Récupérer la firmware de cette pédale …',
+        '%s kam unvollständig (%d von %d Bytes).':
+         '%s est arrivé incomplet (%d sur %d octets).',
+        '%d Firmware-Dateien werden jetzt in das Pedal geschrieben. Vorher wird der jetzige Stand gesichert.\n\nEin Abbruch mittendrin kann das Pedal unbrauchbar machen — es gibt keinen Weg zurück.\n\nWirklich schreiben?':
+         "%d fichiers de firmware vont être écrits dans la pédale. L'état actuel est sauvegardé avant.\n\nUne interruption peut rendre la pédale inutilisable — aucun retour.\n\nÉcrire vraiment ?",
+        'Sichere den jetzigen Stand …':
+         "Sauvegarde de l'état actuel …",
+        'Gesichert: %d Dateien nach %s':
+         'Sauvegardé : %d fichiers dans %s',
+        'Firmware geholt: %d Dateien':
+         'Firmware récupérée : %d fichiers',
+        'Firmware geholt:\n%s\n%d Dateien':
+         'Firmware récupérée :\n%s\n%d fichiers',
+        'Fertig: %d Dateien geschrieben':
+         'Terminé : %d fichiers écrits',
+        'Nicht bestätigt: %d':
+         'Non confirmé : %d',
+        'Firmware geschrieben: %d Dateien\nSicherung: %s\nJetzt das Pedal aus- und wieder einschalten.':
+         'Firmware écrite : %d fichiers\nSauvegarde : %s\nÉteignez puis rallumez la pédale.',
+        'Schreibe':
+         'Écriture',
+        'Hole':
+         'Récupération',
+        'JamList aus JamManager XT holen …':
+         'Récupérer la JamList de JamManager XT …',
+        'Setlist als JamList ablegen …':
+         'Enregistrer la setlist comme JamList …',
+        'Setlist speichern':
+         'Enregistrer la setlist',
+        'Bibliothek von JamManager XT':
+         'Bibliothèque de JamManager XT',
+        'JamList wählen':
+         'Choisir une JamList',
+        'In dieser Bibliothek liegt keine JamList.':
+         'Cette bibliothèque ne contient aucune JamList.',
+        'Geholt: %s\n%d Plätze\n%s':
+         'Récupéré : %s\n%d emplacements\n%s',
+        'JamList ablegen':
+         'Enregistrer la JamList',
+        '%s%s%s als neue JamList eintragen? Die Bibliothek wird dabei verändert — vorher eine Kopie anlegen.':
+         "Ajouter %s%s%s comme nouvelle JamList ? La bibliothèque sera modifiée — faites une copie d'abord.",
+        'JamList %s angelegt (id %d, %d Plätze)':
+         'JamList %s créée (id %d, %d emplacements)',
+        'Keine JamList mit dem Namen %s.':
+         'Aucune JamList nommée %s.',
+        'belegte Plätze':
+         'emplacements occupés',
+        'Geschrieben: %s (%d Plätze)':
+         'Écrit : %s (%d emplacements)',
+        'Übernehmen':
+         'Appliquer',
+        'Speicherabbild':
+         'Image mémoire',
+        'Speicherabbild speichern':
+         "Enregistrer l'image mémoire",
+        'Speicherabbild aufnehmen …':
+         'Prendre une image mémoire …',
+        'Speicherabbilder vergleichen …':
+         'Comparer les images mémoire …',
+        'Speicherabbilder vergleichen':
+         'Comparer les images mémoire',
+        'Erstes Speicherabbild':
+         'Première image mémoire',
+        'Zweites Speicherabbild':
+         'Deuxième image mémoire',
+        'Nur im ersten Bild: %d':
+         'Seulement dans la première image : %d',
+        'Nur im zweiten Bild: %d':
+         'Seulement dans la deuxième image : %d',
+        'Gleicher Pfad, andere Größe: %d':
+         'Même chemin, taille différente : %d',
+        'Die beiden Bilder sind gleich.':
+         'Les deux images sont identiques.',
+        'Erstes:':
+         'Première :',
+        'Zweites:':
+         'Deuxième :',
+        'Aufruf:':
+         'Appel :',
+        'Lese den Verzeichnisbaum …':
+         "Lecture de l'arborescence …",
+        'Speicherabbild: %d Einträge':
+         'Image mémoire : %d entrées',
+        'Speicherabbild geschrieben:\n%s':
+         'Image mémoire enregistrée :\n%s',
+        'Speicherabbild geschrieben: %d Einträge nach %s':
+         'Image mémoire enregistrée : %d entrées dans %s',
+        'Dateien für „speicherabbild“ und „vergleich“':
+         'Fichiers pour « speicherabbild » et « vergleich »',
+        'Suchen:':
+         'Rechercher :',
+        'Sortierung':
+         'Tri',
+        '%d von %d Patches passen zu „%s“.':
+         '%d patches sur %d correspondent à « %s ».',
+        'Beschreibung':
+         'Description',
+        'Interpret':
+         'Artiste',
+        'Genre':
+         'Genre',
+        'Stichwörter':
+         'Mots-clés',
+        'Bewertung':
+         'Note',
+        'Tempo (BPM)':
+         'Tempo (BPM)',
+        'Die Datei %s fehlt.':
+         'Le fichier %s manque.',
+        'Setlists anpassen':
+         'Adapter les setlists',
+        '%d Setlist-Dateien in %s an die neuen Plätze anpassen? Jede Datei wird vorher daneben gesichert.':
+         "Adapter %d fichiers de setlist dans %s aux nouveaux emplacements ? Chaque fichier est d'abord sauvegardé à côté.",
+        'Keine Setlist nannte einen bewegten Platz.':
+         'Aucune setlist ne mentionnait un emplacement déplacé.',
+        'Setlists nicht angepaßt: ':
+         'Setlists non adaptées : ',
+        'Setlists angepaßt: ':
+         'Setlists adaptées : ',
+        'Plätze aufrücken':
+         'Combler les trous',
+        'Plätze aufrücken …':
+         'Combler les trous …',
+        'Es gibt keine Lücken — die Plätze sind schon lückenlos belegt.':
+         "Il n'y a pas de trous — les emplacements sont déjà contigus.",
+        '%d Patches rücken in %s nach vorn: %s%s\n\nJeder bewegte Platz wird vorher auf den Rechner gesichert. Setlists im Pedal, die auf Platznummern zeigen, stimmen danach nicht mehr. Fortfahren?':
+         '%d patches remontent dans %s : %s%s\n\nChaque emplacement déplacé est sauvegardé avant. Les setlists de la pédale qui pointent sur des numéros ne correspondront plus. Continuer ?',
+        'Rücke auf':
+         'Remontée',
+        'Fertig: %d Plätze aufgerückt, %d vorher gesichert':
+         'Terminé : %d emplacements remontés, %d sauvegardés avant',
+        'Aufgerückt: %d Plätze':
+         'Remontés : %d emplacements',
+        'Kopie auf dem Rechner — Änderungen hier wirken nicht auf das Pedal.':
+         "Copie sur l'ordinateur — les modifications ici n'affectent pas la pédale.",
+        'Patch%d wird aus der Kopie auf dem Rechner entfernt. Das Pedal bleibt unverändert. Fortfahren?':
+         "Patch%d sera supprimé de la copie sur l'ordinateur. La pédale reste inchangée. Continuer ?",
+        'Patch%d wird von der Karte entfernt. Vorher wird er auf dem Rechner gesichert. Fortfahren?':
+         "Patch%d sera supprimé de la carte. Il est d'abord sauvegardé sur l'ordinateur. Continuer ?",
+        'Ja':
+         'Oui',
+        'Nein':
+         'Non',
+        'Dem Python fehlen die Zertifikate. Auf macOS hilft „Install Certificates.command“ im Python-Ordner, oder: pip install certifi':
+         "Python n'a pas de certificats. Sous macOS, lancez « Install Certificates.command » dans le dossier Python, ou : pip install certifi",
+        'GitHub ist nicht erreichbar: %s':
+         'GitHub est injoignable : %s',
+        'unbekannter Grund':
+         'raison inconnue',
+        'Gelöscht: %s':
+         'Supprimé : %s',
+        'Fehler:':
+         'Erreur :',
+        'Platz löschen':
+         "Supprimer l'emplacement",
+        'Welcher Platz soll gelöscht werden? (z. B. 30 oder Patch30)':
+         'Quel emplacement supprimer ? (p. ex. 30 ou Patch30)',
+        'Platz löschen …':
+         "Supprimer l'emplacement …",
+        '%s ist nicht belegt — nichts zu löschen.':
+         "%s n'est pas occupé — rien à supprimer.",
+        '%s wird aus %s gelöscht. Das läßt sich nicht rückgängig machen. Fortfahren?':
+         '%s sera supprimé de %s. Action irréversible. Continuer ?',
+        'Lösche':
+         'Suppression',
+        'Gelöscht:':
+         'Supprimé :',
+        'Fehler beim Löschen:':
+         'Erreur lors de la suppression :',
+        'Die Datei ist %s lang — das Pedal nimmt höchstens 10 Minuten je Loop an. Bitte im Hauptfenster kürzen oder teilen.':
+         'Le fichier dure %s — la pédale accepte au maximum 10 minutes par boucle. Veuillez le raccourcir ou le diviser dans la fenêtre principale.',
+        'Dieser Ordner ist nicht lesbar: %s':
+         "Ce dossier n'est pas lisible : %s",
+        'Auswahl:':
+         'Sélection :',
+        'Pegelprotokoll wählen':
+         'Choisir le journal de niveau',
+        'Audiodatei zum Teilen auswählen':
+         'Choisir le fichier audio à diviser',
+        'Dateiname:':
+         'Nom du fichier :',
+        'Speichern':
+         'Enregistrer',
+        'Bitte einen Dateinamen angeben.':
+         'Veuillez saisir un nom de fichier.',
+        'Überschreiben':
+         'Écraser',
+        '%s gibt es schon. Ersetzen?':
+         '%s existe déjà. Remplacer ?',
+        'Speicherkarte des JamMan wählen':
+         'Choisir la carte du JamMan',
+        'Zielordner für die Sicherung':
+         'Dossier cible de la sauvegarde',
+        'Dateien':
+         'Fichiers',
+        'Nach oben':
+         'Dossier parent',
+        'Öffnen':
+         'Ouvrir',
+        'Bitte eine Datei auswählen.':
+         'Veuillez choisir un fichier.',
+        'Alle Dateien':
+         'Tous les fichiers',
+        'Die Datei konnte nicht geschrieben werden: %s':
+         "Le fichier n'a pas pu être écrit : %s",
+        'ohne':
+         'aucun',
+        'ende':
+         'fin',
+        'klick':
+         'clic',
+        '%d Patches ohne Ton — nur die Beschreibung ist geholt.':
+         '%d patches sans audio — seule la description a été récupérée.',
+        'Ganzen Ordner aufs Pedal …':
+         'Tout le dossier vers la pédale …',
+        'Ordner mit Patch-Ordnern wählen':
+         'Choisir un dossier contenant des dossiers de patch',
+        'Ganzen Ordner aufs Pedal':
+         'Tout le dossier vers la pédale',
+        '%d Patch-Ordner werden in %s geschrieben. Belegte Plätze werden vorher gesichert, unveränderte übersprungen. Fortfahren?':
+         '%d dossiers de patch seront écrits dans %s. Les emplacements occupés sont sauvegardés avant, les inchangés ignorés. Continuer ?',
+        'internen Speicher':
+         'la mémoire interne',
+        'der Karte':
+         'la carte',
+        'Im Ordner liegen keine Patch-Ordner (erwartet: Patch01 … Patch200).':
+         'Le dossier ne contient aucun dossier de patch (attendu : Patch01 … Patch200).',
+        'Schreibe':
+         'Écriture',
+        'Fertig: %d Patches geschrieben, %d übersprungen, %d vorher gesichert':
+         'Terminé : %d patches écrits, %d ignorés, %d sauvegardés avant',
+        'Fehler beim Schreiben:':
+         "Erreur lors de l'écriture :",
+        'Übertragen: %d Dateien · unverändert übersprungen: %d':
+         'Transféré : %d fichiers · ignorés inchangés : %d',
+        'Zielplatz auf dem Pedal (z. B. 17 oder Patch17):':
+         'Emplacement cible sur la pédale (p. ex. 17 ou Patch17) :',
+        'Unerwarteter Fehler':
+         'Erreur inattendue',
+        'Das Werkzeug wurde unerwartet beendet.':
+         "L'outil s'est arrêté de façon inattendue.",
+        'Protokoll:':
+         'Journal :',
+        'Auswahl kopieren':
+         'Copier la sélection',
+        'Nichts markiert — bitte zuerst Text markieren.':
+         "Rien de sélectionné — sélectionnez d'abord du texte.",
+        'In die Zwischenablage kopiert.':
+         'Copié dans le presse-papiers.',
+        'Anleitung speichern':
+         'Enregistrer les instructions',
+        'Gespeichert.':
+         'Enregistré.',
+        'Alles kopieren':
+         'Tout copier',
+        'Als Datei speichern':
+         'Enregistrer comme fichier',
+        'Anleitung':
+         'Instructions',
+        'Zum Umwandeln fehlt ffmpeg.':
+         'ffmpeg manque pour la conversion.',
+        'Die Programmdateien lassen sich hier nicht ersetzen: %s':
+         'Les fichiers du programme ne peuvent pas être remplacés ici : %s',
+        'Unerwarteter Fehler: %s':
+         'Erreur inattendue : %s',
+        'Aktualisieren':
+         'Mettre à jour',
+        'Die neueste Fassung wird von GitHub geladen und ersetzt die Programmdateien. Ihre Einstellungen und Ihre Karte bleiben unberührt. Fortfahren?':
+         'La dernière version est téléchargée depuis GitHub et remplace les fichiers du programme. Vos réglages et votre carte ne sont pas touchés. Continuer ?',
+        'Jetzt aktualisieren?':
+         'Mettre à jour maintenant ?',
+        'Aktualisiert':
+         'Mis à jour',
+        'Nicht aktualisiert':
+         'Non mis à jour',
+        'Fenster jetzt schließen?':
+         'Fermer la fenêtre maintenant ?',
+        'GitHub ist nicht erreichbar.':
+         'GitHub est injoignable.',
+        'Sie benutzen bereits die neueste Fassung (%s).':
+         'Vous utilisez déjà la dernière version (%s).',
+        'Zur Fassung %s gibt es keine Datei zum Herunterladen.':
+         "La version %s n'a pas de fichier à télécharger.",
+        'Lade Fassung %s …':
+         'Téléchargement de la version %s …',
+        'Herunterladen fehlgeschlagen: %s':
+         'Téléchargement échoué : %s',
+        'Die heruntergeladene Datei ist kein gültiges ZIP.':
+         "Le fichier téléchargé n'est pas un ZIP valide.",
+        'Die Datei ist beschädigt (%s).':
+         'Le fichier est endommagé (%s).',
+        'In der Datei fehlt jamman.py.':
+         'Le fichier ne contient pas jamman.py.',
+        'Die Datei gehört nicht zur Fassung %s.':
+         "Le fichier n'appartient pas à la version %s.",
+        'Fassung %s ist installiert (%d Dateien). Bitte das Fenster schließen und neu starten.':
+         'La version %s est installée (%d fichiers). Fermez la fenêtre et relancez le programme.',
+        'Die Karte hängt nicht im Rechner — nichts auszuwerfen. Steckt sie im Pedal, führt das Pedal sie nicht als Laufwerk.':
+         "La carte n'est pas dans l'ordinateur — rien à éjecter. Si elle est dans la pédale, celle-ci ne la présente pas comme un lecteur.",
+        'Auswerfen ging nicht. Bitte im Dateimanager auf „Auswerfen" klicken.':
+         "L'éjection a échoué. Utilisez « Éjecter » dans le gestionnaire de fichiers.",
+        'Keine Karte im Rechner gefunden.':
+         'Aucune carte trouvée dans l\'ordinateur.',
+        'Karte im Rechner:  „Karte wählen“ drücken.':
+         'Carte dans l\'ordinateur : appuyez sur « Choisir la carte ».',
+        'Karte im Pedal:    oben rechts „Pedal über USB“ — dort sind Karte und interner Speicher erreichbar.':
+         'Carte dans la pédale : en haut à droite « Pédale par USB » — la carte et la mémoire interne y sont accessibles.',
+        'Speicherkarte': 'Carte mémoire',
+        'Kopie vom Pedal': 'copie de la pédale',
+        'Speicherkarte des JamMan Stereo': 'Carte mémoire du JamMan Stereo',
+        'Im Pedal steckt keine Karte.': 'Aucune carte dans la pédale.',
+        'Karte einlegen und dann „Karte wählen“ oder „Neu laden“ drücken.':
+         'Insérez la carte, puis appuyez sur « Choisir la carte » ou « Recharger ».',
+        'keine Karte':
+         'aucune carte',
+        'Dies ist eine Kopie vom Pedal, nicht die Karte selbst. Über „Karte wählen“ die Karte öffnen.':
+         'Ceci est une copie prise sur la pédale, pas la carte elle-même. Utilisez « Choisir la carte ».',
+        'JamMan Card Tool': 'JamMan Card Tool',
+        'Karte und interner Speicher': 'carte et mémoire interne',
+        '(für Rückgängig nötig)':
+         '(nécessaire pour Annuler)',
+        'Darunter ist die Sicherung für Rückgängig. Danach läßt sich der letzte Schreibvorgang nicht mehr zurücknehmen. Trotzdem löschen?':
+         'Cela inclut la sauvegarde pour Annuler. La dernière écriture ne pourra plus être annulée. Supprimer quand même ?',
+        'Sicherungen aufräumen …':
+         'Nettoyer les sauvegardes …',
+        'Sicherungen aufräumen':
+         'Nettoyer les sauvegardes',
+        'Sicherungen im Zielordner':
+         'Sauvegardes dans le dossier cible',
+        '%d Sicherungen · %.1f MB':
+         '%d sauvegardes · %.1f Mo',
+        'Neueste behalten:':
+         'Conserver les plus récentes :',
+        'Markierte löschen':
+         'Supprimer la sélection',
+        'Erst Sicherungen in der Liste markieren.':
+         'Sélectionnez d\'abord des sauvegardes.',
+        '%d Sicherungen mit %.1f MB werden endgültig gelöscht. Fortsetzen?':
+         '%d sauvegardes (%.1f Mo) seront définitivement supprimées. Continuer ?',
+        '%d Sicherungen konnten nicht gelöscht werden.':
+         '%d sauvegardes n\'ont pas pu être supprimées.',
+        'Der Zielordner ist noch nicht angelegt.':
+         'Le dossier cible n\'existe pas encore.',
+        'Im Zielordner liegen keine Sicherungen.':
+         'Il n\'y a aucune sauvegarde dans le dossier cible.',
+        'Alle auswählen':
+         'Tout sélectionner',
+        'Nichts markiert. Alle %d Patches in die Setlist?':
+         'Rien de sélectionné. Mettre les %d patches dans la setlist ?',
+        'Warte auf das Ende des laufenden Vorgangs …':
+         'Attente de la fin de l\'opération en cours …',
+        'Der Vorgang reagiert nicht — Fenster schließen und neu öffnen.':
+         'L\'opération ne répond pas — fermez la fenêtre et rouvrez-la.',
+        'Hole Beschreibungen': 'Lecture des descriptions',
+        'Es wurde kein Zielplatz eingegeben.':
+         'Aucun emplacement cible n\'a été saisi.',
+        'Der Zielplatz muß wie Patch01 … Patch200 heißen, nicht „%s“.':
+         'L\'emplacement doit s\'appeler Patch01 … Patch200, et non « %s ».',
+        'OK': 'OK',
+        'Ein Vorgang läuft noch — bitte abwarten.':
+         'Une opération est encore en cours — veuillez patienter.',
+        'Verbindung neu aufbauen':
+         'Reconnecter',
+        'Verbindung wird neu aufgebaut …':
+         'Reconnexion …',
+        'Lesen und Schreiben über USB. Vor jedem Überschreiben wird der alte Platz auf den Rechner gesichert.':
+         'Lecture et écriture par USB. Avant tout écrasement, l\'ancien emplacement est sauvegardé sur l\'ordinateur.',
+        'Über USB fließen etwa 1,3 MB/s. Für eine ganze Karte ist ein Kartenleser viel schneller. Schreiben verändert die Karte — vorher wird gesichert.':
+         'Par USB, le débit est d\'environ 1,3 Mo/s. Pour une carte entière, un lecteur est bien plus rapide. L\'écriture modifie la carte — sauvegarde au préalable.',
+        'Audio in den Speicher schreiben …': 'Écrire l\'audio dans la mémoire …',
+        'Beim JamMan Solo XT behält der FS3X seine Grundfunktionen. Eine eigene Belegung speichert das Pedal zwar, wertet sie aber nicht aus — deshalb wird sie hier nicht angeboten.':
+         'Sur le JamMan Solo XT, le FS3X garde ses fonctions de base. La pédale enregistre bien une affectation personnalisée mais ne l\'exploite pas ; elle n\'est donc pas proposée ici.',
+        'Änderungen wirken nach einem Neustart des Pedals.': 'Les modifications prennent effet après un redémarrage de la pédale.',
+        'gewünscht': 'demandé',
+        'Pedal meldet': 'la pédale renvoie',
+        '(nicht belegt)':
+         '(non attribué)',
+        'UndoRedo = Rückgängig/Wiederholen · Reverse = Rückwärts · Tempo = Tempo antippen':
+         'UndoRedo = annuler/rétablir · Reverse = en arrière · Tempo = taper le tempo',
+        'Sichern': 'Enregistrer',
+        'Schreiben': 'Écrire',
+        'Setlists': 'Setlists',
+        'Pedal': 'Pédale',
+        'Ins Hauptfenster holen …': 'Charger dans la fenêtre principale …',
+        'Einzelnen Patch sichern …': 'Enregistrer un seul patch …',
+        'Patch-Ordner aufs Pedal …': 'Dossier de patch sur la pédale …',
+        'Übernommen.': 'Appliqué.',
+        'Pedal spielt jetzt:': 'La pédale joue maintenant :',
+        'Audio aufs Pedal …':
+         'Audio sur la pédale …',
+        'Audio aufs Pedal':
+         'Audio sur la pédale',
+        'Audiodatei wählen':
+         'Choisir un fichier audio',
+        'Audio':
+         'Audio',
+        'Sichere den alten Platz …':
+         'Sauvegarde de l\'ancien emplacement …',
+        'Wandle die Datei …':
+         'Conversion du fichier …',
+        'Umwandeln fehlgeschlagen — die Datei muß 44,1 kHz, 16 Bit, Stereo werden.':
+         'Conversion échouée — le fichier doit devenir 44,1 kHz, 16 bits, stéréo.',
+        'Leere den Platz …': 'Vidage de l\'emplacement …',
+        'Pedal spielt jetzt Bank/Patch:': 'La pédale joue maintenant banque/patch :',
+        'Karte erkannt:': 'Carte détectée :',
+        'Als ZIP sichern …':
+         'Enregistrer en ZIP …',
+        'Als ZIP sichern':
+         'Enregistrer en ZIP',
+        'Sichere als ZIP …':
+         'Enregistrement en ZIP …',
+        'Sichere:':
+         'Enregistrement :',
+        'Fehler beim Sichern:':
+         'Erreur d\'enregistrement :',
+        'Die Setlist ist leer.':
+         'La setlist est vide.',
+        'Erst Patches in der Liste markieren (⌘-Klick).':
+         'Sélectionnez d\'abord des patches dans la liste (⌘-clic).',
+        'Es gibt nichts rückgängig zu machen.':
+         'Il n\'y a rien à annuler.',
+        'Fußschalter …':
+         'Commande au pied …',
+        'Fußschalter':
+         'Commande au pied',
+        'Tastenbelegung des Pedals':
+         'Affectation des commandes au pied de la pédale',
+        'Werte sind Geräteeinstellungen — nur ändern, wenn du weißt, was sie bedeuten.':
+         'Ce sont des réglages de l\'appareil — ne les modifiez que si vous savez ce qu\'ils font.',
+        'Übernehmen':
+         'Appliquer',
+        'JamMan':
+         'JamMan',
+        'Karte':
+         'carte',
+        'intern':
+         'interne',
+        'Liste als Textdatei sichern':
+         'Enregistrer la liste en fichier texte',
+        'Liste als Textdatei …':
+         'Liste en fichier texte …',
+        'Mitlaufen':
+         'Suivi',
+        'Mitlaufen an — am Pedal einen Patch wählen.':
+         'Suivi activé — choisissez un patch sur la pédale.',
+        'Mitlaufen aus.':
+         'Suivi désactivé.',
+        'Rückgängig':
+         'Annuler',
+        'Setlist holen …':
+         'Charger la setlist …',
+        'Setlist laden':
+         'Charger la setlist',
+        'Setlist sichern …':
+         'Enregistrer la setlist …',
+        'Setlist sichern':
+         'Enregistrer la setlist',
+        'Setlist.txt':
+         'Setlist.txt',
+        'Stelle wieder her:':
+         'Restauration :',
+        '%s wird durch die Sicherung ersetzt. Fortsetzen?':
+         '%s sera remplacé par la sauvegarde. Continuer ?',
+        'Ordner des Patches wählen':
+         'Choisir le dossier du patch',
+        'Aufs Pedal schreiben':
+         'Écrire sur la pédale',
+        '%s ist schon belegt. Der Patch wird vorher auf den Rechner gesichert und dann überschrieben. Fortsetzen?':
+         '%s est déjà occupé. Ce patch sera d\'abord enregistré sur l\'ordinateur, puis écrasé. Continuer ?',
+        'Schreibe aufs Pedal …':
+         'Écriture sur la pédale …',
+        'Schreibe:':
+         'Écriture :',
+        'Fehler beim Schreiben:':
+         'Erreur d\'écriture :',
+        'Patch aufs Pedal schreiben …':
+         'Écrire le patch sur la pédale …',
+        '(Vorschlag)': '(proposition)',
+        'Ziel:': 'Destination :',
+        'noch nicht gewählt': 'pas encore choisi',
+        'Ziel ändern …': 'Changer la destination …',
+        'Aufräumen':
+         'Nettoyer',
+        'Die angefangene Kopie entfernen? Nur die gerade geholten Dateien werden gelöscht, der Ordner bleibt.':
+         'Supprimer la copie inachevée ? Seuls les fichiers venant d\'être récupérés sont supprimés ; le dossier reste.',
+        'Aufgeräumt:':
+         'Nettoyé :',
+        'Hole Beschreibungen …': 'Lecture des descriptions …',
+        'Wird abgebrochen …': 'Annulation …',
+        'Über USB fließen etwa 1,3 MB/s. Für eine ganze Karte ist ein Kartenleser viel schneller — steckt die Karte im Pedal, bleibt nur dieser Weg.':
+         'Par USB, le débit est d\'environ 1,3 Mo/s. Pour une carte entière, un lecteur de cartes est bien plus rapide — si la carte est dans la pédale, c\'est la seule voie.',
+        'Abbrechen': 'Annuler',
+        'Abgebrochen.': 'Annulé.',
+        'Fehler beim Öffnen:': 'Erreur à l\'ouverture :',
+        'Alle ins Hauptfenster holen …': 'Tout charger dans la fenêtre principale …',
+        'Zielordner wählen': 'Choisir le dossier de destination',
+        'Hole Patch': 'Lecture du patch',
+        'Fertig:': 'Terminé :',
+        'Im Hauptfenster öffnen?': 'Ouvrir dans la fenêtre principale ?',
+        'Gesichert': 'Enregistré',
+        'Pedal über USB': 'Pédale par USB',
+        'Das USB-Modul fehlt: greenglass.py muß neben jamman.py liegen.': 'Le module USB manque : greenglass.py doit se trouver à côté de jamman.py.',
+        'Gesichert nach:': 'Enregistré dans :',
+        'Interner Speicher': 'Mémoire interne',
+        'SD-Karte': 'Carte SD',
+        'Kein JamMan gefunden — Pedal einschalten und Kabel prüfen.': 'Aucun JamMan trouvé — allumez la pédale et vérifiez le câble.',
+        '(ohne Namen)': '(sans nom)',
+        'Fehler beim Lesen:': 'Erreur de lecture :',
+        'Erst „Neu laden“ drücken.': 'Appuyez d\'abord sur « Recharger ».',
+        'Lädt …': 'Chargement …',
+        'Nur lesen: das Pedal wird nicht verändert.': 'Lecture seule : la pédale n\'est pas modifiée.',
+        'Ordner zum Sichern wählen': 'Choisir un dossier de sauvegarde',
+        'Patch sichern …': 'Enregistrer le patch …',
+        'Verbinde mit dem Pedal …': 'Connexion à la pédale …',
         'Spenden': 'Faire un don',
         'Für dieses Werkzeug ist noch kein Spendenlink eingetragen.': "Aucun lien de don n'est encore renseigné pour cet outil.",
         'Er steht in jamman.py in der Zeile SPENDEN_LINK.': 'Il se place dans jamman.py, ligne SPENDEN_LINK.',
@@ -3121,6 +4415,555 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Beschreibung …':
+         'Descripción …',
+        'Rückwärts: ohne ffmpeg keine Hörprobe — das Pedal spielt es trotzdem rückwärts.':
+         'Inverso: sin ffmpeg no hay escucha previa; el pedal lo reproduce al revés igualmente.',
+        'Tempo':
+         'Tempo',
+        'Suchen …':
+         'Buscar …',
+        'Text im Namen (leer lassen = alles zeigen):':
+         'Texto en el nombre (vacío = mostrar todo):',
+        'Erst eine Karte oder eine geholte Kopie öffnen — dann läßt sich suchen.':
+         'Abre primero una tarjeta o una copia obtenida — entonces podrás buscar.',
+        'Suchen':
+         'Buscar',
+        'Suche fehlgeschlagen: %s':
+         'Búsqueda fallida: %s',
+        'Suchen:':
+         'Buscar:',
+        'Karte:':
+         'Tarjeta:',
+        'Meldungen stehen im Fenster; Fehler zusätzlich in jamman-fehler.log.':
+         'Los mensajes aparecen en la ventana; los errores también en jamman-fehler.log.',
+        'Firmware-Dateien jetzt ins Pedal schreiben? Ein Abbruch mittendrin kann das Pedal unbrauchbar machen. [ja/nein] ':
+         '¿Escribir ahora los archivos de firmware en el pedal? Una interrupción puede dejarlo inservible. [sí/no] ',
+        'Zielordner für die Firmware':
+         'Carpeta de destino del firmware',
+        'Ordner mit der geholten Firmware':
+         'Carpeta del firmware obtenido',
+        'In diesem Ordner liegt keine Firmware (usr/JamManUI, usr/loopengine …).':
+         'Esta carpeta no contiene firmware (usr/JamManUI, usr/loopengine …).',
+        'Firmware übernehmen':
+         'Aplicar el firmware',
+        'Firmware übernehmen …':
+         'Aplicar el firmware …',
+        'Firmware dieses Pedals holen …':
+         'Traer el firmware de este pedal …',
+        '%s kam unvollständig (%d von %d Bytes).':
+         '%s llegó incompleto (%d de %d bytes).',
+        '%d Firmware-Dateien werden jetzt in das Pedal geschrieben. Vorher wird der jetzige Stand gesichert.\n\nEin Abbruch mittendrin kann das Pedal unbrauchbar machen — es gibt keinen Weg zurück.\n\nWirklich schreiben?':
+         '%d archivos de firmware se escribirán ahora en el pedal. Antes se guarda el estado actual.\n\nUna interrupción puede dejar el pedal inservible: no hay vuelta atrás.\n\n¿Escribir de verdad?',
+        'Sichere den jetzigen Stand …':
+         'Guardando el estado actual …',
+        'Gesichert: %d Dateien nach %s':
+         'Guardado: %d archivos en %s',
+        'Firmware geholt: %d Dateien':
+         'Firmware obtenido: %d archivos',
+        'Firmware geholt:\n%s\n%d Dateien':
+         'Firmware obtenido:\n%s\n%d archivos',
+        'Fertig: %d Dateien geschrieben':
+         'Listo: %d archivos escritos',
+        'Nicht bestätigt: %d':
+         'Sin confirmar: %d',
+        'Firmware geschrieben: %d Dateien\nSicherung: %s\nJetzt das Pedal aus- und wieder einschalten.':
+         'Firmware escrito: %d archivos\nCopia: %s\nApaga y vuelve a encender el pedal.',
+        'Schreibe':
+         'Escribiendo',
+        'Hole':
+         'Obteniendo',
+        'JamList aus JamManager XT holen …':
+         'Traer JamList de JamManager XT …',
+        'Setlist als JamList ablegen …':
+         'Guardar setlist como JamList …',
+        'Setlist speichern':
+         'Guardar setlist',
+        'Bibliothek von JamManager XT':
+         'Biblioteca de JamManager XT',
+        'JamList wählen':
+         'Elegir una JamList',
+        'In dieser Bibliothek liegt keine JamList.':
+         'Esta biblioteca no contiene ninguna JamList.',
+        'Geholt: %s\n%d Plätze\n%s':
+         'Obtenido: %s\n%d plazas\n%s',
+        'JamList ablegen':
+         'Guardar JamList',
+        '%s%s%s als neue JamList eintragen? Die Bibliothek wird dabei verändert — vorher eine Kopie anlegen.':
+         '¿Añadir %s%s%s como nueva JamList? La biblioteca cambiará: haz antes una copia.',
+        'JamList %s angelegt (id %d, %d Plätze)':
+         'JamList %s creada (id %d, %d plazas)',
+        'Keine JamList mit dem Namen %s.':
+         'Ninguna JamList llamada %s.',
+        'belegte Plätze':
+         'plazas ocupadas',
+        'Geschrieben: %s (%d Plätze)':
+         'Escrito: %s (%d plazas)',
+        'Übernehmen':
+         'Aplicar',
+        'Speicherabbild':
+         'Imagen de memoria',
+        'Speicherabbild speichern':
+         'Guardar imagen de memoria',
+        'Speicherabbild aufnehmen …':
+         'Tomar una imagen de memoria …',
+        'Speicherabbilder vergleichen …':
+         'Comparar imágenes de memoria …',
+        'Speicherabbilder vergleichen':
+         'Comparar imágenes de memoria',
+        'Erstes Speicherabbild':
+         'Primera imagen de memoria',
+        'Zweites Speicherabbild':
+         'Segunda imagen de memoria',
+        'Nur im ersten Bild: %d':
+         'Solo en la primera imagen: %d',
+        'Nur im zweiten Bild: %d':
+         'Solo en la segunda imagen: %d',
+        'Gleicher Pfad, andere Größe: %d':
+         'Misma ruta, otro tamaño: %d',
+        'Die beiden Bilder sind gleich.':
+         'Las dos imágenes son iguales.',
+        'Erstes:':
+         'Primera:',
+        'Zweites:':
+         'Segunda:',
+        'Aufruf:':
+         'Uso:',
+        'Lese den Verzeichnisbaum …':
+         'Leyendo el árbol de carpetas …',
+        'Speicherabbild: %d Einträge':
+         'Imagen de memoria: %d entradas',
+        'Speicherabbild geschrieben:\n%s':
+         'Imagen de memoria guardada:\n%s',
+        'Speicherabbild geschrieben: %d Einträge nach %s':
+         'Imagen de memoria guardada: %d entradas en %s',
+        'Dateien für „speicherabbild“ und „vergleich“':
+         'Archivos para «speicherabbild» y «vergleich»',
+        'Suchen:':
+         'Buscar:',
+        'Sortierung':
+         'Orden',
+        '%d von %d Patches passen zu „%s“.':
+         '%d de %d parches coinciden con «%s».',
+        'Beschreibung':
+         'Descripción',
+        'Interpret':
+         'Intérprete',
+        'Genre':
+         'Género',
+        'Stichwörter':
+         'Palabras clave',
+        'Bewertung':
+         'Valoración',
+        'Tempo (BPM)':
+         'Tempo (BPM)',
+        'Die Datei %s fehlt.':
+         'Falta el archivo %s.',
+        'Setlists anpassen':
+         'Ajustar las setlists',
+        '%d Setlist-Dateien in %s an die neuen Plätze anpassen? Jede Datei wird vorher daneben gesichert.':
+         '¿Ajustar %d archivos de setlist en %s a las nuevas plazas? Cada archivo se guarda antes al lado.',
+        'Keine Setlist nannte einen bewegten Platz.':
+         'Ninguna setlist mencionaba una plaza movida.',
+        'Setlists nicht angepaßt: ':
+         'Setlists no ajustadas: ',
+        'Setlists angepaßt: ':
+         'Setlists ajustadas: ',
+        'Plätze aufrücken':
+         'Cerrar los huecos',
+        'Plätze aufrücken …':
+         'Cerrar los huecos …',
+        'Es gibt keine Lücken — die Plätze sind schon lückenlos belegt.':
+         'No hay huecos: las plazas ya están contiguas.',
+        '%d Patches rücken in %s nach vorn: %s%s\n\nJeder bewegte Platz wird vorher auf den Rechner gesichert. Setlists im Pedal, die auf Platznummern zeigen, stimmen danach nicht mehr. Fortfahren?':
+         '%d parches suben en %s: %s%s\n\nCada plaza movida se guarda antes en el ordenador. Las setlists del pedal que apuntan a números ya no coincidirán. ¿Continuar?',
+        'Rücke auf':
+         'Subiendo',
+        'Fertig: %d Plätze aufgerückt, %d vorher gesichert':
+         'Listo: %d plazas subidas, %d guardadas antes',
+        'Aufgerückt: %d Plätze':
+         'Subidas: %d plazas',
+        'Kopie auf dem Rechner — Änderungen hier wirken nicht auf das Pedal.':
+         'Copia en el ordenador: los cambios aquí no afectan al pedal.',
+        'Patch%d wird aus der Kopie auf dem Rechner entfernt. Das Pedal bleibt unverändert. Fortfahren?':
+         'Patch%d se eliminará de la copia en el ordenador. El pedal no cambia. ¿Continuar?',
+        'Patch%d wird von der Karte entfernt. Vorher wird er auf dem Rechner gesichert. Fortfahren?':
+         'Patch%d se eliminará de la tarjeta. Antes se guarda en el ordenador. ¿Continuar?',
+        'Ja':
+         'Sí',
+        'Nein':
+         'No',
+        'Dem Python fehlen die Zertifikate. Auf macOS hilft „Install Certificates.command“ im Python-Ordner, oder: pip install certifi':
+         'A Python le faltan los certificados. En macOS ejecuta «Install Certificates.command» en la carpeta de Python, o: pip install certifi',
+        'GitHub ist nicht erreichbar: %s':
+         'No se puede acceder a GitHub: %s',
+        'unbekannter Grund':
+         'motivo desconocido',
+        'Gelöscht: %s':
+         'Borrado: %s',
+        'Fehler:':
+         'Error:',
+        'Platz löschen':
+         'Borrar plaza',
+        'Welcher Platz soll gelöscht werden? (z. B. 30 oder Patch30)':
+         '¿Qué plaza borrar? (p. ej. 30 o Patch30)',
+        'Platz löschen …':
+         'Borrar plaza …',
+        '%s ist nicht belegt — nichts zu löschen.':
+         '%s está vacío: nada que borrar.',
+        '%s wird aus %s gelöscht. Das läßt sich nicht rückgängig machen. Fortfahren?':
+         '%s se borrará de %s. No se puede deshacer. ¿Continuar?',
+        'Lösche':
+         'Borrando',
+        'Gelöscht:':
+         'Borrado:',
+        'Fehler beim Löschen:':
+         'Error al borrar:',
+        'Die Datei ist %s lang — das Pedal nimmt höchstens 10 Minuten je Loop an. Bitte im Hauptfenster kürzen oder teilen.':
+         'El archivo dura %s: el pedal admite como máximo 10 minutos por bucle. Acórtalo o divídelo en la ventana principal.',
+        'Dieser Ordner ist nicht lesbar: %s':
+         'No se puede leer esta carpeta: %s',
+        'Auswahl:':
+         'Selección:',
+        'Pegelprotokoll wählen':
+         'Elegir el registro de nivel',
+        'Audiodatei zum Teilen auswählen':
+         'Elegir el archivo de audio a dividir',
+        'Dateiname:':
+         'Nombre del archivo:',
+        'Speichern':
+         'Guardar',
+        'Bitte einen Dateinamen angeben.':
+         'Introduce un nombre de archivo.',
+        'Überschreiben':
+         'Sobrescribir',
+        '%s gibt es schon. Ersetzen?':
+         '%s ya existe. ¿Reemplazar?',
+        'Speicherkarte des JamMan wählen':
+         'Elegir la tarjeta del JamMan',
+        'Zielordner für die Sicherung':
+         'Carpeta de destino de la copia',
+        'Dateien':
+         'Archivos',
+        'Nach oben':
+         'Subir',
+        'Öffnen':
+         'Abrir',
+        'Bitte eine Datei auswählen.':
+         'Elige un archivo.',
+        'Alle Dateien':
+         'Todos los archivos',
+        'Die Datei konnte nicht geschrieben werden: %s':
+         'No se pudo escribir el archivo: %s',
+        'ohne':
+         'ninguno',
+        'ende':
+         'final',
+        'klick':
+         'clic',
+        '%d Patches ohne Ton — nur die Beschreibung ist geholt.':
+         '%d parches sin audio: solo se ha obtenido la descripción.',
+        'Ganzen Ordner aufs Pedal …':
+         'Toda la carpeta al pedal …',
+        'Ordner mit Patch-Ordnern wählen':
+         'Elegir una carpeta con carpetas de patch',
+        'Ganzen Ordner aufs Pedal':
+         'Toda la carpeta al pedal',
+        '%d Patch-Ordner werden in %s geschrieben. Belegte Plätze werden vorher gesichert, unveränderte übersprungen. Fortfahren?':
+         'Se escribirán %d carpetas de patch en %s. Las plazas ocupadas se guardan antes, las sin cambios se omiten. ¿Continuar?',
+        'internen Speicher':
+         'la memoria interna',
+        'der Karte':
+         'la tarjeta',
+        'Im Ordner liegen keine Patch-Ordner (erwartet: Patch01 … Patch200).':
+         'La carpeta no contiene carpetas de patch (se espera: Patch01 … Patch200).',
+        'Schreibe':
+         'Escribiendo',
+        'Fertig: %d Patches geschrieben, %d übersprungen, %d vorher gesichert':
+         'Listo: %d parches escritos, %d omitidos, %d guardados antes',
+        'Fehler beim Schreiben:':
+         'Error al escribir:',
+        'Übertragen: %d Dateien · unverändert übersprungen: %d':
+         'Transferidos: %d archivos · omitidos sin cambios: %d',
+        'Zielplatz auf dem Pedal (z. B. 17 oder Patch17):':
+         'Plaza de destino en el pedal (p. ej. 17 o Patch17):',
+        'Unerwarteter Fehler':
+         'Error inesperado',
+        'Das Werkzeug wurde unerwartet beendet.':
+         'La herramienta se detuvo de forma inesperada.',
+        'Protokoll:':
+         'Registro:',
+        'Auswahl kopieren':
+         'Copiar la selección',
+        'Nichts markiert — bitte zuerst Text markieren.':
+         'Nada seleccionado: selecciona primero el texto.',
+        'In die Zwischenablage kopiert.':
+         'Copiado al portapapeles.',
+        'Anleitung speichern':
+         'Guardar las instrucciones',
+        'Gespeichert.':
+         'Guardado.',
+        'Alles kopieren':
+         'Copiar todo',
+        'Als Datei speichern':
+         'Guardar como archivo',
+        'Anleitung':
+         'Instrucciones',
+        'Zum Umwandeln fehlt ffmpeg.':
+         'Falta ffmpeg para la conversión.',
+        'Die Programmdateien lassen sich hier nicht ersetzen: %s':
+         'Los archivos del programa no se pueden sustituir aquí: %s',
+        'Unerwarteter Fehler: %s':
+         'Error inesperado: %s',
+        'Aktualisieren':
+         'Actualizar',
+        'Die neueste Fassung wird von GitHub geladen und ersetzt die Programmdateien. Ihre Einstellungen und Ihre Karte bleiben unberührt. Fortfahren?':
+         'La última versión se descarga de GitHub y sustituye los archivos del programa. Tus ajustes y tu tarjeta no se tocan. ¿Continuar?',
+        'Jetzt aktualisieren?':
+         '¿Actualizar ahora?',
+        'Aktualisiert':
+         'Actualizado',
+        'Nicht aktualisiert':
+         'No actualizado',
+        'Fenster jetzt schließen?':
+         '¿Cerrar la ventana ahora?',
+        'GitHub ist nicht erreichbar.':
+         'No se puede acceder a GitHub.',
+        'Sie benutzen bereits die neueste Fassung (%s).':
+         'Ya está usando la última versión (%s).',
+        'Zur Fassung %s gibt es keine Datei zum Herunterladen.':
+         'La versión %s no tiene archivo para descargar.',
+        'Lade Fassung %s …':
+         'Descargando la versión %s …',
+        'Herunterladen fehlgeschlagen: %s':
+         'Descarga fallida: %s',
+        'Die heruntergeladene Datei ist kein gültiges ZIP.':
+         'El archivo descargado no es un ZIP válido.',
+        'Die Datei ist beschädigt (%s).':
+         'El archivo está dañado (%s).',
+        'In der Datei fehlt jamman.py.':
+         'Falta jamman.py en el archivo.',
+        'Die Datei gehört nicht zur Fassung %s.':
+         'El archivo no corresponde a la versión %s.',
+        'Fassung %s ist installiert (%d Dateien). Bitte das Fenster schließen und neu starten.':
+         'La versión %s está instalada (%d archivos). Cierre la ventana y vuelva a iniciar.',
+        'Die Karte hängt nicht im Rechner — nichts auszuwerfen. Steckt sie im Pedal, führt das Pedal sie nicht als Laufwerk.':
+         'La tarjeta no está en el ordenador: no hay nada que expulsar. Si está en el pedal, este no la ofrece como unidad.',
+        'Auswerfen ging nicht. Bitte im Dateimanager auf „Auswerfen" klicken.':
+         'No se pudo expulsar. Usa «Expulsar» en el gestor de archivos.',
+        'Keine Karte im Rechner gefunden.':
+         'No se ha encontrado ninguna tarjeta en el ordenador.',
+        'Karte im Rechner:  „Karte wählen“ drücken.':
+         'Tarjeta en el ordenador: pulsa «Elegir tarjeta».',
+        'Karte im Pedal:    oben rechts „Pedal über USB“ — dort sind Karte und interner Speicher erreichbar.':
+         'Tarjeta en el pedal: arriba a la derecha «Pedal por USB» — allí se accede a la tarjeta y a la memoria interna.',
+        'Speicherkarte': 'Tarjeta de memoria',
+        'Kopie vom Pedal': 'copia del pedal',
+        'Speicherkarte des JamMan Stereo': 'Tarjeta de memoria del JamMan Stereo',
+        'Im Pedal steckt keine Karte.': 'No hay tarjeta en el pedal.',
+        'Karte einlegen und dann „Karte wählen“ oder „Neu laden“ drücken.':
+         'Inserta la tarjeta y pulsa «Elegir tarjeta» o «Recargar».',
+        'keine Karte':
+         'sin tarjeta',
+        'Dies ist eine Kopie vom Pedal, nicht die Karte selbst. Über „Karte wählen“ die Karte öffnen.':
+         'Esta es una copia tomada del pedal, no la tarjeta. Usa «Elegir tarjeta».',
+        'JamMan Card Tool': 'JamMan Card Tool',
+        'Karte und interner Speicher': 'tarjeta y memoria interna',
+        '(für Rückgängig nötig)':
+         '(necesaria para Deshacer)',
+        'Darunter ist die Sicherung für Rückgängig. Danach läßt sich der letzte Schreibvorgang nicht mehr zurücknehmen. Trotzdem löschen?':
+         'Incluye la copia para Deshacer. Después ya no se podrá deshacer la última escritura. ¿Borrar igualmente?',
+        'Sicherungen aufräumen …':
+         'Limpiar copias …',
+        'Sicherungen aufräumen':
+         'Limpiar copias',
+        'Sicherungen im Zielordner':
+         'Copias en la carpeta de destino',
+        '%d Sicherungen · %.1f MB':
+         '%d copias · %.1f MB',
+        'Neueste behalten:':
+         'Conservar las más recientes:',
+        'Markierte löschen':
+         'Borrar seleccionadas',
+        'Erst Sicherungen in der Liste markieren.':
+         'Primero marca copias en la lista.',
+        '%d Sicherungen mit %.1f MB werden endgültig gelöscht. Fortsetzen?':
+         'Se borrarán definitivamente %d copias (%.1f MB). ¿Continuar?',
+        '%d Sicherungen konnten nicht gelöscht werden.':
+         'No se pudieron borrar %d copias.',
+        'Der Zielordner ist noch nicht angelegt.':
+         'La carpeta de destino aún no existe.',
+        'Im Zielordner liegen keine Sicherungen.':
+         'No hay copias en la carpeta de destino.',
+        'Alle auswählen':
+         'Seleccionar todo',
+        'Nichts markiert. Alle %d Patches in die Setlist?':
+         'Nada seleccionado. ¿Poner los %d patches en la setlist?',
+        'Warte auf das Ende des laufenden Vorgangs …':
+         'Esperando a que termine la operación en curso …',
+        'Der Vorgang reagiert nicht — Fenster schließen und neu öffnen.':
+         'La operación no responde: cierra la ventana y ábrela de nuevo.',
+        'Hole Beschreibungen': 'Leyendo descripciones',
+        'Es wurde kein Zielplatz eingegeben.':
+         'No se ha introducido ninguna ranura de destino.',
+        'Der Zielplatz muß wie Patch01 … Patch200 heißen, nicht „%s“.':
+         'La ranura debe llamarse como Patch01 … Patch200, no «%s».',
+        'OK': 'OK',
+        'Ein Vorgang läuft noch — bitte abwarten.':
+         'Hay una operación en curso: espera por favor.',
+        'Verbindung neu aufbauen':
+         'Reconectar',
+        'Verbindung wird neu aufgebaut …':
+         'Reconectando …',
+        'Lesen und Schreiben über USB. Vor jedem Überschreiben wird der alte Platz auf den Rechner gesichert.':
+         'Lectura y escritura por USB. Antes de sobrescribir, la ranura anterior se guarda en el ordenador.',
+        'Über USB fließen etwa 1,3 MB/s. Für eine ganze Karte ist ein Kartenleser viel schneller. Schreiben verändert die Karte — vorher wird gesichert.':
+         'Por USB circulan unos 1,3 MB/s. Para una tarjeta completa, un lector es mucho más rápido. Escribir modifica la tarjeta: se guarda antes.',
+        'Audio in den Speicher schreiben …': 'Escribir audio en la memoria …',
+        'Beim JamMan Solo XT behält der FS3X seine Grundfunktionen. Eine eigene Belegung speichert das Pedal zwar, wertet sie aber nicht aus — deshalb wird sie hier nicht angeboten.':
+         'En el JamMan Solo XT, el FS3X conserva sus funciones básicas. El pedal guarda una asignación propia pero no la aplica, por eso no se ofrece aquí.',
+        'Änderungen wirken nach einem Neustart des Pedals.': 'Los cambios surten efecto tras reiniciar el pedal.',
+        'gewünscht': 'pedido',
+        'Pedal meldet': 'el pedal informa',
+        '(nicht belegt)':
+         '(sin asignar)',
+        'UndoRedo = Rückgängig/Wiederholen · Reverse = Rückwärts · Tempo = Tempo antippen':
+         'UndoRedo = deshacer/rehacer · Reverse = hacia atrás · Tempo = marcar tempo',
+        'Sichern': 'Guardar',
+        'Schreiben': 'Escribir',
+        'Setlists': 'Setlists',
+        'Pedal': 'Pedal',
+        'Ins Hauptfenster holen …': 'Traer a la ventana principal …',
+        'Einzelnen Patch sichern …': 'Guardar un solo patch …',
+        'Patch-Ordner aufs Pedal …': 'Carpeta de patch al pedal …',
+        'Übernommen.': 'Aplicado.',
+        'Pedal spielt jetzt:': 'El pedal reproduce ahora:',
+        'Audio aufs Pedal …':
+         'Audio al pedal …',
+        'Audio aufs Pedal':
+         'Audio al pedal',
+        'Audiodatei wählen':
+         'Elegir un archivo de audio',
+        'Audio':
+         'Audio',
+        'Sichere den alten Platz …':
+         'Guardando la ranura anterior …',
+        'Wandle die Datei …':
+         'Convirtiendo el archivo …',
+        'Umwandeln fehlgeschlagen — die Datei muß 44,1 kHz, 16 Bit, Stereo werden.':
+         'Conversión fallida: el archivo debe quedar en 44,1 kHz, 16 bits, estéreo.',
+        'Leere den Platz …': 'Vaciando la ranura …',
+        'Pedal spielt jetzt Bank/Patch:': 'El pedal reproduce ahora banco/patch:',
+        'Karte erkannt:': 'Tarjeta detectada:',
+        'Als ZIP sichern …':
+         'Guardar como ZIP …',
+        'Als ZIP sichern':
+         'Guardar como ZIP',
+        'Sichere als ZIP …':
+         'Guardando como ZIP …',
+        'Sichere:':
+         'Guardando:',
+        'Fehler beim Sichern:':
+         'Error al guardar:',
+        'Die Setlist ist leer.':
+         'La setlist está vacía.',
+        'Erst Patches in der Liste markieren (⌘-Klick).':
+         'Primero marca patches en la lista (⌘-clic).',
+        'Es gibt nichts rückgängig zu machen.':
+         'No hay nada que deshacer.',
+        'Fußschalter …':
+         'Pulsador …',
+        'Fußschalter':
+         'Pulsador',
+        'Tastenbelegung des Pedals':
+         'Asignación del pulsador del pedal',
+        'Werte sind Geräteeinstellungen — nur ändern, wenn du weißt, was sie bedeuten.':
+         'Son ajustes del dispositivo: cámbialos solo si sabes qué significan.',
+        'Übernehmen':
+         'Aplicar',
+        'JamMan':
+         'JamMan',
+        'Karte':
+         'tarjeta',
+        'intern':
+         'interno',
+        'Liste als Textdatei sichern':
+         'Guardar la lista como archivo de texto',
+        'Liste als Textdatei …':
+         'Lista como archivo de texto …',
+        'Mitlaufen':
+         'Seguir',
+        'Mitlaufen an — am Pedal einen Patch wählen.':
+         'Seguimiento activado: elige un patch en el pedal.',
+        'Mitlaufen aus.':
+         'Seguimiento desactivado.',
+        'Rückgängig':
+         'Deshacer',
+        'Setlist holen …':
+         'Traer setlist …',
+        'Setlist laden':
+         'Cargar setlist',
+        'Setlist sichern …':
+         'Guardar setlist …',
+        'Setlist sichern':
+         'Guardar setlist',
+        'Setlist.txt':
+         'Setlist.txt',
+        'Stelle wieder her:':
+         'Restaurando:',
+        '%s wird durch die Sicherung ersetzt. Fortsetzen?':
+         '%s se sustituirá por la copia de seguridad. ¿Continuar?',
+        'Ordner des Patches wählen':
+         'Elegir la carpeta del patch',
+        'Aufs Pedal schreiben':
+         'Escribir en el pedal',
+        '%s ist schon belegt. Der Patch wird vorher auf den Rechner gesichert und dann überschrieben. Fortsetzen?':
+         '%s ya está ocupado. Ese patch se guardará primero en el ordenador y luego se sobrescribirá. ¿Continuar?',
+        'Schreibe aufs Pedal …':
+         'Escribiendo en el pedal …',
+        'Schreibe:':
+         'Escribiendo:',
+        'Fehler beim Schreiben:':
+         'Error al escribir:',
+        'Patch aufs Pedal schreiben …':
+         'Escribir patch en el pedal …',
+        '(Vorschlag)': '(propuesta)',
+        'Ziel:': 'Destino:',
+        'noch nicht gewählt': 'aún no elegido',
+        'Ziel ändern …': 'Cambiar destino …',
+        'Aufräumen':
+         'Limpiar',
+        'Die angefangene Kopie entfernen? Nur die gerade geholten Dateien werden gelöscht, der Ordner bleibt.':
+         '¿Eliminar la copia inacabada? Solo se borran los archivos recién traídos; la carpeta permanece.',
+        'Aufgeräumt:':
+         'Limpiado:',
+        'Hole Beschreibungen …': 'Leyendo descripciones …',
+        'Wird abgebrochen …': 'Cancelando …',
+        'Über USB fließen etwa 1,3 MB/s. Für eine ganze Karte ist ein Kartenleser viel schneller — steckt die Karte im Pedal, bleibt nur dieser Weg.':
+         'Por USB circulan unos 1,3 MB/s. Para una tarjeta completa, un lector es mucho más rápido — si la tarjeta está en el pedal, este es el único camino.',
+        'Abbrechen': 'Cancelar',
+        'Abgebrochen.': 'Cancelado.',
+        'Fehler beim Öffnen:': 'Error al abrir:',
+        'Alle ins Hauptfenster holen …': 'Traer todo a la ventana principal …',
+        'Zielordner wählen': 'Elegir la carpeta de destino',
+        'Hole Patch': 'Leyendo patch',
+        'Fertig:': 'Listo:',
+        'Im Hauptfenster öffnen?': '¿Abrir en la ventana principal?',
+        'Gesichert': 'Guardado',
+        'Pedal über USB': 'Pedal por USB',
+        'Das USB-Modul fehlt: greenglass.py muß neben jamman.py liegen.': 'Falta el módulo USB: greenglass.py debe estar junto a jamman.py.',
+        'Gesichert nach:': 'Guardado en:',
+        'Interner Speicher': 'Memoria interna',
+        'SD-Karte': 'Tarjeta SD',
+        'Kein JamMan gefunden — Pedal einschalten und Kabel prüfen.': 'No se ha encontrado ningún JamMan — encienda el pedal y compruebe el cable.',
+        '(ohne Namen)': '(sin nombre)',
+        'Fehler beim Lesen:': 'Error al leer:',
+        'Erst „Neu laden“ drücken.': 'Pulse primero «Recargar».',
+        'Lädt …': 'Cargando …',
+        'Nur lesen: das Pedal wird nicht verändert.': 'Solo lectura: el pedal no se modifica.',
+        'Ordner zum Sichern wählen': 'Elegir una carpeta para guardar',
+        'Patch sichern …': 'Guardar patch …',
+        'Verbinde mit dem Pedal …': 'Conectando con el pedal …',
         'Spenden': 'Donar',
         'Für dieses Werkzeug ist noch kein Spendenlink eingetragen.': 'Todavía no hay un enlace de donación para esta herramienta.',
         'Er steht in jamman.py in der Zeile SPENDEN_LINK.': 'Se introduce en jamman.py, línea SPENDEN_LINK.',
@@ -3590,6 +5433,555 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Beschreibung …':
+         '描述…',
+        'Rückwärts: ohne ffmpeg keine Hörprobe — das Pedal spielt es trotzdem rückwärts.':
+         '倒放：没有 ffmpeg 无法试听——踏板仍会倒放。',
+        'Tempo':
+         '速度',
+        'Suchen …':
+         '搜索…',
+        'Text im Namen (leer lassen = alles zeigen):':
+         '名称中的文字（留空 = 全部显示）：',
+        'Erst eine Karte oder eine geholte Kopie öffnen — dann läßt sich suchen.':
+         '请先打开卡片或已获取的副本，然后才能搜索。',
+        'Suchen':
+         '搜索',
+        'Suche fehlgeschlagen: %s':
+         '搜索失败：%s',
+        'Suchen:':
+         '搜索：',
+        'Karte:':
+         '卡片：',
+        'Meldungen stehen im Fenster; Fehler zusätzlich in jamman-fehler.log.':
+         '消息显示在窗口中；错误也会写入 jamman-fehler.log。',
+        'Firmware-Dateien jetzt ins Pedal schreiben? Ein Abbruch mittendrin kann das Pedal unbrauchbar machen. [ja/nein] ':
+         '现在把固件文件写入踏板？中途中断可能使踏板无法使用。[是/否] ',
+        'Zielordner für die Firmware':
+         '固件目标文件夹',
+        'Ordner mit der geholten Firmware':
+         '已获取固件的文件夹',
+        'In diesem Ordner liegt keine Firmware (usr/JamManUI, usr/loopengine …).':
+         '此文件夹中没有固件（usr/JamManUI、usr/loopengine…）。',
+        'Firmware übernehmen':
+         '应用固件',
+        'Firmware übernehmen …':
+         '应用固件…',
+        'Firmware dieses Pedals holen …':
+         '获取此踏板的固件…',
+        '%s kam unvollständig (%d von %d Bytes).':
+         '%s 不完整（%d/%d 字节）。',
+        '%d Firmware-Dateien werden jetzt in das Pedal geschrieben. Vorher wird der jetzige Stand gesichert.\n\nEin Abbruch mittendrin kann das Pedal unbrauchbar machen — es gibt keinen Weg zurück.\n\nWirklich schreiben?':
+         '现在将把 %d 个固件文件写入踏板。会先备份当前状态。\n\n中途中断可能使踏板无法使用——无法恢复。\n\n确定写入？',
+        'Sichere den jetzigen Stand …':
+         '正在备份当前状态…',
+        'Gesichert: %d Dateien nach %s':
+         '已备份：%d 个文件到 %s',
+        'Firmware geholt: %d Dateien':
+         '已获取固件：%d 个文件',
+        'Firmware geholt:\n%s\n%d Dateien':
+         '已获取固件：\n%s\n%d 个文件',
+        'Fertig: %d Dateien geschrieben':
+         '完成：已写入 %d 个文件',
+        'Nicht bestätigt: %d':
+         '未确认：%d',
+        'Firmware geschrieben: %d Dateien\nSicherung: %s\nJetzt das Pedal aus- und wieder einschalten.':
+         '固件已写入：%d 个文件\n备份：%s\n现在请关闭踏板再打开。',
+        'Schreibe':
+         '正在写入',
+        'Hole':
+         '正在获取',
+        'JamList aus JamManager XT holen …':
+         '从 JamManager XT 获取 JamList…',
+        'Setlist als JamList ablegen …':
+         '将 setlist 保存为 JamList…',
+        'Setlist speichern':
+         '保存 setlist',
+        'Bibliothek von JamManager XT':
+         'JamManager XT 库',
+        'JamList wählen':
+         '选择 JamList',
+        'In dieser Bibliothek liegt keine JamList.':
+         '此库中没有 JamList。',
+        'Geholt: %s\n%d Plätze\n%s':
+         '已获取：%s\n%d 个位置\n%s',
+        'JamList ablegen':
+         '保存 JamList',
+        '%s%s%s als neue JamList eintragen? Die Bibliothek wird dabei verändert — vorher eine Kopie anlegen.':
+         '将 %s%s%s 添加为新的 JamList？库将被修改——请先备份。',
+        'JamList %s angelegt (id %d, %d Plätze)':
+         '已创建 JamList %s（id %d，%d 个位置）',
+        'Keine JamList mit dem Namen %s.':
+         '没有名为 %s 的 JamList。',
+        'belegte Plätze':
+         '已用位置',
+        'Geschrieben: %s (%d Plätze)':
+         '已写入：%s（%d 个位置）',
+        'Übernehmen':
+         '应用',
+        'Speicherabbild':
+         '内存映像',
+        'Speicherabbild speichern':
+         '保存内存映像',
+        'Speicherabbild aufnehmen …':
+         '生成内存映像…',
+        'Speicherabbilder vergleichen …':
+         '比较内存映像…',
+        'Speicherabbilder vergleichen':
+         '比较内存映像',
+        'Erstes Speicherabbild':
+         '第一个内存映像',
+        'Zweites Speicherabbild':
+         '第二个内存映像',
+        'Nur im ersten Bild: %d':
+         '仅在第一个映像中：%d',
+        'Nur im zweiten Bild: %d':
+         '仅在第二个映像中：%d',
+        'Gleicher Pfad, andere Größe: %d':
+         '路径相同、大小不同：%d',
+        'Die beiden Bilder sind gleich.':
+         '两个映像相同。',
+        'Erstes:':
+         '第一个：',
+        'Zweites:':
+         '第二个：',
+        'Aufruf:':
+         '用法：',
+        'Lese den Verzeichnisbaum …':
+         '正在读取目录树…',
+        'Speicherabbild: %d Einträge':
+         '内存映像：%d 项',
+        'Speicherabbild geschrieben:\n%s':
+         '内存映像已保存：\n%s',
+        'Speicherabbild geschrieben: %d Einträge nach %s':
+         '内存映像已保存：%d 项到 %s',
+        'Dateien für „speicherabbild“ und „vergleich“':
+         '用于“speicherabbild”和“vergleich”的文件',
+        'Suchen:':
+         '搜索：',
+        'Sortierung':
+         '排序',
+        '%d von %d Patches passen zu „%s“.':
+         '%d/%d 个音色匹配“%s”。',
+        'Beschreibung':
+         '描述',
+        'Interpret':
+         '艺人',
+        'Genre':
+         '风格',
+        'Stichwörter':
+         '标签',
+        'Bewertung':
+         '评级',
+        'Tempo (BPM)':
+         '速度（BPM）',
+        'Die Datei %s fehlt.':
+         '文件 %s 不存在。',
+        'Setlists anpassen':
+         '调整 setlist',
+        '%d Setlist-Dateien in %s an die neuen Plätze anpassen? Jede Datei wird vorher daneben gesichert.':
+         '将 %s 中的 %d 个 setlist 文件调整为新的位置？每个文件都会先备份在旁边。',
+        'Keine Setlist nannte einen bewegten Platz.':
+         '没有 setlist 提到被移动的位置。',
+        'Setlists nicht angepaßt: ':
+         'setlist 未调整：',
+        'Setlists angepaßt: ':
+         'setlist 已调整：',
+        'Plätze aufrücken':
+         '填补空缺',
+        'Plätze aufrücken …':
+         '填补空缺…',
+        'Es gibt keine Lücken — die Plätze sind schon lückenlos belegt.':
+         '没有空缺——位置已经是连续的。',
+        '%d Patches rücken in %s nach vorn: %s%s\n\nJeder bewegte Platz wird vorher auf den Rechner gesichert. Setlists im Pedal, die auf Platznummern zeigen, stimmen danach nicht mehr. Fortfahren?':
+         '%d 个音色在%s中前移：%s%s\n\n每个移动的位置都会先备份到电脑。踏板中按位置编号的 setlist 将不再匹配。继续吗？',
+        'Rücke auf':
+         '正在前移',
+        'Fertig: %d Plätze aufgerückt, %d vorher gesichert':
+         '完成：前移 %d 个位置，先备份 %d 个',
+        'Aufgerückt: %d Plätze':
+         '已前移：%d 个位置',
+        'Kopie auf dem Rechner — Änderungen hier wirken nicht auf das Pedal.':
+         '电脑上的副本——此处的更改不会影响踏板。',
+        'Patch%d wird aus der Kopie auf dem Rechner entfernt. Das Pedal bleibt unverändert. Fortfahren?':
+         '将从电脑上的副本中删除 Patch%d。踏板保持不变。继续吗？',
+        'Patch%d wird von der Karte entfernt. Vorher wird er auf dem Rechner gesichert. Fortfahren?':
+         '将从卡片中删除 Patch%d。会先备份到电脑。继续吗？',
+        'Ja':
+         '是',
+        'Nein':
+         '否',
+        'Dem Python fehlen die Zertifikate. Auf macOS hilft „Install Certificates.command“ im Python-Ordner, oder: pip install certifi':
+         'Python 缺少证书。在 macOS 上请运行 Python 文件夹中的“Install Certificates.command”，或：pip install certifi',
+        'GitHub ist nicht erreichbar: %s':
+         '无法访问 GitHub：%s',
+        'unbekannter Grund':
+         '原因未知',
+        'Gelöscht: %s':
+         '已删除：%s',
+        'Fehler:':
+         '错误：',
+        'Platz löschen':
+         '删除位置',
+        'Welcher Platz soll gelöscht werden? (z. B. 30 oder Patch30)':
+         '要删除哪个位置？（例如 30 或 Patch30）',
+        'Platz löschen …':
+         '删除位置…',
+        '%s ist nicht belegt — nichts zu löschen.':
+         '%s 未被占用——无可删除。',
+        '%s wird aus %s gelöscht. Das läßt sich nicht rückgängig machen. Fortfahren?':
+         '将从%s删除%s。此操作无法撤销。继续吗？',
+        'Lösche':
+         '正在删除',
+        'Gelöscht:':
+         '已删除：',
+        'Fehler beim Löschen:':
+         '删除时出错：',
+        'Die Datei ist %s lang — das Pedal nimmt höchstens 10 Minuten je Loop an. Bitte im Hauptfenster kürzen oder teilen.':
+         '文件长度为 %s——踏板每个循环最多接受 10 分钟。请在主窗口中缩短或分割。',
+        'Dieser Ordner ist nicht lesbar: %s':
+         '无法读取此文件夹：%s',
+        'Auswahl:':
+         '所选：',
+        'Pegelprotokoll wählen':
+         '选择电平日志',
+        'Audiodatei zum Teilen auswählen':
+         '选择要分割的音频文件',
+        'Dateiname:':
+         '文件名：',
+        'Speichern':
+         '保存',
+        'Bitte einen Dateinamen angeben.':
+         '请输入文件名。',
+        'Überschreiben':
+         '覆盖',
+        '%s gibt es schon. Ersetzen?':
+         '%s 已存在。要替换吗？',
+        'Speicherkarte des JamMan wählen':
+         '选择 JamMan 卡片',
+        'Zielordner für die Sicherung':
+         '备份的目标文件夹',
+        'Dateien':
+         '文件',
+        'Nach oben':
+         '上一级',
+        'Öffnen':
+         '打开',
+        'Bitte eine Datei auswählen.':
+         '请选择一个文件。',
+        'Alle Dateien':
+         '所有文件',
+        'Die Datei konnte nicht geschrieben werden: %s':
+         '无法写入文件：%s',
+        'ohne':
+         '无',
+        'ende':
+         '结尾',
+        'klick':
+         '节拍',
+        '%d Patches ohne Ton — nur die Beschreibung ist geholt.':
+         '%d 个音色没有音频——只获取了描述。',
+        'Ganzen Ordner aufs Pedal …':
+         '整个文件夹写到踏板…',
+        'Ordner mit Patch-Ordnern wählen':
+         '选择包含音色文件夹的目录',
+        'Ganzen Ordner aufs Pedal':
+         '整个文件夹写到踏板',
+        '%d Patch-Ordner werden in %s geschrieben. Belegte Plätze werden vorher gesichert, unveränderte übersprungen. Fortfahren?':
+         '将把 %d 个音色文件夹写入%s。已占用的位置会先备份，未更改的会跳过。继续吗？',
+        'internen Speicher':
+         '内部存储',
+        'der Karte':
+         '卡片',
+        'Im Ordner liegen keine Patch-Ordner (erwartet: Patch01 … Patch200).':
+         '该目录中没有音色文件夹（应为 Patch01 … Patch200）。',
+        'Schreibe':
+         '正在写入',
+        'Fertig: %d Patches geschrieben, %d übersprungen, %d vorher gesichert':
+         '完成：写入 %d 个音色，跳过 %d 个，先备份 %d 个',
+        'Fehler beim Schreiben:':
+         '写入时出错：',
+        'Übertragen: %d Dateien · unverändert übersprungen: %d':
+         '已传输 %d 个文件 · 跳过未变更的 %d 个',
+        'Zielplatz auf dem Pedal (z. B. 17 oder Patch17):':
+         '踏板上的目标位置（例如 17 或 Patch17）：',
+        'Unerwarteter Fehler':
+         '意外错误',
+        'Das Werkzeug wurde unerwartet beendet.':
+         '工具意外停止。',
+        'Protokoll:':
+         '日志：',
+        'Auswahl kopieren':
+         '复制所选',
+        'Nichts markiert — bitte zuerst Text markieren.':
+         '未选中任何内容——请先选中文本。',
+        'In die Zwischenablage kopiert.':
+         '已复制到剪贴板。',
+        'Anleitung speichern':
+         '保存说明',
+        'Gespeichert.':
+         '已保存。',
+        'Alles kopieren':
+         '全部复制',
+        'Als Datei speichern':
+         '另存为文件',
+        'Anleitung':
+         '说明',
+        'Zum Umwandeln fehlt ffmpeg.':
+         '转换需要 ffmpeg，但未安装。',
+        'Die Programmdateien lassen sich hier nicht ersetzen: %s':
+         '无法在此替换程序文件：%s',
+        'Unerwarteter Fehler: %s':
+         '意外错误：%s',
+        'Aktualisieren':
+         '更新',
+        'Die neueste Fassung wird von GitHub geladen und ersetzt die Programmdateien. Ihre Einstellungen und Ihre Karte bleiben unberührt. Fortfahren?':
+         '将从 GitHub 下载最新版本并替换程序文件。您的设置和卡片不受影响。继续吗？',
+        'Jetzt aktualisieren?':
+         '现在更新？',
+        'Aktualisiert':
+         '已更新',
+        'Nicht aktualisiert':
+         '未更新',
+        'Fenster jetzt schließen?':
+         '现在关闭窗口？',
+        'GitHub ist nicht erreichbar.':
+         '无法访问 GitHub。',
+        'Sie benutzen bereits die neueste Fassung (%s).':
+         '您已在使用最新版本（%s）。',
+        'Zur Fassung %s gibt es keine Datei zum Herunterladen.':
+         '版本 %s 没有可下载的文件。',
+        'Lade Fassung %s …':
+         '正在下载版本 %s …',
+        'Herunterladen fehlgeschlagen: %s':
+         '下载失败：%s',
+        'Die heruntergeladene Datei ist kein gültiges ZIP.':
+         '下载的文件不是有效的 ZIP。',
+        'Die Datei ist beschädigt (%s).':
+         '文件已损坏（%s）。',
+        'In der Datei fehlt jamman.py.':
+         '文件中缺少 jamman.py。',
+        'Die Datei gehört nicht zur Fassung %s.':
+         '该文件不属于版本 %s。',
+        'Fassung %s ist installiert (%d Dateien). Bitte das Fenster schließen und neu starten.':
+         '版本 %s 已安装（%d 个文件）。请关闭窗口并重新启动。',
+        'Die Karte hängt nicht im Rechner — nichts auszuwerfen. Steckt sie im Pedal, führt das Pedal sie nicht als Laufwerk.':
+         '卡片不在电脑中——没有可弹出的内容。若卡片在踏板里，踏板不会把它当作驱动器。',
+        'Auswerfen ging nicht. Bitte im Dateimanager auf „Auswerfen" klicken.':
+         '弹出失败。请在文件管理器中使用“弹出”。',
+        'Keine Karte im Rechner gefunden.':
+         '在电脑中未找到卡片。',
+        'Karte im Rechner:  „Karte wählen“ drücken.':
+         '卡片在电脑里：按“选择卡片”。',
+        'Karte im Pedal:    oben rechts „Pedal über USB“ — dort sind Karte und interner Speicher erreichbar.':
+         '卡片在踏板里：右上角“通过 USB 连接踏板”——在那里可以访问卡片和内部存储。',
+        'Speicherkarte': '存储卡',
+        'Kopie vom Pedal': '来自踏板的副本',
+        'Speicherkarte des JamMan Stereo': 'JamMan Stereo 的存储卡',
+        'Im Pedal steckt keine Karte.': '踏板中没有卡片。',
+        'Karte einlegen und dann „Karte wählen“ oder „Neu laden“ drücken.':
+         '请插入卡片，然后按“选择卡片”或“重新载入”。',
+        'keine Karte':
+         '无卡片',
+        'Dies ist eine Kopie vom Pedal, nicht die Karte selbst. Über „Karte wählen“ die Karte öffnen.':
+         '这是从踏板取回的副本，不是卡片本身。请用“选择卡片”打开卡片。',
+        'JamMan Card Tool': 'JamMan Card Tool',
+        'Karte und interner Speicher': '卡与内部存储',
+        '(für Rückgängig nötig)':
+         '（撤销需要）',
+        'Darunter ist die Sicherung für Rückgängig. Danach läßt sich der letzte Schreibvorgang nicht mehr zurücknehmen. Trotzdem löschen?':
+         '其中包括撤销所需的备份。之后将无法撤销上一次写入。仍要删除吗？',
+        'Sicherungen aufräumen …':
+         '清理备份……',
+        'Sicherungen aufräumen':
+         '清理备份',
+        'Sicherungen im Zielordner':
+         '目标文件夹中的备份',
+        '%d Sicherungen · %.1f MB':
+         '%d 个备份 · %.1f MB',
+        'Neueste behalten:':
+         '保留最新：',
+        'Markierte löschen':
+         '删除所选',
+        'Erst Sicherungen in der Liste markieren.':
+         '请先在列表中标记备份。',
+        '%d Sicherungen mit %.1f MB werden endgültig gelöscht. Fortsetzen?':
+         '将永久删除 %d 个备份（%.1f MB）。继续？',
+        '%d Sicherungen konnten nicht gelöscht werden.':
+         '有 %d 个备份无法删除。',
+        'Der Zielordner ist noch nicht angelegt.':
+         '目标文件夹尚未创建。',
+        'Im Zielordner liegen keine Sicherungen.':
+         '目标文件夹中没有备份。',
+        'Alle auswählen':
+         '全选',
+        'Nichts markiert. Alle %d Patches in die Setlist?':
+         '未选择任何项目。把所有 %d 个 Patch 放入 Setlist？',
+        'Warte auf das Ende des laufenden Vorgangs …':
+         '正在等待当前操作结束……',
+        'Der Vorgang reagiert nicht — Fenster schließen und neu öffnen.':
+         '操作无响应——请关闭窗口后重新打开。',
+        'Hole Beschreibungen': '正在读取描述',
+        'Es wurde kein Zielplatz eingegeben.':
+         '未输入目标位置。',
+        'Der Zielplatz muß wie Patch01 … Patch200 heißen, nicht „%s“.':
+         '目标位置必须命名为 Patch01 … Patch200，而不是“%s”。',
+        'OK': '确定',
+        'Ein Vorgang läuft noch — bitte abwarten.':
+         '仍有操作在进行——请稍候。',
+        'Verbindung neu aufbauen':
+         '重新连接',
+        'Verbindung wird neu aufgebaut …':
+         '正在重新连接……',
+        'Lesen und Schreiben über USB. Vor jedem Überschreiben wird der alte Platz auf den Rechner gesichert.':
+         '通过 USB 读写。覆盖前会先把原位置保存到电脑。',
+        'Über USB fließen etwa 1,3 MB/s. Für eine ganze Karte ist ein Kartenleser viel schneller. Schreiben verändert die Karte — vorher wird gesichert.':
+         '通过 USB 的速率约为 1,3 MB/s。整张卡用读卡器快得多。写入会修改卡片——之前会先备份。',
+        'Audio in den Speicher schreiben …': '把音频写入存储器……',
+        'Beim JamMan Solo XT behält der FS3X seine Grundfunktionen. Eine eigene Belegung speichert das Pedal zwar, wertet sie aber nicht aus — deshalb wird sie hier nicht angeboten.':
+         '在 JamMan Solo XT 上，FS3X 保留其基本功能。踏板虽会保存自定义分配，但不会执行，因此这里不提供。',
+        'Änderungen wirken nach einem Neustart des Pedals.': '更改在踏板重启后生效。',
+        'gewünscht': '请求值',
+        'Pedal meldet': '踏板返回',
+        '(nicht belegt)':
+         '（未分配）',
+        'UndoRedo = Rückgängig/Wiederholen · Reverse = Rückwärts · Tempo = Tempo antippen':
+         'UndoRedo = 撤销/重做 · Reverse = 倒放 · Tempo = 打拍子',
+        'Sichern': '保存',
+        'Schreiben': '写入',
+        'Setlists': 'Setlist',
+        'Pedal': '踏板',
+        'Ins Hauptfenster holen …': '取到主窗口……',
+        'Einzelnen Patch sichern …': '保存单个 Patch……',
+        'Patch-Ordner aufs Pedal …': 'Patch 文件夹写入踏板……',
+        'Übernommen.': '已应用。',
+        'Pedal spielt jetzt:': '踏板现在播放：',
+        'Audio aufs Pedal …':
+         '音频写入踏板……',
+        'Audio aufs Pedal':
+         '音频写入踏板',
+        'Audiodatei wählen':
+         '选择音频文件',
+        'Audio':
+         '音频',
+        'Sichere den alten Platz …':
+         '正在备份原位置……',
+        'Wandle die Datei …':
+         '正在转换文件……',
+        'Umwandeln fehlgeschlagen — die Datei muß 44,1 kHz, 16 Bit, Stereo werden.':
+         '转换失败——文件必须是 44,1 kHz、16 位、立体声。',
+        'Leere den Platz …': '正在清空该位置……',
+        'Pedal spielt jetzt Bank/Patch:': '踏板现在播放 Bank/Patch：',
+        'Karte erkannt:': '检测到卡：',
+        'Als ZIP sichern …':
+         '保存为 ZIP……',
+        'Als ZIP sichern':
+         '保存为 ZIP',
+        'Sichere als ZIP …':
+         '正在保存为 ZIP……',
+        'Sichere:':
+         '正在保存：',
+        'Fehler beim Sichern:':
+         '保存时出错：',
+        'Die Setlist ist leer.':
+         'Setlist 为空。',
+        'Erst Patches in der Liste markieren (⌘-Klick).':
+         '请先在列表中标记 Patch（⌘ 单击）。',
+        'Es gibt nichts rückgängig zu machen.':
+         '没有可撤销的操作。',
+        'Fußschalter …':
+         '脚踏开关……',
+        'Fußschalter':
+         '脚踏开关',
+        'Tastenbelegung des Pedals':
+         '踏板的脚踏开关分配',
+        'Werte sind Geräteeinstellungen — nur ändern, wenn du weißt, was sie bedeuten.':
+         '这是设备设置——只在你知道含义时才修改。',
+        'Übernehmen':
+         '应用',
+        'JamMan':
+         'JamMan',
+        'Karte':
+         '卡',
+        'intern':
+         '内部',
+        'Liste als Textdatei sichern':
+         '将列表保存为文本文件',
+        'Liste als Textdatei …':
+         '列表保存为文本文件……',
+        'Mitlaufen':
+         '跟随',
+        'Mitlaufen an — am Pedal einen Patch wählen.':
+         '跟随已开启——在踏板上选择一个 Patch。',
+        'Mitlaufen aus.':
+         '跟随已关闭。',
+        'Rückgängig':
+         '撤销',
+        'Setlist holen …':
+         '获取 Setlist……',
+        'Setlist laden':
+         '加载 Setlist',
+        'Setlist sichern …':
+         '保存 Setlist……',
+        'Setlist sichern':
+         '保存 Setlist',
+        'Setlist.txt':
+         'Setlist.txt',
+        'Stelle wieder her:':
+         '正在恢复：',
+        '%s wird durch die Sicherung ersetzt. Fortsetzen?':
+         '%s 将被备份替换。继续？',
+        'Ordner des Patches wählen':
+         '选择 Patch 文件夹',
+        'Aufs Pedal schreiben':
+         '写入踏板',
+        '%s ist schon belegt. Der Patch wird vorher auf den Rechner gesichert und dann überschrieben. Fortsetzen?':
+         '%s 已被占用。该 Patch 会先保存到电脑，然后被覆盖。继续？',
+        'Schreibe aufs Pedal …':
+         '正在写入踏板……',
+        'Schreibe:':
+         '正在写入：',
+        'Fehler beim Schreiben:':
+         '写入错误：',
+        'Patch aufs Pedal schreiben …':
+         '把 Patch 写入踏板……',
+        '(Vorschlag)': '（建议）',
+        'Ziel:': '目标：',
+        'noch nicht gewählt': '尚未选择',
+        'Ziel ändern …': '更改目标……',
+        'Aufräumen':
+         '清理',
+        'Die angefangene Kopie entfernen? Nur die gerade geholten Dateien werden gelöscht, der Ordner bleibt.':
+         '删除未完成的副本？只删除刚刚取来的文件，文件夹保留。',
+        'Aufgeräumt:':
+         '已清理：',
+        'Hole Beschreibungen …': '正在读取描述……',
+        'Wird abgebrochen …': '正在取消……',
+        'Über USB fließen etwa 1,3 MB/s. Für eine ganze Karte ist ein Kartenleser viel schneller — steckt die Karte im Pedal, bleibt nur dieser Weg.':
+         '通过 USB 的速率约为 1,3 MB/s。整张卡用读卡器快得多——如果卡在踏板里，只能走这条路。',
+        'Abbrechen': '取消',
+        'Abgebrochen.': '已取消。',
+        'Fehler beim Öffnen:': '打开时出错：',
+        'Alle ins Hauptfenster holen …': '全部取到主窗口……',
+        'Zielordner wählen': '选择目标文件夹',
+        'Hole Patch': '正在读取 Patch',
+        'Fertig:': '完成：',
+        'Im Hauptfenster öffnen?': '在主窗口中打开？',
+        'Gesichert': '已保存',
+        'Pedal über USB': '通过 USB 连接踏板',
+        'Das USB-Modul fehlt: greenglass.py muß neben jamman.py liegen.': '缺少 USB 模块：greenglass.py 必须与 jamman.py 放在同一目录。',
+        'Gesichert nach:': '已保存到：',
+        'Interner Speicher': '内部存储',
+        'SD-Karte': 'SD 卡',
+        'Kein JamMan gefunden — Pedal einschalten und Kabel prüfen.': '未找到 JamMan——请打开踏板并检查数据线。',
+        '(ohne Namen)': '（无名称）',
+        'Fehler beim Lesen:': '读取错误：',
+        'Erst „Neu laden“ drücken.': '请先按「重新加载」。',
+        'Lädt …': '正在加载……',
+        'Nur lesen: das Pedal wird nicht verändert.': '只读：不会修改踏板。',
+        'Ordner zum Sichern wählen': '选择保存文件夹',
+        'Patch sichern …': '保存 Patch……',
+        'Verbinde mit dem Pedal …': '正在连接踏板……',
         'Spenden': '赞助',
         'Für dieses Werkzeug ist noch kein Spendenlink eingetragen.': '本工具尚未填写赞助链接。',
         'Er steht in jamman.py in der Zeile SPENDEN_LINK.': '请在 jamman.py 的 SPENDEN_LINK 一行填写。',
@@ -4710,7 +7102,7 @@ def fassung_pruefen(zeitlimit=4):
         "User-Agent": "jamman-card-tool",
         "Accept": "application/vnd.github+json"})
     try:
-        with urllib.request.urlopen(anfrage, timeout=zeitlimit) as antwort:
+        with _url_oeffnen(anfrage, zeitlimit) as antwort:
             daten = json.load(antwort)
     except Exception:
         return None
@@ -4723,8 +7115,3270 @@ def eigene_fassung():
     return FASSUNG.split()[0]
 
 
+def _numerisch(nummer):
+    """„3.110" → (3, 110). Zahlenvergleich, kein Textvergleich.
+
+    Anlaß (17.11.2026): Beim Zählen der Releases war „3.2" textlich größer
+    als „3.100" — bei Fassungsnummern wäre derselbe Fehler teuer.
+    """
+    zahlen = re.findall(r"\d+", str(nummer or ""))
+    return tuple(int(z) for z in zahlen[:3]) or (0,)
+
+
+def _ssl_kontext():
+    """Ein SSL-Kontext, der auch ohne „Install Certificates“ funktioniert.
+
+    Anlaß (17.11.2026): Auf einem Mac meldete das Aktualisieren
+    „CERTIFICATE_VERIFY_FAILED — unable to get local issuer certificate“.
+    Das Python von python.org bringt ohne den Schritt „Install Certificates“
+    keine Zertifikate mit. Deshalb: certifi, wenn vorhanden, sonst die
+    Zertifikatsdatei des Systems (macOS: /etc/ssl/cert.pem), sonst die
+    Voreinstellung.
+    """
+    import ssl
+
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        pass
+    for pfad in ("/etc/ssl/cert.pem",
+                 "/usr/local/etc/openssl/cert.pem",
+                 "/opt/homebrew/etc/openssl/cert.pem",
+                 "/etc/pki/tls/certs/ca-bundle.crt",
+                 "/etc/ssl/certs/ca-certificates.crt"):
+        if os.path.exists(pfad):
+            try:
+                return ssl.create_default_context(cafile=pfad)
+            except Exception:
+                continue
+    return ssl.create_default_context()
+
+
+def _url_oeffnen(anfrage, zeitlimit):
+    """urlopen mit dem Zertifikats-Kontext von oben."""
+    import urllib.request
+    return urllib.request.urlopen(anfrage, timeout=zeitlimit,
+                                  context=_ssl_kontext())
+
+
+def neueste_fassung(zeitlimit=15):
+    """Neueste Veröffentlichung bei GitHub.
+
+    Rückgabe: {"tag", "url", "groesse", "fehler"}. Ist "tag" leer, steht in
+    "fehler", warum es nicht ging — vorher meldete das Werkzeug nur „GitHub ist
+    nicht erreichbar", ohne den Grund zu nennen (17.11.2026).
+    """
+    import json
+    import urllib.request
+    adresse = ("https://api.github.com/repos/Suilui1/"
+               "jamman-card-tool/releases/latest")
+    anfrage = urllib.request.Request(adresse, headers={
+        "User-Agent": "jamman-card-tool",
+        "Accept": "application/vnd.github+json"})
+    try:
+        with _url_oeffnen(anfrage, zeitlimit) as antwort:
+            daten = json.load(antwort)
+        tag = (daten.get("tag_name") or "").strip().lstrip("vV")
+        dateien = [a for a in daten.get("assets") or []
+                   if str(a.get("name", "")).lower().endswith(".zip")]
+        if tag:
+            return {"tag": tag,
+                    "url": dateien[0]["browser_download_url"] if dateien else "",
+                    "groesse": dateien[0].get("size") if dateien else 0,
+                    "fehler": ""}
+        fehler = "kein Tag in der Antwort"
+    except Exception as e:
+        fehler = str(e)
+
+    # Ersatzweg ohne API: die Seite /releases/latest leitet auf den Tag um
+    try:
+        anfrage = urllib.request.Request(
+            "https://github.com/Suilui1/jamman-card-tool/releases/latest",
+            headers={"User-Agent": "jamman-card-tool"})
+        with _url_oeffnen(anfrage, zeitlimit) as antwort:
+            ziel = antwort.geturl() or ""
+        tag = ziel.rstrip("/").split("/")[-1].lstrip("vV")
+        if tag and tag[:1].isdigit():
+            return {"tag": tag,
+                    "url": ("https://github.com/Suilui1/jamman-card-tool/"
+                            "releases/download/v%s/jamman-card-tool-%s.zip"
+                            % (tag, tag)),
+                    "groesse": 0,
+                    "fehler": ""}
+    except Exception as e:
+        fehler = "%s · %s" % (fehler, e)
+
+    return {"tag": "", "url": "", "groesse": 0, "fehler": fehler}
+
+
+def aktualisieren(melden=None):
+    """Holt die neueste Fassung und ersetzt die Programmdateien.
+
+    Gibt (erfolg, text) zurück. Die Einstellungen des Nutzers liegen in
+    ~/.jamman-werkzeug.cnf und werden nicht angefaßt; die ersetzten Dateien
+    kommen vorher in einen Ordner „sicherung-vor-<alte Fassung>".
+    """
+    import shutil
+    import tempfile
+    import urllib.request
+    import zipfile
+
+    sag = melden or (lambda text: None)
+    stand = neueste_fassung()
+    if not stand.get("tag"):
+        grund = stand.get("fehler") or T("unbekannter Grund")
+        if "CERTIFICATE_VERIFY_FAILED" in grund:
+            grund += "\n\n" + T("Dem Python fehlen die Zertifikate. Auf macOS "
+                                 "hilft „Install Certificates.command“ im "
+                                 "Python-Ordner, oder: pip install certifi")
+        return False, T("GitHub ist nicht erreichbar: %s") % grund
+    if _numerisch(stand["tag"]) <= _numerisch(eigene_fassung()):
+        return False, (T("Sie benutzen bereits die neueste Fassung (%s).")
+                       % eigene_fassung())
+    if not stand["url"]:
+        return False, (T("Zur Fassung %s gibt es keine Datei zum Herunterladen.")
+                       % stand["tag"])
+
+    sag(T("Lade Fassung %s …") % stand["tag"])
+    ziel_ordner = os.path.dirname(os.path.abspath(__file__))
+    anzahl = 0
+    with tempfile.TemporaryDirectory() as temp:
+        paket = os.path.join(temp, "neu.zip")
+        try:
+            anfrage = urllib.request.Request(stand["url"], headers={
+                "User-Agent": "jamman-card-tool"})
+            with urllib.request.urlopen(anfrage, timeout=120) as antwort:
+                with open(paket, "wb") as datei:
+                    shutil.copyfileobj(antwort, datei)
+        except Exception as fehler:
+            return False, T("Herunterladen fehlgeschlagen: %s") % fehler
+
+        try:
+            archiv = zipfile.ZipFile(paket)
+        except zipfile.BadZipFile:
+            return False, T("Die heruntergeladene Datei ist kein gültiges ZIP.")
+
+        with archiv:
+            kaputt = archiv.testzip()
+            if kaputt:
+                return False, T("Die Datei ist beschädigt (%s).") % kaputt
+            namen = [n.replace("\\", "/") for n in archiv.namelist()]
+            if "jamman.py" not in namen:
+                return False, T("In der Datei fehlt jamman.py.")
+
+            # Gehört das Paket wirklich zur angekündigten Fassung?
+            quelle = archiv.read("jamman.py").decode("utf-8", "replace")
+            treffer = re.search(r'FASSUNG\s*=\s*"([^"]+)"', quelle)
+            # Nur die ersten beiden Zahlen vergleichen: in FASSUNG steht
+            # „3.109 (17.11.2026)", im Tag nur „3.109".
+            if (not treffer
+                    or _numerisch(treffer.group(1))[:2] != _numerisch(stand["tag"])[:2]):
+                return False, (T("Die Datei gehört nicht zur Fassung %s.")
+                               % stand["tag"])
+
+            # Alte Fassung sichern, bevor etwas überschrieben wird
+            sicherung = os.path.join(ziel_ordner,
+                                     "sicherung-vor-" + eigene_fassung())
+            for name in namen:
+                if name.endswith("/") or "__pycache__" in name:
+                    continue
+                if name.startswith("/") or ".." in name.split("/"):
+                    continue
+                alt = os.path.join(ziel_ordner, name)
+                if os.path.exists(alt):
+                    unter = os.path.join(sicherung, name)
+                    os.makedirs(os.path.dirname(unter), exist_ok=True)
+                    try:
+                        shutil.copy2(alt, unter)
+                    except OSError:
+                        pass
+
+            for name in namen:
+                if name.endswith("/") or "__pycache__" in name:
+                    continue
+                if name.startswith("/") or ".." in name.split("/"):
+                    continue
+                ziel = os.path.join(ziel_ordner, name)
+                try:
+                    os.makedirs(os.path.dirname(ziel), exist_ok=True)
+                    with archiv.open(name) as quelle_datei:
+                        with open(ziel, "wb") as ziel_datei:
+                            shutil.copyfileobj(quelle_datei, ziel_datei)
+                except OSError as fehler:
+                    return False, (T("Die Programmdateien lassen sich hier nicht "
+                                     "ersetzen: %s") % fehler)
+                anzahl += 1
+
+    return True, (T("Fassung %s ist installiert (%d Dateien). "
+                    "Bitte das Fenster schließen und neu starten.")
+                  % (stand["tag"], anzahl))
+
+
+# ---------------------------------------------------------------- USB-Zugang
+def _greenglass():
+    """Das USB-Modul laden (liegt neben dieser Datei)."""
+    import importlib.util
+    pfad = os.path.join(os.path.dirname(os.path.abspath(__file__)), "greenglass.py")
+    spec = importlib.util.spec_from_file_location("greenglass", pfad)
+    modul = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modul)
+    return modul
+
+
+def _pedal_lesen(g, speicher, fortschritt=None):
+    """Patches eines Speichers holen: [(platz, name, groesse)] — nur lesend.
+
+    fortschritt(anzahl, gesamt, bisher) wird nach jedem fünften Patch gerufen,
+    damit eine lange Liste nicht am Ende auf einmal erscheint.
+    """
+    eigenschaften = g.eigenschaften()
+    if speicher != "intern" and not eigenschaften.get("RemovableMediaIsPresent"):
+        raise RuntimeError(T("Im Pedal steckt keine Karte."))
+    basis = eigenschaften["InternalPatchFolderPath" if speicher == "intern"
+                           else "RemovablePatchFolderPath"]
+    _, ordner = g.ordner(basis)
+    ordner = sorted(ordner)
+    ergebnis = []
+    for i, d in enumerate(ordner, 1):
+        name = ""
+        groesse = 0
+        try:
+            xml = g.lies_datei(basis + d + "/patch.xml").decode("utf-8", "replace")
+            import re as _re
+            m = _re.search(r"<PatchName>(.*?)</PatchName>", xml)
+            if m:
+                name = m.group(1)
+        except Exception:
+            pass
+        ergebnis.append((d, name, groesse))
+        if fortschritt and (i % 5 == 0 or i == len(ordner)):
+            fortschritt(i, len(ordner), list(ergebnis))
+    return basis, ergebnis
+
+
+def _raeume_auf(wurzel, geschrieben):
+    """Nur die in diesem Lauf neu angelegten Dateien entfernen.
+
+    Der gewählte Ordner selbst bleibt immer stehen. Dateien, die schon vorher
+    dort lagen, werden nicht angefaßt — sonst löschte ein Abbruch eine ältere
+    Sicherung (16.11.2026).
+    """
+    entfernt = 0
+    for pfad in geschrieben:
+        try:
+            if os.path.isfile(pfad):
+                os.remove(pfad)
+                entfernt += 1
+        except OSError:
+            pass
+    # leere Ordner von unten nach oben, aber nie den Wurzelordner
+    for aktuell, ordner, dateien in os.walk(wurzel, topdown=False):
+        if os.path.abspath(aktuell) == os.path.abspath(wurzel):
+            continue
+        if not ordner and not dateien:
+            try:
+                os.rmdir(aktuell)
+            except OSError:
+                pass
+        elif not os.listdir(aktuell):
+            try:
+                os.rmdir(aktuell)
+            except OSError:
+                pass
+    return entfernt
+
+
+def _ordnergroesse(pfad):
+    """Wie groß ist ein Ordner auf dem Rechner? (für die Fortschrittsanzeige)"""
+    summe = 0
+    for wurzel, _, dateien in os.walk(pfad):
+        for f in dateien:
+            try:
+                summe += os.path.getsize(os.path.join(wurzel, f))
+            except OSError:
+                pass
+    return summe
+
+
+def _patch_holen(g, pfad, ziel, stopp=None, nur=None, protokoll=None,
+                 ueberschreiben=False, zaehler=None):
+    """Einen Patch samt Phrasen in einen Ordner auf dem Rechner kopieren.
+
+    stopp: wird vor jeder Datei und in der Leseschleife gefragt — damit
+    „Abbrechen“ auch mitten in einer großen WAV greift.
+    """
+    daten, unter = g.ordner(pfad)
+    os.makedirs(ziel, exist_ok=True)
+    angefangen = []
+    try:
+        for f in daten:
+            # nur="xml": erst die kleinen Beschreibungen (schnelle Liste)
+            # nur="ton": später die WAVs im Hintergrund
+            if nur == "xml" and not f.lower().endswith(".xml"):
+                continue
+            if nur == "ton" and f.lower().endswith(".xml"):
+                continue
+            if stopp is not None and stopp():
+                raise g.Abgebrochen()
+            ziel_datei = os.path.join(ziel, f)
+            war_schon_da = os.path.exists(ziel_datei)
+            if war_schon_da and not ueberschreiben:
+                # schon vorhanden: nur ersetzen, wenn es im Pedal anders ist
+                # (Größe oder Änderungszeit). Sonst bleibt die Datei stehen —
+                # ein zweiter Lauf ist dann sehr schnell (16.11.2026).
+                try:
+                    fern = g.info(pfad.rstrip("/") + "/" + f)
+                    gleich = (os.path.getsize(ziel_datei) == fern["groesse"])
+                except Exception:
+                    gleich = True
+                if gleich and not f.lower().endswith(".xml"):
+                    # unverändert und keine Beschreibung: nicht noch einmal
+                    # holen. (Die Zuweisung an `ueberschreiben` stand hier
+                    # früher fälschlich und ließ danach ALLE Dateien neu
+                    # laden — am 16.11.2026 gefunden.)
+                    if zaehler is not None:
+                        zaehler["uebersprungen"] = zaehler.get("uebersprungen", 0) + 1
+                    continue
+                war_schon_da = False
+            angefangen.append((ziel_datei, war_schon_da))
+            # erst als .part schreiben, dann umbenennen: bricht der Vorgang ab,
+            # bleibt keine halbe WAV zurück, die später wie eine echte aussieht
+            inhalt = g.lies_datei(pfad.rstrip("/") + "/" + f, stopp=stopp)
+            # Einmal wiederholen, wenn Ordner oder .part zwischenzeitlich
+            # verschwunden sind (17.11.2026: „No such file … .part -> …wav“).
+            for versuch in (1, 2):
+                try:
+                    os.makedirs(ziel, exist_ok=True)
+                    with open(ziel_datei + ".part", "wb") as fp:
+                        fp.write(inhalt)
+                    os.replace(ziel_datei + ".part", ziel_datei)
+                    break
+                except FileNotFoundError:
+                    if versuch == 2:
+                        raise RuntimeError(
+                            T("Die Datei konnte nicht geschrieben werden: %s")
+                            % ziel_datei)
+            if zaehler is not None:
+                zaehler["gelesen"] = zaehler.get("gelesen", 0) + 1
+            if protokoll is not None and not war_schon_da:
+                protokoll.append(ziel_datei)
+        for u in unter:
+            if stopp is not None and stopp():
+                raise g.Abgebrochen()
+            _patch_holen(g, pfad.rstrip("/") + "/" + u, os.path.join(ziel, u),
+                         stopp=stopp, nur=nur, protokoll=protokoll,
+                         ueberschreiben=ueberschreiben, zaehler=zaehler)
+    except g.Abgebrochen:
+        for d, war_schon_da in angefangen:
+            # nur entfernen, was dieser Lauf NEU angelegt hat — eine frühere
+            # Sicherung im selben Ordner darf ein Abbruch nicht löschen
+            for rest in (d, d + ".part"):
+                try:
+                    if rest.endswith(".part") or not war_schon_da:
+                        if os.path.exists(rest):
+                            os.remove(rest)
+                except OSError:
+                    pass
+        raise
+    return True
+
+
+def _patch_schreiben(g, quell_ordner, ziel_pfad, meldung=None, stopp=None):
+    """Einen Ordner vom Rechner ins Pedal schreiben (rekursiv).
+
+    Schreibt Datei für Datei und meldet den Fortschritt. Vorher muß der
+    Aufrufer sichern, was am Ziel schon liegt — diese Funktion überschreibt.
+    """
+    for eintrag in sorted(os.listdir(quell_ordner)):
+        quelle = os.path.join(quell_ordner, eintrag)
+        ziel = ziel_pfad.rstrip("/") + "/" + eintrag
+        if stopp is not None and stopp():
+            raise g.Abgebrochen()
+        if os.path.isdir(quelle):
+            g.erstelle_ordner(ziel)
+            _patch_schreiben(g, quelle, ziel, meldung=meldung, stopp=stopp)
+        else:
+            with open(quelle, "rb") as fp:
+                daten = fp.read()
+            if meldung:
+                meldung(eintrag, len(daten))
+            g.schreibe_datei(ziel, daten, stopp=stopp)
+    return True
+
+
+def sicherung_begrenzen(platz_ordner, behalten=5):
+    """Je Platz nur die letzten fünf Sicherungen behalten.
+
+    Anlaß (17.11.2026, Wunsch des Nutzers): „vor-ueberschreiben" wuchs mit
+    jedem Schreibvorgang. Jede Sicherung liegt jetzt in einem eigenen Ordner
+    mit Zeitstempel; ältere werden hier entfernt — nur innerhalb dieses
+    Ordners und nur die eigenen Einträge (Namen beginnen mit einer Ziffer).
+    """
+    import shutil
+
+    try:
+        eintraege = [d for d in os.listdir(platz_ordner)
+                     if d[:1].isdigit()
+                     and os.path.isdir(os.path.join(platz_ordner, d))]
+    except OSError:
+        return 0
+    eintraege.sort()
+    entfernt = 0
+    for alt_name in (eintraege[:-behalten] if len(eintraege) > behalten else []):
+        try:
+            shutil.rmtree(os.path.join(platz_ordner, alt_name))
+            entfernt += 1
+        except OSError:
+            pass
+    return entfernt
+
+
+
+def setlists_anpassen(ordner, zuege, stempel=None):
+    """Setlist-Dateien im Ordner auf neue Platznummern umschreiben.
+
+    Eine Setlist ist eine Textdatei mit „PatchNN<TAB>Name“ je Zeile (siehe
+    _setlist_speichern). Nach dem Aufrücken zeigen die Nummern auf andere
+    Patches; hier werden sie mitgezogen. Jede geänderte Datei wird vorher
+    daneben gesichert. Rückgabe: [(Datei, Anzahl geänderter Zeilen)].
+    """
+    import re as _re
+
+    zuordnung = {"Patch%02d" % alt: "Patch%02d" % neu for alt, neu in zuege}
+    if not zuordnung:
+        return []
+    stempel = stempel or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    muster = _re.compile(r"^(Patch\d{1,3})(\s*\t.*)?$", _re.IGNORECASE)
+    geaendert = []
+    for name in sorted(os.listdir(ordner)):
+        if not name.lower().endswith(".txt"):
+            continue
+        pfad = os.path.join(ordner, name)
+        if not os.path.isfile(pfad):
+            continue
+        try:
+            with open(pfad, encoding="utf-8") as fp:
+                zeilen = fp.read().splitlines()
+        except Exception:
+            continue
+        neu_zeilen, anzahl = [], 0
+        for zeile in zeilen:
+            treffer = muster.match(zeile)
+            if treffer:
+                alt = treffer.group(1)
+                schluessel = ("Patch%02d" % int(alt[5:]))
+                ziel = zuordnung.get(schluessel)
+                if ziel and ziel != schluessel:
+                    zeile = ziel + (treffer.group(2) or "")
+                    anzahl += 1
+            neu_zeilen.append(zeile)
+        if not anzahl:
+            continue
+        sicherung = os.path.join(ordner, "%s.vor-aufruecken-%s.txt"
+                                 % (os.path.splitext(name)[0], stempel))
+        try:
+            shutil.copy2(pfad, sicherung)
+        except Exception:
+            pass
+        with open(pfad, "w", encoding="utf-8") as fp:
+            fp.write("\n".join(neu_zeilen) + "\n")
+        geaendert.append((name, anzahl))
+    return geaendert
+
+
+FIRMWARE_DATEIEN = [
+    # Was die Firmware ausmacht (aus dem Speicherabbild vom 17.11.2026).
+    # .filetable fehlt absichtlich: das ist der Verzeichnisindex des
+    # Dateisystems und wird vom Pedal selbst gepflegt.
+    "/mnt/nandfs/usr/IOMgr",
+    "/mnt/nandfs/usr/JamManUI",
+    "/mnt/nandfs/usr/loopengine",
+    "/mnt/nandfs/usr/usbserial",
+    "/mnt/nandfs/lib/devb-sd-at91sam9g35",
+    "/mnt/nandfs/lib/devc-serusart",
+    "/mnt/nandfs/lib/devc-serusb_g",
+    "/mnt/nandfs/lib/devu-g15-at91sam_g.so",
+    # JamManSoloXT.xml bleibt draußen: darin stehen Einstellungen des Nutzers
+    # (CurrentPatch, PedalTempo, AutoRecord), keine Firmware. Am 18.11.2026
+    # geklärt, nachdem die Datei gelesen wurde.
+]
+
+FIRMWARE_ORDNER = ["/mnt/nandfs/usr/attributes"]
+
+# Einzelstücke je Gerät: unit_guid.attr ist die Kennung DIESES Pedals.
+# Sie darf nicht auf ein anderes Gerät wandern (18.11.2026 in der geholten
+# attributes-Liste gefunden).
+FIRMWARE_NICHT_KOPIEREN = {"unit_guid.attr"}
+
+FIRMWARE_REIHENFOLGE = [
+    # Zuerst die Bibliotheken, dann die Programme, zuletzt der USB-Treiber:
+    # bricht es ab, ist die Verbindung bis zum Schluß erhalten.
+    "/mnt/nandfs/lib/devb-sd-at91sam9g35",
+    "/mnt/nandfs/lib/devc-serusart",
+    "/mnt/nandfs/lib/devu-g15-at91sam_g.so",
+    "/mnt/nandfs/usr/IOMgr",
+    "/mnt/nandfs/usr/loopengine",
+    "/mnt/nandfs/usr/JamManUI",
+    "/mnt/nandfs/lib/devc-serusb_g",
+    "/mnt/nandfs/usr/usbserial",
+]
+
+
+def firmware_holen(g, ziel_ordner, melden=None, stopp=None):
+    """Die Systemdateien eines Pedals auf den Rechner holen (nur lesend).
+
+    Legt sie unter ziel_ordner mit ihrem Pfad an (usr/IOMgr usw.), damit
+    firmware_schreiben() sie zurücklegen kann. Rückgabe: Liste (Pfad, Größe).
+    """
+    geholt = []
+    for pfad in FIRMWARE_DATEIEN:
+        if stopp is not None and stopp():
+            raise g.Abgebrochen()
+        if melden:
+            melden(pfad)
+        try:
+            groesse = g.info(pfad).get("groesse", 0)
+        except Exception:
+            continue                      # Datei gibt es auf diesem Pedal nicht
+        daten = g.lies_datei(pfad, stopp=stopp)
+        if len(daten) != groesse:
+            raise RuntimeError(T("%s kam unvollständig (%d von %d Bytes).")
+                               % (pfad, len(daten), groesse))
+        hiesig = os.path.join(ziel_ordner, pfad.lstrip("/").replace("/", os.sep))
+        os.makedirs(os.path.dirname(hiesig), exist_ok=True)
+        with open(hiesig, "wb") as fp:
+            fp.write(daten)
+        geholt.append((pfad, groesse))
+    for ordner in FIRMWARE_ORDNER:
+        try:
+            dateien, _ = g.ordner(ordner.rstrip("/") + "/")
+        except Exception:
+            continue
+        for name in dateien:
+            pfad = ordner.rstrip("/") + "/" + name
+            if stopp is not None and stopp():
+                raise g.Abgebrochen()
+            daten = g.lies_datei(pfad, stopp=stopp)
+            hiesig = os.path.join(ziel_ordner, pfad.lstrip("/").replace("/", os.sep))
+            os.makedirs(os.path.dirname(hiesig), exist_ok=True)
+            with open(hiesig, "wb") as fp:
+                fp.write(daten)
+            geholt.append((pfad, len(daten)))
+    return geholt
+
+
+def _datei_ersetzen(g, pfad, daten, stopp=None):
+    """Eine laufende Programmdatei ersetzen, ohne sie zu überschreiben.
+
+    Anlaß (18.11.2026): „Das Pedal meldet einen Fehler: Resource busy" — QNX
+    läßt eine Datei nicht überschreiben, solange sie läuft. Deshalb erst
+    daneben schreiben (…neu), dann umbenennen; klappt das nicht, wird die
+    laufende Datei nach …alt weggeschoben und die neue an ihren Platz gelegt.
+    """
+    neu_pfad = pfad + ".neu"
+    try:
+        g.loesche(neu_pfad)
+    except Exception:
+        pass
+    g.schreibe_datei(neu_pfad, daten, stopp=stopp)
+    try:
+        g.benenne_um(neu_pfad, pfad, ueberschreiben=True)
+        return "umbenannt"
+    except Exception:
+        pass
+    try:
+        g.benenne_um(pfad, pfad + ".alt", ueberschreiben=True)
+    except Exception:
+        pass
+    g.benenne_um(neu_pfad, pfad, ueberschreiben=True)
+    return "alt weggeschoben"
+
+
+def firmware_schreiben(g, quell_ordner, melden=None, stopp=None):
+    """Die Systemdateien aus einem geholten Ordner ins Pedal schreiben.
+
+    Reihenfolge siehe FIRMWARE_REIHENFOLGE; nach jeder Datei wird die Größe
+    verglichen. Rückgabe: Liste (Pfad, geschrieben, geprüft).
+    """
+    ergebnis = []
+    pfade = list(FIRMWARE_REIHENFOLGE)
+    attributes = os.path.join(quell_ordner, "mnt", "nandfs", "usr", "attributes")
+    if os.path.isdir(attributes):
+        pfade.append("/mnt/nandfs/usr/attributes/")
+    for pfad in pfade:
+        if stopp is not None and stopp():
+            raise g.Abgebrochen()
+        ist_ordner = pfad.endswith("/")
+        hiesig = os.path.join(quell_ordner, pfad.lstrip("/").replace("/", os.sep))
+        if ist_ordner:
+            g.erstelle_ordner(pfad.rstrip("/"))
+            for name in sorted(os.listdir(hiesig)):
+                if name in FIRMWARE_NICHT_KOPIEREN:
+                    continue
+                ganz = pfad + name
+                with open(os.path.join(hiesig, name), "rb") as fp:
+                    daten = fp.read()
+                if melden:
+                    melden(ganz, len(daten))
+                g.schreibe_datei(ganz, daten, stopp=stopp)
+                ergebnis.append((ganz, len(daten), True))
+            continue
+        if not os.path.exists(hiesig):
+            continue
+        with open(hiesig, "rb") as fp:
+            daten = fp.read()
+        if melden:
+            melden(pfad, len(daten))
+        _datei_ersetzen(g, pfad, daten, stopp=stopp)
+        try:
+            danach = g.info(pfad).get("groesse", -1)
+        except Exception:
+            danach = -1
+        ergebnis.append((pfad, len(daten), danach == len(daten)))
+    return ergebnis
+
+
+def jamlists_lesen(db_pfad):
+    """JamLists aus der Bibliothek von JamManager XT lesen.
+
+    Aufbau (aus dem Programmtext, 17.11.2026): JamManager.db.sqlite mit den
+    Tabellen jamlists(id, color, name) und loops(…, jamlistid, "Loop #", …).
+    Eine JamList besteht aus 200 Zeilen — eine je Platz des Pedals; nur die
+    belegten tragen einen Namen.
+
+    Rückgabe: Liste von dicts {id, name, platz: [(nummer, name, datei)]}
+    """
+    import sqlite3
+
+    if not os.path.exists(db_pfad):
+        raise RuntimeError(T("Die Datei %s fehlt.") % db_pfad)
+    liste = []
+    verbindung = sqlite3.connect(db_pfad)
+    try:
+        for kennung, name in verbindung.execute(
+                "SELECT id, name FROM jamlists ORDER BY id"):
+            plaetze = []
+            for nummer, loop_name, datei in verbindung.execute(
+                    'SELECT "Loop #", Name, filepath FROM loops '
+                    'WHERE jamlistid=? AND Name IS NOT NULL ORDER BY "Loop #"',
+                    (kennung,)):
+                plaetze.append((nummer, loop_name or "", datei or ""))
+            liste.append({"id": kennung, "name": name or "", "platz": plaetze})
+    finally:
+        verbindung.close()
+    return liste
+
+
+def jamlist_schreiben(db_pfad, name, eintraege, farbe=0):
+    """Eine JamList in eine JamManager-Bibliothek eintragen.
+
+    eintraege: [(platz, name, datei)] — Plätze 1…200. Fehlende Plätze bleiben
+    leer, wie in der Vorlage des Herstellers. Rückgabe: Kennung der neuen Liste.
+    """
+    import sqlite3
+
+    verbindung = sqlite3.connect(db_pfad)
+    try:
+        kennung = verbindung.execute(
+            "INSERT INTO jamlists (color, name) VALUES (?, ?)",
+            (int(farbe), name)) .lastrowid
+        vorhanden = {int(platz): (loop_name, datei)
+                     for platz, loop_name, datei in eintraege}
+        for platz in range(1, 201):
+            loop_name, datei = vorhanden.get(platz, (None, None))
+            verbindung.execute(
+                'INSERT INTO loops (jamlistid, isvalid, inlibrary, "Loop #", '
+                'Name, Rating, filepath) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (kennung, "false", "false", platz, loop_name, 0, datei))
+        verbindung.commit()
+    finally:
+        verbindung.close()
+    return kennung
+
+
+def speicherabbild(g, ziel_datei, wurzel="/", tiefe=8, hoechstens=5000,
+                   melden=None, stopp=None,
+                   ohne=("/proc", "/dev", "/mnt/sdfs")):
+    """Verzeichnisbaum des Pedals als Textdatei festhalten (nur lesend).
+
+    Zweck (17.11.2026): Zwei Pedale mit unterschiedlicher Firmware sollen
+    verglichen werden, ohne etwas zu schreiben. Aufgenommen werden Pfad und
+    Größe jeder Datei; das reicht, um Firmware-Dateien zu finden und zu sehen,
+    was sich zwischen zwei Fassungen unterscheidet.
+
+    Rückgabe: Anzahl der Einträge.
+    """
+    zeilen = []
+    stapel = [(wurzel.rstrip("/") + "/", 0)]
+    while stapel:
+        pfad, tiefe_jetzt = stapel.pop(0)
+        if stopp and stopp():
+            raise RuntimeError(T("Abgebrochen."))
+        if tiefe_jetzt > tiefe or len(zeilen) >= hoechstens:
+            continue
+        # /proc enthält Laufzeitspeicher (z. B. /proc/1/as), /dev die Geräte
+        # und /mnt/sdfs die SD-Karte des Nutzers. Nichts davon gehört in einen
+        # Firmware-Vergleich (18.11.2026: 222 Unterschiede, fast alle von der
+        # eingelegten Karte).
+        if any(pfad.startswith(anf) for anf in ohne):
+            continue
+        try:
+            dateien, ordner = g.ordner(pfad)
+        except Exception:
+            continue
+        for name in dateien:
+            voll = pfad + name
+            try:
+                groesse = g.info(voll).get("groesse", 0)
+            except Exception:
+                groesse = 0
+            zeilen.append("%s\t%d\tD" % (voll, groesse))
+            if melden and len(zeilen) % 25 == 0:
+                melden(len(zeilen), voll)
+        for name in ordner:
+            voll = pfad + name
+            zeilen.append("%s\t0\tO" % voll)
+            stapel.append((voll + "/", tiefe_jetzt + 1))
+    with open(ziel_datei, "w", encoding="utf-8") as fp:
+        fp.write("# JamMan Card Tool — " + T("Speicherabbild") + "\n")
+        fp.write("# %s\n" % datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        fp.write("# Pfad\tGroesse\tArt (D=Datei, O=Ordner)\n")
+        fp.write("\n".join(zeilen) + "\n")
+    return len(zeilen)
+
+
+def speicherabbilder_vergleichen(datei_a, datei_b):
+    """Zwei Speicherabbilder vergleichen. Rückgabe: Liste von Sätzen."""
+    def lesen(pfad):
+        werte = {}
+        with open(pfad, encoding="utf-8") as fp:
+            for zeile in fp:
+                if zeile.startswith("#") or not zeile.strip():
+                    continue
+                teile = zeile.rstrip("\n").split("\t")
+                if len(teile) >= 3:
+                    werte[teile[0]] = (int(teile[1] or 0), teile[2])
+        return werte
+
+    a, b = lesen(datei_a), lesen(datei_b)
+    nur_a = sorted(set(a) - set(b))
+    nur_b = sorted(set(b) - set(a))
+    anders = sorted(p for p in set(a) & set(b) if a[p][0] != b[p][0])
+    return nur_a, nur_b, [(p, a[p][0], b[p][0]) for p in anders]
+
+
+def plaetze_zusammenruecken(g, basis):
+    """Belegte Plätze lückenlos nach vorn ziehen.
+
+    Gibt [(alt, neu)] zurück — die Reihenfolge der Patches bleibt, nur die
+    Plätze rücken auf. Wird erst nach einer Rückfrage ausgeführt, weil sich
+    damit die Platznummern aller späteren Patches ändern.
+    """
+    import re as _re
+
+    _, ordner = g.ordner(basis)
+    muster = _re.compile(r"^Patch(\d{1,3})$", _re.IGNORECASE)
+    belegt = sorted(int(muster.match(name).group(1)) for name in ordner
+                    if muster.match(name))
+    zuege = []
+    for ziel, alt in enumerate(belegt, 1):
+        if ziel != alt:
+            zuege.append((alt, ziel))
+    return zuege
+
+
+def patches_aufs_pedal(g, basis, quell, ziel_ordner, melden=None, stopp=None):
+    """Alle Patch-Ordner aus `quell` in den Speicher `basis` schreiben.
+
+    Rückgabe: (geschrieben, übersprungen, gesichert).
+    Belegte Plätze werden vorher nach `vor-ueberschreiben/<Platz>/<Stempel>`
+    geholt (fünf Stände je Platz bleiben), unveränderte übersprungen.
+    """
+    import re as _re
+
+    sag = melden or (lambda text: None)
+    muster = _re.compile(r"^Patch(\d{1,3})$", _re.IGNORECASE)
+    patches = []
+    for name in sorted(os.listdir(quell)):
+        treffer = muster.match(name)
+        if treffer and os.path.isdir(os.path.join(quell, name)):
+            patches.append((name, "Patch%02d" % int(treffer.group(1))))
+
+    geschrieben = uebersprungen = gesichert = 0
+    for i, (name, platz) in enumerate(patches, 1):
+        if stopp is not None and stopp():
+            raise g.Abgebrochen()
+        sag("%s %d/%d — %s" % (T("Schreibe"), i, len(patches), platz))
+        quell_patch = os.path.join(quell, name)
+        ziel_pfad = basis + platz
+
+        # unverändert? (gleiche Dateien, gleiche Größen im Pedal)
+        try:
+            _, vorhandene = g.ordner(ziel_pfad)
+            gleich = bool(vorhandene)
+            for wurzel, _, dateien in os.walk(quell_patch):
+                for datei in dateien:
+                    if not gleich:
+                        break
+                    hiesig = os.path.join(wurzel, datei)
+                    fern = ziel_pfad + hiesig[len(quell_patch):].replace(os.sep, "/")
+                    try:
+                        if g.info(fern)["groesse"] != os.path.getsize(hiesig):
+                            gleich = False
+                    except Exception:
+                        gleich = False
+            if gleich:
+                uebersprungen += 1
+                continue
+        except Exception:
+            pass
+
+        # belegt? vorher sichern und leeren
+        try:
+            _, vorhandene = g.ordner(ziel_pfad)
+            if vorhandene:
+                platz_ordner = os.path.join(ziel_ordner, "vor-ueberschreiben", platz)
+                sicherung = os.path.join(
+                    platz_ordner, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+                sag(T("Sichere den alten Platz …") + " " + platz)
+                _patch_holen(g, ziel_pfad, sicherung)
+                sicherung_begrenzen(platz_ordner)
+                gesichert += 1
+                g.loesche(ziel_pfad, ist_ordner=True, rekursiv=True)
+        except Exception:
+            pass
+
+        g.erstelle_ordner(ziel_pfad)
+        _patch_schreiben(g, quell_patch, ziel_pfad, stopp=stopp)
+        geschrieben += 1
+    return geschrieben, uebersprungen, gesichert
+
+
+def _hol_wurzel(ziel, geraetename, speicher):
+    """Zielordner für einen Hole-Lauf — je Lauf ein eigener Unterordner.
+
+    Anlaß (16.11.2026): Alles landete in <Ziel>/<Gerät>. Lag dort schon eine
+    frühere Kopie, wurden vorhandene Dateien übersprungen — und im
+    Hauptfenster standen danach die alten Namen. Jetzt bekommt jeder Lauf
+    seinen eigenen Ordner mit Datum und Speicher.
+    """
+    # Fester Ordner JE SPEICHER (nicht je Lauf): so werden beim zweiten Mal
+    # nur die fehlenden oder geänderten Dateien geholt. Mit einem neuen
+    # Ordner je Lauf wurde jedes Mal alles wieder geladen (16.11.2026).
+    teil = "intern" if speicher == "intern" else "karte"
+    return os.path.join(ziel, teil, geraetename)
+
+
+def _als_zip(g, basis, platzliste, ziel_datei, meldung=None, stopp=None):
+    """Alle Patches eines Speichers als ZIP sichern (ohne Umweg über den Ordner).
+
+    Der Inhalt entspricht dem Ordner, den „Alle holen“ anlegt: <Gerät>/PatchNN/…
+    """
+    import zipfile
+    geraetename = os.path.basename(basis.rstrip("/")) or "JamMan"
+    with zipfile.ZipFile(ziel_datei, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+        def sammle(pfad, innen):
+            dateien, ordner = g.ordner(pfad)
+            for f in dateien:
+                if stopp is not None and stopp():
+                    raise g.Abgebrochen()
+                if meldung:
+                    meldung(f, 0)
+                daten = g.lies_datei(pfad + "/" + f, stopp=stopp)
+                # WAV lässt sich nicht sinnvoll komprimieren; das Packen
+                # kostete bei großen Loops Minuten und ließ „Abbrechen“
+                # wirkungslos erscheinen (16.11.2026).
+                art = (zipfile.ZIP_STORED if f.lower().endswith(".wav")
+                       else zipfile.ZIP_DEFLATED)
+                z.writestr(geraetename + "/" + innen + f, daten, compress_type=art)
+            for o in ordner:
+                sammle(pfad.rstrip("/") + "/" + o, innen + o + "/")
+        for i, platz in enumerate(platzliste, 1):
+            if stopp is not None and stopp():
+                raise g.Abgebrochen()
+            if meldung:
+                meldung(platz, i)
+            sammle(basis + platz, platz + "/")
+    return True
+
+
+def frage_ja_nein_konsole(text=None):
+    """Rückfrage in der Konsole (für das Schreiben von Firmware)."""
+    if text is None:
+        text = T("Firmware-Dateien jetzt ins Pedal schreiben? Ein Abbruch "
+                 "mittendrin kann das Pedal unbrauchbar machen. [ja/nein] ")
+    try:
+        antwort = input("  " + text).strip().lower()
+    except EOFError:
+        return False
+    return antwort in ("j", "ja", "y", "yes")
+
+
+def _setlist_speichern(patchliste, indizes, ziel_datei, geraetename=""):
+    """Eine Auswahl von Patches als Setlist (Textdatei) sichern."""
+    with open(ziel_datei, "w", encoding="utf-8") as fp:
+        fp.write("# " + T("JamMan Card Tool") + " — " + T("Karte und interner Speicher") + "\n")
+        if geraetename:
+            fp.write("# Gerät: %s\n" % geraetename)
+        for i in indizes:
+            platz, name, _ = patchliste[i]
+            fp.write("%s\t%s\n" % (platz, name or ""))
+    return True
+
+
+def _setlist_lesen(pfad):
+    """Setlist einlesen: [(Platz, Name)] — Zeilen mit # sind Bemerkungen."""
+    eintraege = []
+    with open(pfad, encoding="utf-8") as fp:
+        for zeile in fp:
+            zeile = zeile.rstrip("\n")
+            if not zeile.strip() or zeile.lstrip().startswith("#"):
+                continue
+            teile = zeile.split("\t")
+            eintraege.append((teile[0].strip(), teile[1] if len(teile) > 1 else ""))
+    return eintraege
+
+
+_USB_GERAET = {"obj": None}
+
+
+def _geraet_holen(g_modul, anschuss=None):
+    """Genau EIN Zugang zum Pedal je Programm.
+
+    Zwei gleichzeitig geöffnete Anschlüsse (etwa nach „Verbindung neu
+    aufbauen", während noch ein Strang las) brachten das Pedal am 16.11.2026
+    zum Schweigen: es bekam Rahmen von zwei Sprechern und verlor die
+    Ausrichtung. „Hole Beschreibungen …" blieb dann stehen.
+    """
+    if _USB_GERAET["obj"] is None:
+        _USB_GERAET["obj"] = g_modul.JamManUSB(anschuss)
+    return _USB_GERAET["obj"]
+
+
+def _geraet_schliessen():
+    try:
+        if _USB_GERAET["obj"] is not None:
+            _USB_GERAET["obj"].close()
+    except Exception:
+        pass
+    _USB_GERAET["obj"] = None
+
+
+_USB_FENSTER = {"fenster": None}
+
+
+def usb_fenster(haupfenster, oeffne_karte=None):
+    """Fenster „Pedal über USB": Speicher wählen, Patches ansehen, sichern.
+
+    Regeln, die aus dem ersten Versuch am 16.11.2026 stammen:
+      - nur EIN Fenster. Ein zweiter Klick holt das vorhandene nach vorn,
+        statt ein weiteres zu öffnen (es gingen mehrere auf, das Programm
+        wurde träge).
+      - tkinter wird ausschließlich im Hauptstrang benutzt. Der Arbeitsstrang
+        legt seine Ergebnisse in eine Warteschlange, die Oberfläche liest sie
+        mit after() ab. Ein Tk-Aufruf aus einem anderen Strang kann das
+        Fenster blockieren.
+      - der gefundene Anschluß wird gemerkt, damit beim nächsten Mal nicht
+        wieder alle Anschlüsse durchprobiert werden (das kostete Sekunden).
+    """
+    import queue
+    import threading
+    import tkinter as tk
+    from tkinter import filedialog, messagebox, simpledialog
+
+    offen = _USB_FENSTER.get("fenster")
+    if offen is not None:
+        try:
+            offen.deiconify()
+            offen.lift()
+            offen.focus_force()
+            return
+        except Exception:
+            _USB_FENSTER["fenster"] = None
+
+    try:
+        g_modul = _greenglass()
+    except Exception as e:
+        messagebox.showerror(T("Pedal über USB"),
+                             T("Das USB-Modul fehlt: greenglass.py muß neben jamman.py liegen.")
+                             + "\n" + str(e))
+        return
+    # Wenn beim Aufbau etwas schiefgeht, soll es zu sehen sein und nicht
+    # nur im Terminal stehen (das Fenster blieb am 16.11.2026 unsichtbar).
+    try:
+        return _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte)
+    except Exception as e:
+        import traceback
+        messagebox.showerror(T("Pedal über USB"),
+                             T("Fehler beim Öffnen:") + "\n" + str(e) + "\n\n"
+                             + traceback.format_exc()[-600:])
+        return
+
+def _neuer_patch_xml(geraetename, name):
+    """patch.xml für einen neuen Patch bauen (Aufbau wie vom Pedal erzeugt)."""
+    import uuid
+    name = (name or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return ('<?xml version="1.0" encoding="UTF-8" ?>\n'
+            '<JamManPatch xmlns="http://schemas.digitech.com/JamMan/Patch" '
+            'device="%s" version="1">\n'
+            '    <PatchName>%s</PatchName>\n'
+            '    <RhythmType>Silence</RhythmType>\n'
+            '    <StopMode>StopInstantly</StopMode>\n'
+            '    <SettingsVersion>0</SettingsVersion>\n'
+            '    <ID>%s</ID>\n'
+            '    <Metadata>\n'
+            '    <Description />\n'
+            '    <Artist />\n'
+            '    <Genre>Unspecified</Genre>\n'
+            '    <Rating>0</Rating>\n'
+            '    <Tags />\n'
+            '</Metadata>\n'
+            '</JamManPatch>\n' % (geraetename, name, uuid.uuid4())).encode("utf-8")
+
+
+def _neue_phrase_xml():
+    """phrase.xml für eine neue Phrase (wie vom Pedal erzeugt)."""
+    import uuid
+    return ('<?xml version="1.0" encoding="UTF-8" ?>\n'
+            '<JamManPhrase xmlns="http://schemas.digitech.com/JamMan/Phrase" version="1">\n'
+            '    <BeatsPerMinute>90.0000000000</BeatsPerMinute>\n'
+            '    <BeatsPerMeasure>4</BeatsPerMeasure>\n'
+            '    <BpmValidated>0</BpmValidated>\n'
+            '    <IsLoop>1</IsLoop>\n'
+            '    <IsReversed>0</IsReversed>\n'
+            '    <SettingsVersion>0</SettingsVersion>\n'
+            '    <AudioVersion>0</AudioVersion>\n'
+            '    <ID>%s</ID>\n'
+            '    <Metadata />\n'
+            '</JamManPhrase>\n' % (uuid.uuid4())).encode("utf-8")
+
+
+# Mögliche Werte der Pedal-Einstellungen. Sie stammen aus dem Protokoll-
+# dokument von RenanDiaz/jamman-manager (docs/usb-protocol.md) und von dem,
+# was das Pedal selbst zurückmeldet. Unbekannte Werte werden zusätzlich
+# angeboten, damit nichts verlorengeht.
+WERTE_WARTESCHLANGE = ["RevertToSaved", "TransitionIfStopped"]
+WERTE_TASTE = ["UndoRedo", "Reverse", "Tempo", ""]
+
+
+def _frage_ja(fenster, titel, text):
+    """Ja/Nein-Frage, die nicht hinter dem Vordergrundfenster verschwindet.
+
+    Anlaß (16.11.2026): Das USB-Fenster steht dauerhaft im Vordergrund. Eine
+    Rückfrage, die dahinter aufging, blieb unsichtbar — das Werkzeug wirkte
+    eingefroren, obwohl es nur auf ein Ja oder Nein wartete. Vor der Frage
+    wird der Vordergrund kurz abgegeben, danach wieder gesetzt.
+    """
+    from tkinter import messagebox
+    vorne = False
+    try:
+        vorne = bool(fenster.attributes("-topmost"))
+        if vorne:
+            fenster.attributes("-topmost", False)
+    except Exception:
+        vorne = False
+    try:
+        return frage_ja_nein(fenster, titel, text)
+    finally:
+        try:
+            if vorne:
+                fenster.attributes("-topmost", True)
+                fenster.lift()
+        except Exception:
+            pass
+
+
+def _sicherungs_laeufe(ziel):
+    """Alle Hole- und Sicherungsläufe unter einem Zielordner.
+
+    Rückgabe: [(Pfad, Name, Änderungszeit, Größe in Bytes)] — nur direkte
+    Unterordner, nie der Zielordner selbst.
+    """
+    import time as _zeit
+    laeufe = []
+    if not ziel or not os.path.isdir(ziel):
+        return laeufe
+    for name in sorted(os.listdir(ziel)):
+        pfad = os.path.join(ziel, name)
+        if not os.path.isdir(pfad):
+            continue
+        try:
+            laeufe.append((pfad, name, os.path.getmtime(pfad), _ordnergroesse(pfad)))
+        except OSError:
+            pass
+    laeufe.sort(key=lambda x: x[2], reverse=True)   # neueste zuerst
+    return laeufe
+
+
+def fenster_aufraeumen(ziel, haupfenster):
+    """Sicherungen im Zielordner ansehen und alte löschen.
+
+    Anlaß (16.11.2026): Mit jedem Hole-Lauf wächst der Zielordner; nach
+    mehreren Läufen lagen hunderte Megabyte alter Kopien herum.
+    Gelöscht wird nur, was ausdrücklich angekreuzt ist — und nur innerhalb
+    des Zielordners.
+    """
+    import shutil
+    import tkinter as tk
+    from tkinter import messagebox
+
+    if not ziel or not os.path.isdir(ziel):
+        messagebox.showinfo(T("Aufräumen"),
+                            T("Der Zielordner ist noch nicht angelegt."))
+        return
+
+    laeufe = _sicherungs_laeufe(ziel)
+    if not laeufe:
+        messagebox.showinfo(T("Aufräumen"), T("Im Zielordner liegen keine Sicherungen."))
+        return
+
+    f = tk.Toplevel(haupfenster)
+    f.title(T("Sicherungen aufräumen"))
+    f.configure(bg=FARBE_HINTERGRUND)
+    f.geometry("720x520+%d+%d" % (haupfenster.winfo_rootx() + 50,
+                                  haupfenster.winfo_rooty() + 50))
+    try:
+        f.attributes("-topmost", True)
+    except Exception:
+        pass
+
+    tk.Label(f, text=T("Sicherungen im Zielordner"), bg=FARBE_HINTERGRUND,
+             fg=FARBE_SCHRIFT, font=schrift(12, fest=True)).pack(pady=(12, 2))
+    tk.Label(f, text=ziel, bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+             font=schrift(9), wraplength=660).pack(pady=(0, 8))
+
+    rahmen = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    rahmen.pack(fill="both", expand=True, padx=16)
+
+    anzeige = tk.Listbox(rahmen, bg=FARBE_LISTE, fg=FARBE_SCHRIFT,
+                         selectbackground=FARBE_AUSWAHL, selectmode="extended",
+                         exportselection=False, font=schrift(10))
+    anzeige.pack(side="left", fill="both", expand=True)
+    roll = tk.Scrollbar(rahmen, command=anzeige.yview)
+    roll.pack(side="right", fill="y")
+    anzeige.config(yscrollcommand=roll.set)
+
+    import time as _zeit
+    for pfad, name, wann, groesse in laeufe:
+        zusatz = ""
+        if name == "vor-ueberschreiben":
+            zusatz = "   " + T("(für Rückgängig nötig)")
+        anzeige.insert("end", "%s   %s   %6.1f MB%s" %
+                       (_zeit.strftime("%d.%m.%Y %H:%M", _zeit.localtime(wann)),
+                        name[:28], groesse / 1048576.0, zusatz))
+
+    gesamt = sum(g for _, _, _, g in laeufe)
+    kopf = tk.Label(f, text=T("%d Sicherungen · %.1f MB") % (len(laeufe), gesamt / 1048576.0),
+                    bg=FARBE_HINTERGRUND, fg=FARBE_LEISE, font=schrift(9))
+    kopf.pack(pady=(6, 2))
+
+    def markieren_neueste(n):
+        anzeige.selection_clear(0, "end")
+        for i in range(min(n, anzeige.size())):
+            anzeige.selection_set(i)
+
+    zeile = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    zeile.pack(fill="x", padx=16, pady=(4, 0))
+    tk.Label(zeile, text=T("Neueste behalten:"), bg=FARBE_HINTERGRUND,
+             fg=FARBE_SCHRIFT).pack(side="left")
+    for n in (1, 2, 3, 5):
+        tk.Button(zeile, text=str(n), width=3,
+                  command=lambda n=n: markieren_neueste(n)).pack(side="left", padx=2)
+
+    def loeschen():
+        indizes = list(anzeige.curselection())
+        if not indizes:
+            messagebox.showinfo(T("Hinweis"), T("Erst Sicherungen in der Liste markieren."))
+            return
+        weg = [laeufe[i] for i in indizes]
+        menge = sum(g for _, _, _, g in weg) / 1048576.0
+        if any(name == "vor-ueberschreiben" for _, name, _, _ in weg):
+            if not _frage_ja(f, 
+                    T("Sicherungen aufräumen"),
+                    T("Darunter ist die Sicherung für Rückgängig. Danach läßt "
+                      "sich der letzte Schreibvorgang nicht mehr zurücknehmen. "
+                      "Trotzdem löschen?")):
+                return
+        if not _frage_ja(f, 
+                T("Sicherungen aufräumen"),
+                T("%d Sicherungen mit %.1f MB werden endgültig gelöscht. Fortsetzen?")
+                % (len(weg), menge)):
+            return
+        fehler = 0
+        for pfad, name, _, _ in weg:
+            # Sicherheitsnetz: nur löschen, was direkt im Zielordner liegt
+            if os.path.dirname(os.path.abspath(pfad)) != os.path.abspath(ziel):
+                fehler += 1
+                continue
+            try:
+                shutil.rmtree(pfad)
+            except OSError:
+                fehler += 1
+        if fehler:
+            messagebox.showwarning(T("Aufräumen"),
+                                   T("%d Sicherungen konnten nicht gelöscht werden.") % fehler)
+        f.destroy()
+        fenster_aufraeumen(ziel, haupfenster)
+
+    tk.Button(f, text=T("Markierte löschen"), command=loeschen).pack(pady=(10, 4))
+    tk.Button(f, text=T("Schließen"), command=f.destroy).pack(pady=(0, 12))
+
+
+def datei_auswahl(haupfenster, titel, muster, start=None, nur_ordner=False,
+                  vorgabe_name=None):
+    """Eigener Dateiauswahl-Dialog: immer im Vordergrund, ohne Systemdialog.
+
+    Anlaß (17.11.2026): zenity erschien hinter dem Werkzeug (das Fenster steht
+    auf -topmost), und der Tk-Dialog war unübersichtlich. Dieser Dialog gehört
+    zum Werkzeug, steht deshalb davor und blendet versteckte Einträge aus.
+
+    Rückgabe: vollständiger Pfad oder "" (abgebrochen).
+    """
+    import tkinter as tk
+    from tkinter import messagebox
+
+    endungen = [m.lstrip("*").lower() for m in muster.split() if m.startswith("*.")]
+    def lesbar(pfad):
+        """Kann dieser Ordner überhaupt aufgelistet werden?"""
+        try:
+            os.listdir(pfad)
+            return True
+        except OSError:
+            return False
+
+    ordner = os.path.abspath(os.path.expanduser(start)) if start else os.path.expanduser("~")
+    if not os.path.isdir(ordner) or not lesbar(ordner):
+        # Nicht lesbar (Windows: „Zugriff verweigert" bei verknüpften
+        # Bibliotheksordnern, 17.11.2026) — dann etwas Nehmbares vorschlagen.
+        for ersatz in (os.path.join(os.path.expanduser("~"), "Music"),
+                       os.path.join(os.path.expanduser("~"), "Musik"),
+                       os.path.expanduser("~")):
+            if os.path.isdir(ersatz) and lesbar(ersatz):
+                ordner = ersatz
+                break
+        else:
+            ordner = os.path.expanduser("~")
+
+    fenster = tk.Toplevel(haupfenster)
+    fenster.title(titel)
+    fenster.configure(bg=FARBE_HINTERGRUND)
+    fenster.geometry("960x560")
+    fenster.minsize(700, 420)
+    wahl = {"pfad": ""}
+
+    # Pfad als Eingabefeld: unter Linux liegen Karten unter /media/<Benutzer>/…,
+    # das tippt niemand gern von Hand nach.
+    pfad_zeile = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    pfad_zeile.pack(fill="x", padx=12, pady=(10, 4))
+    kopf_var = tk.StringVar(value="")
+    kopf = tk.Entry(pfad_zeile, textvariable=kopf_var, bg=FARBE_LISTE,
+                    fg=FARBE_SCHRIFT, insertbackground=FARBE_SCHRIFT,
+                    relief="flat", font=schrift(10))
+    kopf.pack(side="left", fill="x", expand=True, ipady=3)
+
+    zustand_text = tk.StringVar(value="")
+    tk.Label(fenster, textvariable=zustand_text, bg=FARBE_HINTERGRUND, fg="#d98c4a",
+             font=schrift(9), anchor="w", justify="left",
+             wraplength=880).pack(fill="x", padx=12)
+
+    leiste = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    leiste.pack(fill="x", padx=12, pady=(0, 6))
+
+    inhalt = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    inhalt.pack(fill="both", expand=True, padx=12)
+
+    links = tk.Frame(inhalt, bg=FARBE_HINTERGRUND, width=340)
+    links.pack(side="left", fill="both", expand=True)
+    links.pack_propagate(False)
+    tk.Label(links, text=T("Ordner"), bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+             font=schrift(9), anchor="w").pack(fill="x")
+    ordner_liste = tk.Listbox(links, bg=FARBE_LISTE, fg=FARBE_SCHRIFT,
+                              selectbackground=FARBE_AUSWAHL, relief="flat",
+                              font=schrift(11), activestyle="none")
+    ordner_liste.pack(fill="both", expand=True, pady=(2, 0))
+
+    rechts = tk.Frame(inhalt, bg=FARBE_HINTERGRUND)
+    rechts.pack(side="left", fill="both", expand=True, padx=(10, 0))
+    tk.Label(rechts, text=T("Dateien"), bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+             font=schrift(9), anchor="w").pack(fill="x")
+    datei_liste = tk.Listbox(rechts, bg=FARBE_LISTE, fg=FARBE_SCHRIFT,
+                             selectbackground=FARBE_AUSWAHL, relief="flat",
+                             font=schrift(11), activestyle="none")
+    datei_liste.pack(fill="both", expand=True, pady=(2, 0))
+
+    unten = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    unten.pack(fill="x", padx=12, pady=(8, 12))
+    tk.Label(unten, text=T("Auswahl:"), bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+             font=schrift(9)).pack(side="left", padx=(0, 8))
+    pfad_var = tk.StringVar(value="")
+    tk.Entry(unten, textvariable=pfad_var, bg=FARBE_LISTE, fg=FARBE_SCHRIFT,
+             insertbackground=FARBE_SCHRIFT, relief="flat",
+             font=schrift(11)).pack(side="left", fill="x", expand=True, ipady=4)
+
+    def gehe_zu(ereignis=None):
+        ziel = os.path.abspath(os.path.expanduser(kopf_var.get().strip()))
+        if os.path.isdir(ziel):
+            fuellen(ziel)
+
+    kopf.bind("<Return>", gehe_zu)
+
+    def fuellen(pfad):
+        kopf_var.set(pfad)
+        ordner_liste.delete(0, "end")
+        datei_liste.delete(0, "end")
+        try:
+            eintraege = sorted(os.listdir(pfad))
+        except OSError as fehler:
+            # Kein Abbruch: Hinweis zeigen, Listen leeren, „Nach oben" bleibt.
+            zustand_text.set(T("Dieser Ordner ist nicht lesbar: %s") % fehler)
+            return
+        zustand_text.set("")
+        if os.path.dirname(pfad) != pfad:
+            ordner_liste.insert("end", "..")
+        for name in eintraege:
+            if name.startswith("."):
+                continue
+            voll = os.path.join(pfad, name)
+            if os.path.isdir(voll):
+                ordner_liste.insert("end", name + "/")
+            elif not nur_ordner and any(name.lower().endswith(e) for e in endungen):
+                datei_liste.insert("end", name)
+        fenster.pfad = pfad
+
+    def hinein(ereignis=None):
+        gewaehlt = ordner_liste.curselection()
+        if not gewaehlt:
+            return
+        name = ordner_liste.get(gewaehlt[0])
+        ziel = (os.path.dirname(fenster.pfad) if name == ".."
+                else os.path.join(fenster.pfad, name.rstrip("/")))
+        if os.path.isdir(ziel):
+            fuellen(ziel)
+
+    def markiere(ereignis=None):
+        gewaehlt = datei_liste.curselection()
+        if gewaehlt:
+            pfad_var.set(os.path.join(fenster.pfad, datei_liste.get(gewaehlt[0])))
+
+    name_eingabe = None
+    if vorgabe_name is not None:
+        name_zeile = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+        name_zeile.pack(fill="x", padx=12, pady=(0, 6))
+        tk.Label(name_zeile, text=T("Dateiname:"), bg=FARBE_HINTERGRUND,
+                 fg=FARBE_LEISE).pack(side="left")
+        name_var = tk.StringVar(value=vorgabe_name)
+        name_eingabe = tk.Entry(name_zeile, textvariable=name_var,
+                                bg=FARBE_LISTE, fg=FARBE_SCHRIFT,
+                                insertbackground=FARBE_SCHRIFT, relief="flat",
+                                font=schrift(11))
+        name_eingabe.pack(side="left", fill="x", expand=True, padx=(8, 0), ipady=3)
+
+    def oeffnen():
+        if vorgabe_name is not None:
+            name = name_var.get().strip()
+            if not name:
+                messagebox.showinfo(T("Hinweis"), T("Bitte einen Dateinamen angeben."),
+                                    parent=fenster)
+                return
+            ziel = os.path.join(fenster.pfad, name)
+            if os.path.exists(ziel) and not frage_ja_nein(
+                    fenster, T("Überschreiben"), T("%s gibt es schon. Ersetzen?") % ziel):
+                return
+            wahl["pfad"] = ziel
+            fenster.destroy()
+            return
+        if nur_ordner:
+            wahl["pfad"] = fenster.pfad
+            fenster.destroy()
+            return
+        pfad = pfad_var.get().strip()
+        if pfad and os.path.isfile(pfad):
+            wahl["pfad"] = pfad
+            fenster.destroy()
+        else:
+            messagebox.showinfo(T("Hinweis"), T("Bitte eine Datei auswählen."),
+                                parent=fenster)
+
+    def hoch():
+        fuellen(os.path.dirname(fenster.pfad))
+
+    tk.Button(leiste, text=T("Nach oben"), command=hoch).pack(side="left")
+    tk.Button(leiste, text=T("Speichern") if vorgabe_name is not None else T("Öffnen"),
+              command=oeffnen).pack(side="right")
+    tk.Button(leiste, text=T("Abbrechen"),
+              command=fenster.destroy).pack(side="right", padx=(0, 8))
+
+    ordner_liste.bind("<Double-Button-1>", hinein)
+    ordner_liste.bind("<Return>", hinein)
+    datei_liste.bind("<<ListboxSelect>>", markiere)
+    datei_liste.bind("<Double-Button-1>", lambda e: oeffnen())
+    datei_liste.bind("<Return>", lambda e: oeffnen())
+
+    fuellen(ordner)
+
+    # Das Elternfenster (USB-Fenster) hält sich mit -topmost nach vorn und
+    # springt sonst über diesen Dialog (17.11.2026). Also für die Dauer des
+    # Dialogs zurücknehmen und danach wiederherstellen.
+    eltern_vorne = False
+    try:
+        if haupfenster is not None:
+            eltern_vorne = bool(haupfenster.attributes("-topmost"))
+            if eltern_vorne:
+                haupfenster.attributes("-topmost", False)
+    except Exception:
+        eltern_vorne = False
+
+    try:
+        fenster.attributes("-topmost", True)
+        fenster.lift()
+        fenster.focus_force()
+        fenster.grab_set()
+        # Manche Fenstermanager stellen das Elternfenster erst danach wieder
+        # nach vorn — ein zweites Anheben kurz darauf hilft.
+        fenster.after(120, lambda: (fenster.lift(), fenster.focus_force()))
+    except Exception:
+        pass
+
+    haupfenster.wait_window(fenster)
+    if eltern_vorne:
+        try:
+            haupfenster.attributes("-topmost", True)
+        except Exception:
+            pass
+    return wahl["pfad"]
+
+
+def ordner_waehlen(haupfenster, titel, start=None):
+    """Ordner auswählen — mit dem eigenen Dialog (siehe datei_auswahl)."""
+    return datei_auswahl(haupfenster, titel, "", start, nur_ordner=True)
+
+
+def datei_speichern(haupfenster, titel, vorgabe_name, start=None, muster=""):
+    """Dateiname und Ordner wählen — eigener Dialog, siehe datei_auswahl."""
+    return datei_auswahl(haupfenster, titel, muster, start,
+                         vorgabe_name=vorgabe_name)
+
+
+def datei_waehlen(haupfenster, titel, muster, start=None, endung=".txt"):
+    """Datei auswählen — über den eigenen Dialog des Werkzeugs.
+
+    Anlaß (17.11.2026): Der Tk-Dialog war unübersichtlich (enge Spalten, alle
+    versteckten Dateien), und zenity erschien hinter dem Fenster, weil das
+    Werkzeug auf -topmost steht. Der eigene Dialog gehört zum Werkzeug und
+    steht damit zwangsläufig davor.
+    """
+    return datei_auswahl(haupfenster, titel, muster, start)
+
+
+def sperrbare_widgets(wurzel, ausnahmen=()):
+    """Alle Knöpfe und Menüs unter `wurzel`, außer den genannten Beschriftungen.
+
+    Wird gebraucht, damit während eines Hole- oder Schreibvorgangs nichts
+    dazwischenfunkt (17.11.2026).
+    """
+    treffer = []
+
+    def lauf(widget):
+        for kind in widget.winfo_children():
+            art = kind.winfo_class()
+            if art in ("Button", "Menubutton", "Radiobutton"):
+                beschriftung = ""
+                if art != "Radiobutton":
+                    try:
+                        beschriftung = str(kind.cget("text"))
+                    except Exception:
+                        beschriftung = ""
+                if beschriftung not in ausnahmen:
+                    treffer.append(kind)
+            lauf(kind)
+
+    lauf(wurzel)
+    return treffer
+
+
+def beschreibung_fenster(haupfenster, pfad):
+    """Name, Interpret, Genre, Bewertung, Stichwörter, Text und Tempo ändern.
+
+    Diese Felder stehen im patch.xml/phrase.xml des Pedals, hatten aber keine
+    Oberfläche (17.11.2026: JamManager XT kann sie, das Werkzeug schrieb immer
+    „Unspecified“, Bewertung 0 und 90 BPM).
+    """
+    import tkinter as tk
+    from tkinter import messagebox
+
+    ist = patch_beschreibung(pfad)
+    fenster = tk.Toplevel(haupfenster)
+    fenster.title(T("Beschreibung"))
+    fenster.configure(bg=FARBE_HINTERGRUND)
+    fenster.resizable(False, False)
+
+    eltern_vorne = False
+    try:
+        eltern_vorne = bool(haupfenster.attributes("-topmost"))
+        if eltern_vorne:
+            haupfenster.attributes("-topmost", False)
+    except Exception:
+        eltern_vorne = False
+
+    felder = {}
+    zeilen = [
+        ("name", T("Name"), 40),
+        ("artist", T("Interpret"), 40),
+        ("genre", T("Genre"), 24),
+        ("tags", T("Stichwörter"), 40),
+        ("description", T("Beschreibung"), 56),
+    ]
+    for schluessel, beschriftung, breite in zeilen:
+        zeile = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+        zeile.pack(fill="x", padx=16, pady=3)
+        tk.Label(zeile, text=beschriftung + ":", width=13, anchor="w",
+                 bg=FARBE_HINTERGRUND, fg=FARBE_LEISE).pack(side="left")
+        var = tk.StringVar(value=str(ist.get(schluessel) or ""))
+        tk.Entry(zeile, textvariable=var, width=breite, bg=FARBE_LISTE,
+                 fg=FARBE_SCHRIFT, insertbackground=FARBE_SCHRIFT,
+                 relief="flat").pack(side="left", ipady=3)
+        felder[schluessel] = var
+
+    unten = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    unten.pack(fill="x", padx=16, pady=(6, 14))
+
+    tk.Label(unten, text=T("Bewertung") + ":", bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE).pack(side="left")
+    bewertung = tk.StringVar(value=str(ist.get("rating") or "0"))
+    tk.Spinbox(unten, from_=0, to=5, width=4, textvariable=bewertung,
+               bg=FARBE_LISTE, fg=FARBE_SCHRIFT, relief="flat",
+               insertbackground=FARBE_SCHRIFT).pack(side="left", padx=(6, 18))
+
+    tk.Label(unten, text=T("Tempo (BPM)") + ":", bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE).pack(side="left")
+    tempo = tk.StringVar(value=("%.1f" % ist["bpm"]) if ist.get("bpm") else "")
+    tk.Spinbox(unten, from_=30, to=300, width=6, textvariable=tempo,
+               bg=FARBE_LISTE, fg=FARBE_SCHRIFT, relief="flat",
+               insertbackground=FARBE_SCHRIFT).pack(side="left", padx=(6, 18))
+
+    def speichern():
+        werte = {k: v.get().strip() for k, v in felder.items()}
+        werte["rating"] = (bewertung.get().strip() or "0")
+        try:
+            werte["bpm"] = float(tempo.get().replace(",", "."))                 if tempo.get().strip() else None
+        except ValueError:
+            werte["bpm"] = None
+        try:
+            patch_beschreibung_setzen(pfad, werte)
+        except Exception as e:
+            messagebox.showerror(T("Fehler"), str(e), parent=fenster)
+            return
+        fenster.destroy()
+
+    tk.Button(unten, text=T("Speichern"), command=speichern).pack(side="right")
+    tk.Button(unten, text=T("Abbrechen"),
+              command=fenster.destroy).pack(side="right", padx=(0, 8))
+
+    fenster.bind("<Return>", lambda e: speichern())
+    fenster.bind("<Escape>", lambda e: fenster.destroy())
+    try:
+        fenster.attributes("-topmost", True)
+        fenster.lift()
+        fenster.focus_force()
+        fenster.grab_set()
+    except Exception:
+        pass
+    haupfenster.wait_window(fenster)
+    if eltern_vorne:
+        try:
+            haupfenster.attributes("-topmost", True)
+        except Exception:
+            pass
+
+
+def _frage_auswahl(haupfenster, titel, moeglichkeiten):
+    """Eine von mehreren Möglichkeiten wählen; gibt den Index oder None."""
+    import tkinter as tk
+
+    fenster = tk.Toplevel(haupfenster)
+    fenster.title(titel)
+    fenster.configure(bg=FARBE_HINTERGRUND)
+    eltern_vorne = False
+    try:
+        eltern_vorne = bool(haupfenster.attributes("-topmost"))
+        if eltern_vorne:
+            haupfenster.attributes("-topmost", False)
+    except Exception:
+        eltern_vorne = False
+    auswahl = {"index": None}
+    liste = tk.Listbox(fenster, height=min(12, max(3, len(moeglichkeiten))),
+                       width=44, bg=FARBE_LISTE, fg=FARBE_SCHRIFT,
+                       selectbackground=FARBE_AUSWAHL, relief="flat",
+                       exportselection=False)
+    for wert in moeglichkeiten:
+        liste.insert("end", wert)
+    liste.pack(padx=16, pady=12)
+    liste.selection_set(0)
+    liste.focus_set()
+
+    def uebernehmen(*_):
+        gewaehlt = liste.curselection()
+        if gewaehlt:
+            auswahl["index"] = gewaehlt[0]
+        fenster.destroy()
+
+    leiste = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    leiste.pack(fill="x", padx=16, pady=(0, 12))
+    tk.Button(leiste, text=T("Abbrechen"), command=fenster.destroy).pack(side="right")
+    tk.Button(leiste, text=T("\u00dcbernehmen"),
+              command=uebernehmen).pack(side="right", padx=(0, 8))
+    liste.bind("<Double-Button-1>", uebernehmen)
+    fenster.bind("<Return>", uebernehmen)
+    fenster.bind("<Escape>", lambda e: fenster.destroy())
+    try:
+        fenster.attributes("-topmost", True)
+        fenster.lift()
+        fenster.grab_set()
+    except Exception:
+        pass
+    haupfenster.wait_window(fenster)
+    if eltern_vorne:
+        try:
+            haupfenster.attributes("-topmost", True)
+        except Exception:
+            pass
+    return auswahl["index"]
+
+
+def frage_ja_nein(haupfenster, titel, text):
+    """Ja/Nein-Frage mit eigenen Knöpfen.
+
+    Anlaß (17.11.2026): Die Systemdialoge beschriften ihre Knöpfe selbst
+    („Yes“/„No“), während der Text deutsch war. Hier stehen T("Ja") und
+    T("Nein"), in jeder Sprache.
+    """
+    import tkinter as tk
+
+    fenster = tk.Toplevel(haupfenster)
+    fenster.title(titel)
+    fenster.configure(bg=FARBE_HINTERGRUND)
+    fenster.resizable(False, False)
+    antwort = {"ja": False}
+
+    eltern_vorne = False
+    try:
+        eltern_vorne = bool(haupfenster.attributes("-topmost"))
+        if eltern_vorne:
+            haupfenster.attributes("-topmost", False)
+    except Exception:
+        eltern_vorne = False
+
+    tk.Label(fenster, text=text, bg=FARBE_HINTERGRUND, fg=FARBE_SCHRIFT,
+             font=schrift(11), wraplength=520, justify="left").pack(
+        padx=18, pady=(18, 12))
+
+    def schliessen(ja):
+        antwort["ja"] = ja
+        fenster.destroy()
+
+    leiste = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    leiste.pack(fill="x", padx=18, pady=(0, 16))
+    tk.Button(leiste, text=T("Nein"), width=10,
+              command=lambda: schliessen(False)).pack(side="right")
+    tk.Button(leiste, text=T("Ja"), width=10,
+              command=lambda: schliessen(True)).pack(side="right", padx=(0, 8))
+
+    fenster.bind("<Return>", lambda e: schliessen(True))
+    fenster.bind("<Escape>", lambda e: schliessen(False))
+    try:
+        fenster.attributes("-topmost", True)
+        fenster.lift()
+        fenster.focus_force()
+        fenster.grab_set()
+    except Exception:
+        pass
+
+    haupfenster.wait_window(fenster)
+    if eltern_vorne:
+        try:
+            haupfenster.attributes("-topmost", True)
+        except Exception:
+            pass
+    return antwort["ja"]
+
+
+def _anleitung_fenster(haupfenster, text, titel=None):
+    """Langen Hilfetext in einem eigenen Fenster: scrollbar, markierbar, kopierbar.
+
+    Anlaß (17.11.2026): Der ffmpeg-Text landete in der Statuszeile des
+    USB-Fensters — abgeschnitten, und Befehle ließen sich nicht kopieren.
+    """
+    import tkinter as tk
+    from tkinter import filedialog
+
+    titel = titel or T("Anleitung")
+    fenster = tk.Toplevel(haupfenster)
+    fenster.title(titel)
+    fenster.configure(bg=FARBE_HINTERGRUND)
+    fenster.geometry("780x560")
+    fenster.minsize(560, 360)
+
+    # Das Elternfenster hält sich mit -topmost nach vorn. Ohne Gegenmaßnahme
+    # läge dieses Fenster dahinter (17.11.2026 die gleiche Ursache wie beim
+    # Hinweis-Dialog). Also: Eltern kurz zurücknehmen, dieses Fenster nach
+    # vorn, beim Schließen alles zurückgeben.
+    eltern_vorne = False
+    try:
+        eltern_vorne = bool(haupfenster.attributes("-topmost"))
+        if eltern_vorne:
+            haupfenster.attributes("-topmost", False)
+    except Exception:
+        eltern_vorne = False
+    try:
+        fenster.attributes("-topmost", True)
+    except Exception:
+        pass
+
+    def schliessen():
+        try:
+            fenster.destroy()
+        finally:
+            if eltern_vorne:
+                try:
+                    haupfenster.attributes("-topmost", True)
+                except Exception:
+                    pass
+
+    fenster.protocol("WM_DELETE_WINDOW", schliessen)
+
+    rahmen = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    rahmen.pack(fill="both", expand=True, padx=14, pady=(14, 8))
+    rolle = tk.Scrollbar(rahmen)
+    rolle.pack(side="right", fill="y")
+    bereich = tk.Text(rahmen, wrap="word", yscrollcommand=rolle.set,
+                      bg=FARBE_LISTE, fg=FARBE_SCHRIFT, insertbackground=FARBE_SCHRIFT,
+                      relief="flat", padx=12, pady=10,
+                      font=("Menlo", 11) if MAC else ("Consolas", 10))
+    bereich.pack(side="left", fill="both", expand=True)
+    rolle.config(command=bereich.yview)
+    bereich.insert("1.0", text)
+    # Nur lesen, aber bedienbar: Ein gesperrtes Textfeld ("disabled") nimmt
+    # auch keine Kopier-Taste an (17.11.2026 nachgemessen). Deshalb bleibt es
+    # bedienbar, und Tippen wird abgewiesen — Kopieren und Blättern nicht.
+    def nur_lesen(ereignis):
+        if ereignis.state & 0x4 or ereignis.state & 0x8 or ereignis.state & 0x10:
+            return None                      # Strg/Cmd: kopieren, alles markieren
+        if ereignis.keysym in ("Left", "Right", "Up", "Down", "Home", "End",
+                               "Prior", "Next", "Shift_L", "Shift_R",
+                               "Control_L", "Control_R", "Command"):
+            return None                      # Blättern und Markieren
+        return "break"                       # alles andere abweisen
+
+    bereich.bind("<Key>", nur_lesen)
+
+    def kopiere(ereignis=None):
+        """Auswahl kopieren — eigene Bindung, unabhängig vom Systemdialog.
+
+        Die Standardbindung des Textfelds greift nicht zuverlässig, wenn das
+        Feld den Fokus nicht hat (17.11.2026 nachgemessen).
+        """
+        try:
+            auswahl = bereich.get("sel.first", "sel.last")
+        except tk.TclError:
+            auswahl = bereich.get("1.0", "end-1c")
+        try:
+            fenster.clipboard_clear()
+            fenster.clipboard_append(auswahl)
+            melde_kurz(T("In die Zwischenablage kopiert."))
+        except Exception as fehler:
+            melde_kurz(str(fehler))
+        return "break"
+
+    for folge in ("<Command-c>", "<Command-C>", "<Control-c>", "<Control-C>"):
+        bereich.bind(folge, kopiere)
+    bereich.focus_set()
+
+    leiste = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    leiste.pack(fill="x", padx=14, pady=(0, 12))
+    zustand = tk.Label(leiste, text="", bg=FARBE_HINTERGRUND, fg=FARBE_TON)
+
+    def melde_kurz(text):
+        zustand.config(text=text)
+        zustand.pack(side="left", padx=(12, 0))
+
+    def kopieren(nur_auswahl=False):
+        try:
+            if nur_auswahl:
+                try:
+                    inhalt = bereich.get("sel.first", "sel.last")
+                except tk.TclError:
+                    melde_kurz(T("Nichts markiert — bitte zuerst Text markieren."))
+                    return
+            else:
+                inhalt = bereich.get("1.0", "end-1c")
+            fenster.clipboard_clear()
+            fenster.clipboard_append(inhalt)
+            melde_kurz(T("In die Zwischenablage kopiert."))
+        except Exception as fehler:
+            melde_kurz(str(fehler))
+
+    def als_datei():
+        ziel = datei_speichern(fenster, T("Anleitung speichern"),
+                               "ffmpeg-anleitung.txt", None, "*.txt")
+        if not ziel:
+            return
+        try:
+            with open(ziel, "w", encoding="utf-8") as datei:
+                datei.write(bereich.get("1.0", "end-1c"))
+            melde_kurz(T("Gespeichert."))
+        except OSError as fehler:
+            melde_kurz(str(fehler))
+
+    tk.Button(leiste, text=T("Auswahl kopieren"),
+              command=lambda: kopieren(True)).pack(side="left")
+    tk.Button(leiste, text=T("Alles kopieren"),
+              command=lambda: kopieren(False)).pack(side="left", padx=(8, 0))
+    tk.Button(leiste, text=T("Als Datei speichern"),
+              command=als_datei).pack(side="left", padx=(8, 0))
+    tk.Button(leiste, text=T("Schließen"), command=schliessen).pack(side="right")
+
+    try:
+        fenster.lift()
+        fenster.focus_force()
+    except Exception:
+        pass
+    return fenster
+
+
+def _hinweis(fenster, text, titel=None):
+    """Hinweis-Dialog, der nicht hinter dem eigenen Fenster verschwindet.
+
+    Anlaß (17.11.2026): Im USB-Fenster (bleibt im Vordergrund) erschien der
+    Hinweis zum Zielplatz dahinter — der Nutzer sah nur den Fehler, nicht die
+    Erklärung. Hier wird das „immer im Vordergrund" für die Dauer des Dialogs
+    abgeschaltet und der Dialog als Kind des Fensters gezeigt.
+    """
+    from tkinter import messagebox
+
+    titel = titel or T("Hinweis")
+    war_vorne = False
+    if fenster is not None:
+        try:
+            war_vorne = bool(fenster.attributes("-topmost"))
+            if war_vorne:
+                fenster.attributes("-topmost", False)
+        except Exception:
+            war_vorne = False
+    try:
+        if fenster is not None:
+            messagebox.showinfo(titel, text, parent=fenster)
+        else:
+            messagebox.showinfo(titel, text)
+    finally:
+        if fenster is not None and war_vorne:
+            try:
+                fenster.attributes("-topmost", True)
+            except Exception:
+                pass
+
+
+def _platz_pruefen(fenster, platz):
+    """Prüft die Eingabe des Zielplatzes und sagt, was erwartet wird.
+
+    Am 16.11.2026 blieb ein leerer oder falscher Platz ohne jede Meldung —
+    es sah aus, als sei der Knopf kaputt.
+    """
+    import re as _re
+    from tkinter import messagebox
+    if not platz:
+        _hinweis(fenster, T("Es wurde kein Zielplatz eingegeben."))
+        return None
+    # Tolerant lesen: Leerzeichen, Anführungszeichen, vorangestellte
+    # Sonderzeichen (am 17.11.2026 kam „_Patch17" an) und ein bloßes „17".
+    platz = str(platz).strip().strip("\"'\u201e\u201c\u2018\u2019").rstrip("/")
+    platz = platz.lstrip("_.- ")
+    treffer = _re.match(r"^Patch\s*(\d{1,3})$", platz, _re.IGNORECASE)
+    if not treffer:
+        treffer = _re.match(r"^(\d{1,3})$", platz)
+    if not treffer or not (1 <= int(treffer.group(1)) <= 200):
+        _hinweis(fenster, T("Der Zielplatz muß wie Patch01 … Patch200 heißen, "
+                            "nicht „%s“.") % platz)
+        return None
+    nummer = int(treffer.group(1))
+    return "Patch%02d" % nummer
+
+
+def _frage_text(haupfenster, titel, frage, vorgabe=""):
+    """Eigene Eingabe — ohne simpledialog und ohne angehängten Dialog.
+
+    Anlaß (16.11.2026): Im USB-Fenster ließ sich kein Zielplatz eingeben.
+    Der Systemdialog schloß sofort, und das Fenster stand im Vordergrund
+    (`-topmost`), was das Zusammenspiel mit einem angehängten Dialog
+    („sheet") zerstört. Diese Fassung nimmt dem Elternfenster für die Dauer
+    der Eingabe das „immer im Vordergrund" und bringt den Dialog selbst nach
+    vorn — ohne transient, ohne Systemdialog.
+    """
+    import tkinter as tk
+
+    ergebnis = {"wert": None}
+    vorne = True
+    try:
+        vorne = bool(haupfenster.attributes("-topmost"))
+        haupfenster.attributes("-topmost", False)
+    except Exception:
+        vorne = False
+
+    d = tk.Toplevel(haupfenster)
+    d.title(titel)
+    d.configure(bg=FARBE_HINTERGRUND)
+    d.resizable(False, False)
+    try:
+        d.attributes("-topmost", True)
+    except Exception:
+        pass
+    d.geometry("470x180+%d+%d" % (haupfenster.winfo_rootx() + 80,
+                                  haupfenster.winfo_rooty() + 90))
+
+    tk.Label(d, text=frage, bg=FARBE_HINTERGRUND, fg=FARBE_SCHRIFT,
+             font=schrift(10), wraplength=430, justify="left").pack(padx=16, pady=(14, 8))
+    feld = tk.Entry(d, width=32, font=schrift(13))
+    feld.insert(0, vorgabe)
+    feld.pack(padx=16, pady=(0, 10))
+    feld.select_range(0, "end")
+    feld.icursor("end")
+
+    def aufraeumen():
+        try:
+            haupfenster.attributes("-topmost", vorne)
+        except Exception:
+            pass
+
+    def uebernehmen(*_a):
+        ergebnis["wert"] = feld.get().strip()
+        aufraeumen()
+        d.destroy()
+
+    def abbrechen(*_a):
+        ergebnis["wert"] = None
+        aufraeumen()
+        d.destroy()
+
+    zeile = tk.Frame(d, bg=FARBE_HINTERGRUND)
+    zeile.pack(pady=(0, 12))
+    tk.Button(zeile, text=T("OK"), command=uebernehmen, width=10).pack(side="left", padx=6)
+    tk.Button(zeile, text=T("Abbrechen"), command=abbrechen, width=10).pack(side="left", padx=6)
+
+    # Nur das Feld hört auf Return/Escape — nicht das ganze Fenster.
+    feld.bind("<Return>", uebernehmen)
+    feld.bind("<KP_Enter>", uebernehmen)
+    feld.bind("<Escape>", abbrechen)
+    d.protocol("WM_DELETE_WINDOW", abbrechen)
+    d.grab_set()
+    d.lift()
+    feld.focus_force()
+    haupfenster.wait_window(d)
+    return ergebnis["wert"]
+
+
+def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
+    """Der eigentliche Aufbau des USB-Fensters."""
+    import queue
+    import threading
+    import tkinter as tk
+    from tkinter import filedialog, messagebox
+
+    f = tk.Toplevel(haupfenster)
+    f.title(T("Pedal über USB"))
+    f.configure(bg=FARBE_HINTERGRUND)
+    # Über dem Hauptfenster und in dessen Mitte: sonst öffnet es sich
+    # irgendwo und wirkt, als sei nichts passiert (16.11.2026).
+    try:
+        # KEIN transient(): auf macOS nimmt das Hauptfenster dann keine Klicks
+        # mehr an, solange das USB-Fenster offen ist (16.11.2026).
+        haupfenster.update_idletasks()
+        bx, by = haupfenster.winfo_rootx(), haupfenster.winfo_rooty()
+        bw, bh = haupfenster.winfo_width(), haupfenster.winfo_height()
+        f.geometry("760x620+%d+%d" % (bx + max(0, (bw - 760) // 2),
+                                      by + max(0, (bh - 620) // 2)))
+    except Exception:
+        f.geometry("760x620")
+    f.lift()
+    try:
+        f.focus_force()
+        # bleibt im Vordergrund: vorher verschwand es nach 1,2 s hinter dem
+        # großen Hauptfenster und wirkte wie geschlossen (16.11.2026)
+        f.attributes("-topmost", True)
+    except Exception:
+        pass
+    _USB_FENSTER["fenster"] = f
+
+    kopf = tk.Label(f, text=T("Verbinde mit dem Pedal …"), bg=FARBE_HINTERGRUND,
+                    fg=FARBE_SCHRIFT, font=schrift(11, fest=True),
+                    wraplength=720, justify="center")
+    kopf.pack(pady=(10, 4))
+
+    wahl = tk.StringVar(value="intern")
+    zeile = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    zeile.pack(pady=(0, 6))
+    for text, wert in ((T("Interner Speicher"), "intern"), (T("SD-Karte"), "sd")):
+        tk.Radiobutton(zeile, text=text, value=wert, variable=wahl,
+                       command=lambda: anstossen(), bg=FARBE_HINTERGRUND,
+                       fg=FARBE_SCHRIFT, selectcolor=FARBE_LISTE,
+                       activebackground=FARBE_HINTERGRUND).pack(side="left", padx=6)
+
+    liste = tk.Listbox(f, bg=FARBE_LISTE, fg=FARBE_SCHRIFT, selectbackground=FARBE_AUSWAHL,
+                       height=14, font=schrift(10), selectmode="extended",
+                       exportselection=False)
+    liste.pack(fill="both", expand=True, padx=14, pady=6)
+
+    for _taste in ("<Command-a>", "<Control-a>"):
+        try:
+            f.bind_all(_taste, alle_auswaehlen, add="+")
+        except Exception:
+            pass
+
+    hinweis = tk.Label(f, text="",
+                       bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+                       font=schrift(9), wraplength=560, justify="center")
+    hinweis.pack(pady=(0, 4))
+
+    stand = {"geraet": None, "basis": None, "patchliste": [], "laeuft": False,
+             "abbruch": False, "t0": 0.0, "bytes": 0,
+             "ziel": "", "ziel_eigen": False,
+             "zu": False, "nach": None}
+    meldungen = queue.Queue()
+
+    # Alles, was während eines Laufs stören würde, wird gesperrt
+    # (17.11.2026: Umschalten oder ein zweiter Lauf brachte zwei Stränge
+    #  durcheinander). „Abbrechen“ und „Schließen“ bleiben bedienbar.
+    sperrbar = []
+
+    def sperren(an):
+        for ding in sperrbar:
+            try:
+                ding.config(state="disabled" if an else "normal")
+            except Exception:
+                pass
+
+
+    def melde(text):
+        kopf.config(text=text)
+
+    def anzeigen(patchliste):
+        liste.delete(0, "end")
+        for platz, name, groesse in patchliste:
+            groesse_txt = ("%.1f MB" % (groesse / 1048576.0)) if groesse else "—"
+            liste.insert("end", "%s  ·  %s  ·  %s" %
+                         (platz, name or T("(ohne Namen)"), groesse_txt))
+        p = stand["geraet"].kopf
+        melde("%s — %s" % (p["name"],
+                           T("Interner Speicher") if wahl.get() == "intern" else T("SD-Karte")))
+        try:
+            f.lift()
+        except Exception:
+            pass
+
+    def abholen():
+        """Im Hauptstrang: Meldungen des Arbeitsstrangs abarbeiten."""
+        if stand["zu"]:
+            return
+        try:
+            while True:
+                art, inhalt = meldungen.get_nowait()
+                if art == "text":
+                    melde(inhalt)
+                elif art == "setlists":
+                    ort, zuege_fertig = inhalt
+                    try:
+                        kandidaten = [n for n in sorted(os.listdir(ort))
+                                      if n.lower().endswith(".txt")]
+                    except Exception:
+                        kandidaten = []
+                    if kandidaten and _frage_ja(
+                            f, T("Setlists anpassen"),
+                            T("%d Setlist-Dateien in %s an die neuen Plätze "
+                              "anpassen? Jede Datei wird vorher daneben "
+                              "gesichert.") % (len(kandidaten), ort)):
+                        try:
+                            geaendert = setlists_anpassen(ort, zuege_fertig)
+                        except Exception as e:
+                            meldungen.put(("text", T("Setlists nicht angepaßt: ")
+                                           + str(e)))
+                        else:
+                            if geaendert:
+                                meldungen.put(("text", T("Setlists angepaßt: ")
+                                               + ", ".join("%s (%d Zeilen)" % g
+                                                           for g in geaendert)))
+                            else:
+                                meldungen.put(("text", T("Keine Setlist nannte "
+                                                         "einen bewegten Platz.")))
+                elif art == "hinweis":
+                    _hinweis(f, inhalt)
+                elif art == "anleitung":
+                    _anleitung_fenster(f, inhalt, T("Anleitung"))
+                elif art == "liste":
+                    anzeigen(inhalt)
+                elif art == "markieren":
+                    try:
+                        liste.selection_clear(0, "end")
+                        liste.selection_set(inhalt)
+                        liste.see(inhalt)
+                    except Exception:
+                        pass
+                elif art == "neu":
+                    stand["laeuft"] = False
+                    anstossen()
+                elif art == "aufraeumen":
+                    ordner_pfad, dateien = inhalt
+                    # Läuft schon ein neuer Hole-Lauf (z. B. nach „Verbindung
+                    # neu aufbauen“), darf das Aufräumen des alten Laufs nicht
+                    # dazwischenfahren — sonst verschwindet die .part-Datei,
+                    # die der neue Lauf gerade schreibt (17.11.2026).
+                    if not stand.get("laeuft") and dateien and _frage_ja(f,
+                            T("Aufräumen"),
+                            T("Die angefangene Kopie entfernen? Nur die gerade "
+                              "geholten Dateien werden gelöscht, der Ordner bleibt.")):
+                        weg = _raeume_auf(ordner_pfad, dateien)
+                        melde(T("Aufgeräumt:") + " %d Dateien" % weg)
+                elif art == "auffrischen":
+                    if oeffne_karte:
+                        try:
+                            oeffne_karte(inhalt)
+                        except Exception:
+                            pass
+                elif art == "oeffnen":
+                    if oeffne_karte and _frage_ja(f, 
+                            T("Pedal über USB"),
+                            T("Im Hauptfenster öffnen?") + "\n" + inhalt):
+                        try:
+                            stand["geoeffnet"] = inhalt
+                            oeffne_karte(inhalt)
+                        except SystemExit as e:
+                            messagebox.showerror(T("Fehler"), str(e))
+                        except Exception as e:
+                            messagebox.showerror(T("Fehler"), str(e))
+                elif art == "fertig":
+                    sperren(False)
+                    stand["laeuft"] = False
+        except queue.Empty:
+            pass
+        try:
+            if not stand["zu"] and f.winfo_exists():
+                stand["nach"] = f.after(150, abholen)
+        except Exception:
+            pass
+
+    def arbeit(speicher, geraet, modul):
+        try:
+            if geraet is None:
+                meldungen.put(("text", T("Verbinde mit dem Pedal …")))
+                geraet = _geraet_holen(modul, einstellung_lesen("usb_geraet") or None)
+                stand["geraet"] = geraet
+                try:
+                    einstellung_schreiben("usb_geraet", geraet.geraet)
+                except Exception:
+                    pass
+            stand["geraet"] = geraet
+            def fortschritt(fertig, gesamt, bisher):
+                meldungen.put(("liste", list(bisher)))
+
+            basis, patchliste = _pedal_lesen(geraet, speicher, fortschritt)
+            stand["basis"], stand["patchliste"] = basis, patchliste
+            meldungen.put(("liste", patchliste))
+        except Exception as e:
+            if not stand.get("patchliste"):
+                meldungen.put(("liste", []))
+            meldungen.put(("text", str(e) if "Karte" in str(e)
+                           else T("Kein JamMan gefunden — Pedal einschalten und Kabel prüfen.")
+                           + " " + str(e)))
+        finally:
+            meldungen.put(("fertig", None))
+
+    def hinweis_setzen():
+        # Der alte Satz „Nur lesen: das Pedal wird nicht verändert." stimmt
+        # seit dem 16.11.2026 nicht mehr — das Werkzeug schreibt inzwischen
+        # (Audio, Patch-Ordner, Rückgängig). Jetzt steht dort, was gilt.
+        if wahl.get() == "sd":
+            hinweis.config(text=T("Über USB fließen etwa 1,3 MB/s. Für eine ganze "
+                                  "Karte ist ein Kartenleser viel schneller. "
+                                  "Schreiben verändert die Karte — vorher wird gesichert."))
+        else:
+            hinweis.config(text=T("Lesen und Schreiben über USB. Vor jedem "
+                                  "Überschreiben wird der alte Platz auf den Rechner "
+                                  "gesichert."))
+
+    def anstossen():
+        hinweis_setzen()
+        if stand["laeuft"]:
+            return
+        stand["laeuft"] = True
+        sperren(True)
+        melde(T("Lädt …"))
+        threading.Thread(target=arbeit, args=(wahl.get(), stand["geraet"], g_modul),
+                         daemon=True).start()
+
+    def alles_holen():
+        if not stand["patchliste"]:
+            _hinweis(f, T("Erst „Neu laden“ drücken."))
+            return
+        mitlaufen_stoppen()
+        ziel = stand.get("ziel") or ""
+        if not ziel:
+            ziel = ordner_waehlen(f, T("Zielordner wählen"), stand.get("ziel"))
+            if not ziel:
+                return
+            stand["ziel"] = ziel
+            stand["ziel_eigen"] = True
+            try:
+                einstellung_schreiben("usb_ziel", ziel)
+            except Exception:
+                pass
+            ziel_anzeigen()
+        geraetename = os.path.basename(stand["basis"].rstrip("/")) or "JamManSoloXT"
+        wurzel = _hol_wurzel(ziel, geraetename, wahl.get())
+        platzliste = [platz for platz, _, _ in stand["patchliste"]]
+
+        def arbeit():
+            import time as _zeit
+            stand["abbruch"] = False
+            stand["t0"] = _zeit.time()
+            stand["bytes"] = 0
+            geschrieben = []
+            zaehler = {"gelesen": 0, "uebersprungen": 0}
+            try:
+                # Stufe A: nur die XML-Dateien — damit die Liste sofort erscheint
+                for i, platz in enumerate(platzliste, 1):
+                    if stand["abbruch"]:
+                        meldungen.put(("text", T("Abgebrochen.")))
+                        return
+                    # Fortschritt auch in Stufe A: ohne Zähler sah es aus,
+                    # als hänge der Vorgang (16.11.2026).
+                    meldungen.put(("text", "%s %d/%d — %s" %
+                                   (T("Hole Beschreibungen"), i, len(platzliste), platz)))
+                    _patch_holen(stand["geraet"], stand["basis"] + platz,
+                                 os.path.join(wurzel, platz),
+                                 stopp=lambda: stand["abbruch"], nur="xml",
+                                 protokoll=geschrieben, zaehler=zaehler)
+                meldungen.put(("oeffnen", wurzel))
+                # Stufe B: die Töne im Hintergrund
+                for i, platz in enumerate(platzliste, 1):
+                    if stand["abbruch"]:
+                        meldungen.put(("text", T("Abgebrochen.")))
+                        return
+                    vergangen = max(0.1, _zeit.time() - stand["t0"])
+                    tempo = (stand["bytes"] / 1048576.0) / vergangen
+                    meldungen.put(("text", "%s %d/%d — %s · %.1f MB · %.2f MB/s" %
+                                   (T("Hole Patch"), i, len(platzliste), platz,
+                                    stand["bytes"] / 1048576.0, tempo)))
+                    vorher = stand["bytes"]
+                    _patch_holen(stand["geraet"], stand["basis"] + platz,
+                                 os.path.join(wurzel, platz),
+                                 stopp=lambda: stand["abbruch"], nur="ton",
+                                 protokoll=geschrieben, zaehler=zaehler)
+                    stand["bytes"] = vorher + _ordnergroesse(os.path.join(wurzel, platz))
+                meldungen.put(("text", T("Fertig:") + " %d Patches → %s" % (len(platzliste), wurzel)))
+                meldungen.put(("text", T("Übertragen: %d Dateien · unverändert übersprungen: %d")
+                               % (zaehler["gelesen"], zaehler["uebersprungen"])))
+                if stand.get("geoeffnet") == wurzel:
+                    meldungen.put(("auffrischen", wurzel))
+            except Exception as e:
+                if "Abgebrochen" in type(e).__name__:
+                    meldungen.put(("text", T("Abgebrochen.")))
+                    meldungen.put(("aufraeumen", (wurzel, geschrieben)))
+                else:
+                    meldungen.put(("text", T("Fehler beim Lesen:") + " " + str(e)))
+            finally:
+                stand["abbruch"] = False
+                meldungen.put(("fertig", None))
+
+        stand["laeuft"] = True
+        sperren(True)
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def laeuft_noch():
+        """Sagt, warum ein Knopf gerade nichts tut."""
+        if stand.get("laeuft"):
+            melde(T("Ein Vorgang läuft noch — bitte abwarten."))
+            return True
+        return False
+
+    def verbindung_neu():
+        """Anschluß schließen und neu aufbauen (hilft nach einem Abbruch)."""
+        if stand.get("laeuft"):
+            # erst den laufenden Vorgang beenden, sonst sprechen zwei Stränge
+            stand["abbruch"] = True
+            melde(T("Warte auf das Ende des laufenden Vorgangs …"))
+            for _ in range(50):
+                if not stand.get("laeuft"):
+                    break
+                f.update()
+                f.after(100)
+                import time as _zeit
+                _zeit.sleep(0.1)
+            if stand.get("laeuft"):
+                melde(T("Der Vorgang reagiert nicht — Fenster schließen und neu öffnen."))
+                return
+        _geraet_schliessen()
+        stand["geraet"] = None
+        stand["abbruch"] = False
+        melde(T("Verbindung wird neu aufgebaut …"))
+        anstossen()
+
+    def aufs_pedal():
+        if laeuft_noch():
+            return
+        if stand["geraet"] is None:
+            _hinweis(f, T("Erst „Neu laden“ drücken."))
+            return
+        quell = ordner_waehlen(f, T("Ordner des Patches wählen"))
+        if not quell:
+            return
+        platz = _frage_text(f, T("Aufs Pedal schreiben"),
+                            T("Zielplatz auf dem Pedal (z. B. 17 oder Patch17):"),
+                            "Patch50")
+        platz = _platz_pruefen(f, platz)
+        if not platz:
+            return
+        mitlaufen_stoppen()
+        ziel_pfad = stand["basis"] + platz
+
+        # Sicherheit: liegt dort schon ein Patch, wird er vorher geholt
+        vorhanden = False
+        try:
+            _, ordner_da = stand["geraet"].ordner(stand["basis"])
+            vorhanden = platz in ordner_da
+        except Exception:
+            pass
+        if vorhanden:
+            if not _frage_ja(f, 
+                    T("Aufs Pedal schreiben"),
+                    T("%s ist schon belegt. Der Patch wird vorher auf den Rechner "
+                      "gesichert und dann überschrieben. Fortsetzen?") % platz):
+                return
+            platz_ordner = os.path.join(stand.get("ziel") or os.path.expanduser("~"),
+                                      "vor-ueberschreiben", platz)
+            sicherung = os.path.join(
+                platz_ordner, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+            try:
+                _patch_holen(stand["geraet"], ziel_pfad, sicherung)
+                sicherung_begrenzen(platz_ordner)
+            except Exception as e:
+                messagebox.showerror(T("Fehler"), str(e))
+                return
+
+        def arbeit():
+            try:
+                # Ein belegter Platz wird geleert, nachdem die Sicherung steht:
+                # sonst bleiben Dateien des alten Patches stehen, die der neue
+                # nicht hat (am 16.11.2026 im Test gesehen).
+                if vorhanden:
+                    meldungen.put(("text", T("Leere den Platz …")))
+                    try:
+                        stand["geraet"].loesche(ziel_pfad, ist_ordner=True, rekursiv=True)
+                    except Exception:
+                        pass
+                stand["geraet"].erstelle_ordner(ziel_pfad)
+                meldungen.put(("text", T("Schreibe aufs Pedal …")))
+                _patch_schreiben(stand["geraet"], quell, ziel_pfad,
+                                 meldung=lambda name, groesse: meldungen.put(
+                                     ("text", "%s %s (%.1f MB)" %
+                                      (T("Schreibe:"), name, groesse / 1048576.0))),
+                                 stopp=lambda: stand["abbruch"])
+                meldungen.put(("text", T("Fertig:") + " " + ziel_pfad))
+                meldungen.put(("neu", None))
+            except Exception as e:
+                if "Abgebrochen" in type(e).__name__:
+                    meldungen.put(("text", T("Abgebrochen.")))
+                else:
+                    meldungen.put(("text", T("Fehler beim Schreiben:") + " " + str(e)))
+            finally:
+                stand["abbruch"] = False
+                meldungen.put(("fertig", None))
+
+        stand["laeuft"] = True
+        sperren(True)
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def plaetze_aufruecken():
+        """Lücken zwischen den belegten Plätzen schließen.
+
+        Anlaß (17.11.2026): Nach dem Löschen von Patch16 klaffte eine Lücke
+        zwischen 15 und 17. Hier rücken alle späteren Patches um eins nach
+        vorn; ihre Reihenfolge bleibt, nur die Platznummern ändern sich.
+        Vorher wird gefragt und jeder bewegte Platz gesichert.
+        """
+        if laeuft_noch():
+            return
+        if stand["geraet"] is None:
+            _hinweis(f, T("Erst „Neu laden“ drücken."))
+            return
+        try:
+            zuege = plaetze_zusammenruecken(stand["geraet"], stand["basis"])
+        except Exception as e:
+            _hinweis(f, T("Fehler:") + " " + str(e))
+            return
+        if not zuege:
+            _hinweis(f, T("Es gibt keine Lücken — die Plätze sind schon "
+                          "lückenlos belegt."))
+            return
+        speicher = T("internen Speicher") if wahl.get() == "intern" else T("der Karte")
+        beispiele = ", ".join("%s → %s" % ("Patch%02d" % alt, "Patch%02d" % neu)
+                              for alt, neu in zuege[:4])
+        weitere = "" if len(zuege) <= 4 else " …"
+        if not _frage_ja(f, T("Plätze aufrücken"),
+                         T("%d Patches rücken in %s nach vorn: %s%s\n\n"
+                           "Jeder bewegte Platz wird vorher auf den Rechner "
+                           "gesichert. Setlists im Pedal, die auf Platznummern "
+                           "zeigen, stimmen danach nicht mehr. Fortfahren?")
+                         % (len(zuege), speicher, beispiele, weitere)):
+            return
+        mitlaufen_stoppen()
+        ziel_ordner = stand.get("ziel") or os.path.expanduser("~")
+
+        def arbeit():
+            stand["abbruch"] = False
+            gesichert = 0
+            try:
+                for i, (alt, neu) in enumerate(zuege, 1):
+                    if stand["abbruch"]:
+                        meldungen.put(("text", T("Abgebrochen.")))
+                        return
+                    alt_pfad = stand["basis"] + "Patch%02d" % alt
+                    neu_pfad = stand["basis"] + "Patch%02d" % neu
+                    meldungen.put(("text", "%s %d/%d — %s → %s" %
+                                   (T("Rücke auf"), i, len(zuege),
+                                    "Patch%02d" % alt, "Patch%02d" % neu)))
+                    platz_ordner = os.path.join(ziel_ordner, "vor-ueberschreiben",
+                                                "Patch%02d" % alt)
+                    sicherung = os.path.join(
+                        platz_ordner, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+                    try:
+                        _patch_holen(stand["geraet"], alt_pfad, sicherung)
+                        sicherung_begrenzen(platz_ordner)
+                        gesichert += 1
+                    except Exception:
+                        pass
+                    stand["geraet"].benenne_um(alt_pfad, neu_pfad, ist_ordner=True)
+                meldungen.put(("text", T("Fertig: %d Plätze aufgerückt, %d vorher "
+                                         "gesichert") % (len(zuege), gesichert)))
+                ort = einstellung_lesen("usb_setlist_pfad") or ziel_ordner
+                if ort and os.path.isdir(ort):
+                    meldungen.put(("setlists", (ort, list(zuege))))
+                meldungen.put(("hinweis", T("Aufgerückt: %d Plätze") % len(zuege)))
+                meldungen.put(("neu", None))
+            except Exception as e:
+                meldungen.put(("text", T("Fehler beim Schreiben:") + " " + str(e)))
+            finally:
+                stand["abbruch"] = False
+                meldungen.put(("fertig", None))
+
+        stand["laeuft"] = True
+        sperren(True)
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def firmware_holen_gui():
+        """Systemdateien des angeschlossenen Pedals auf den Rechner holen."""
+        if laeuft_noch():
+            return
+        if stand["geraet"] is None:
+            _hinweis(f, T("Erst \u201eNeu laden\u201c dr\u00fccken."))
+            return
+        start = stand.get("ziel") or os.path.expanduser("~")
+        ordner = ordner_waehlen(f, T("Zielordner f\u00fcr die Firmware"), start)
+        if not ordner:
+            return
+        mitlaufen_stoppen()
+
+        def arbeit():
+            stand["abbruch"] = False
+            try:
+                geholt = firmware_holen(
+                    stand["geraet"], ordner,
+                    melden=lambda p: meldungen.put(
+                        ("text", T("Hole") + " " + str(p).split("nandfs/")[-1])),
+                    stopp=lambda: stand["abbruch"])
+                meldungen.put(("text", T("Firmware geholt: %d Dateien") % len(geholt)))
+                meldungen.put(("hinweis", T("Firmware geholt:\n%s\n%d Dateien")
+                               % (ordner, len(geholt))))
+            except Exception as e:
+                meldungen.put(("text", T("Fehler:") + " " + str(e)))
+            finally:
+                stand["abbruch"] = False
+                meldungen.put(("fertig", None))
+
+        stand["laeuft"] = True
+        sperren(True)
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def firmware_uebernehmen_gui():
+        """Firmware aus einem geholten Ordner auf das Pedal schreiben."""
+        if laeuft_noch():
+            return
+        if stand["geraet"] is None:
+            _hinweis(f, T("Erst \u201eNeu laden\u201c dr\u00fccken."))
+            return
+        start = stand.get("ziel") or os.path.expanduser("~")
+        quell = ordner_waehlen(f, T("Ordner mit der geholten Firmware"), start)
+        if not quell:
+            return
+        vorhanden = [p for p in FIRMWARE_DATEIEN
+                     if os.path.exists(os.path.join(
+                         quell, p.lstrip("/").replace("/", os.sep)))]
+        if not vorhanden:
+            _hinweis(f, T("In diesem Ordner liegt keine Firmware "
+                          "(usr/JamManUI, usr/loopengine …)."))
+            return
+        if not _frage_ja(f, T("Firmware \u00fcbernehmen"),
+                         T("%d Firmware-Dateien werden jetzt in das Pedal "
+                           "geschrieben. Vorher wird der jetzige Stand gesichert.\n\n"
+                           "Ein Abbruch mittendrin kann das Pedal unbrauchbar "
+                           "machen \u2014 es gibt keinen Weg zur\u00fcck.\n\n"
+                           "Wirklich schreiben?") % len(vorhanden)):
+            return
+        sicherung = os.path.join(
+            stand.get("ziel") or os.path.expanduser("~"),
+            "sicherung-vor-firmware-" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+        mitlaufen_stoppen()
+
+        def arbeit():
+            stand["abbruch"] = False
+            try:
+                meldungen.put(("text", T("Sichere den jetzigen Stand \u2026")))
+                alt = firmware_holen(stand["geraet"], sicherung,
+                                     stopp=lambda: stand["abbruch"])
+                meldungen.put(("text", T("Gesichert: %d Dateien nach %s")
+                               % (len(alt), sicherung)))
+                ergebnis = firmware_schreiben(
+                    stand["geraet"], quell,
+                    melden=lambda p, n: meldungen.put(
+                        ("text", T("Schreibe") + " " + str(p).split("nandfs/")[-1]
+                         + " (%d Bytes)" % n)),
+                    stopp=lambda: stand["abbruch"])
+                schlecht = [p for p, _, ok in ergebnis if not ok]
+                meldungen.put(("text", T("Fertig: %d Dateien geschrieben")
+                               % len(ergebnis)))
+                if schlecht:
+                    meldungen.put(("text", T("Nicht best\u00e4tigt: %d") % len(schlecht)))
+                meldungen.put(("hinweis",
+                               T("Firmware geschrieben: %d Dateien\nSicherung: %s\n"
+                                 "Jetzt das Pedal aus- und wieder einschalten.")
+                               % (len(ergebnis), sicherung)))
+            except Exception as e:
+                meldungen.put(("text", T("Fehler beim Schreiben:") + " " + str(e)))
+            finally:
+                stand["abbruch"] = False
+                meldungen.put(("fertig", None))
+
+        stand["laeuft"] = True
+        sperren(True)
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def speicherabbild_aufnehmen():
+        """Verzeichnisbaum des Pedals festhalten — nur lesend.
+
+        Damit lassen sich zwei Pedale mit unterschiedlicher Firmware
+        vergleichen, ohne etwas zu schreiben (17.11.2026).
+        """
+        if laeuft_noch():
+            return
+        if stand["geraet"] is None:
+            _hinweis(f, T("Erst „Neu laden“ drücken."))
+            return
+        start = stand.get("ziel") or os.path.expanduser("~")
+        vorgabe = "speicherabbild-%s.txt" % datetime.now().strftime("%Y-%m-%d_%H-%M")
+        ziel = datei_speichern(f, T("Speicherabbild speichern"), vorgabe,
+                               start, "*.txt")
+        if not ziel:
+            return
+        mitlaufen_stoppen()
+
+        def arbeit():
+            stand["abbruch"] = False
+            try:
+                meldungen.put(("text", T("Lese den Verzeichnisbaum …")))
+                anzahl = speicherabbild(
+                    stand["geraet"], ziel,
+                    melden=lambda n, p: meldungen.put(
+                        ("text", "%d  %s" % (n, str(p)[:70]))),
+                    stopp=lambda: stand["abbruch"])
+                meldungen.put(("text", T("Speicherabbild: %d Einträge") % anzahl))
+                meldungen.put(("hinweis", T("Speicherabbild geschrieben:\n%s")
+                               % ziel))
+            except Exception as e:
+                meldungen.put(("text", T("Fehler:") + " " + str(e)))
+            finally:
+                stand["abbruch"] = False
+                meldungen.put(("fertig", None))
+
+        stand["laeuft"] = True
+        sperren(True)
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def speicherabbilder_vergleichen_gui():
+        """Zwei aufgenommene Speicherabbilder gegenüberstellen."""
+        start = stand.get("ziel") or os.path.expanduser("~")
+        erst = datei_waehlen(f, T("Erstes Speicherabbild"), "*.txt", start)
+        if not erst:
+            return
+        zweit = datei_waehlen(f, T("Zweites Speicherabbild"), "*.txt",
+                              os.path.dirname(erst))
+        if not zweit:
+            return
+        try:
+            nur_a, nur_b, anders = speicherabbilder_vergleichen(erst, zweit)
+        except Exception as e:
+            _hinweis(f, T("Fehler:") + " " + str(e))
+            return
+        zeilen = [T("Erstes:") + " " + erst, T("Zweites:") + " " + zweit, "",
+                  T("Nur im ersten Bild: %d") % len(nur_a)]
+        zeilen += ["  + " + p for p in nur_a[:40]]
+        zeilen += ["", T("Nur im zweiten Bild: %d") % len(nur_b)]
+        zeilen += ["  - " + p for p in nur_b[:40]]
+        zeilen += ["", T("Gleicher Pfad, andere Größe: %d") % len(anders)]
+        zeilen += ["  %s  %d → %d" % (p, a_, b_) for p, a_, b_ in anders[:60]]
+        if not (nur_a or nur_b or anders):
+            zeilen.append(T("Die beiden Bilder sind gleich."))
+        _anleitung_fenster(f, "\n".join(zeilen), T("Speicherabbilder vergleichen"))
+
+    def platz_loeschen():
+        """Einen Platz im gewählten Speicher löschen.
+
+        Anlaß (17.11.2026): Ein versehentlich geschriebener, viel zu großer
+        Patch (1238 MB) ließ sich nur durch Überschreiben loswerden — und
+        davor sicherte das Werkzeug ihn erst einmal über USB. Löschen ist der
+        gerade Weg.
+        """
+        if laeuft_noch():
+            return
+        if stand["geraet"] is None:
+            _hinweis(f, T("Erst „Neu laden“ drücken."))
+            return
+        platz = _frage_text(f, T("Platz löschen"),
+                            T("Welcher Platz soll gelöscht werden? "
+                              "(z. B. 30 oder Patch30)"), "")
+        platz = _platz_pruefen(f, platz)
+        if not platz:
+            return
+        ziel_pfad = stand["basis"] + platz
+        try:
+            _, vorhandene = stand["geraet"].ordner(stand["basis"])
+        except Exception as e:
+            melde(T("Fehler:") + " " + str(e))
+            return
+        if platz not in vorhandene:
+            _hinweis(f, T("%s ist nicht belegt — nichts zu löschen.") % platz)
+            return
+        speicher = T("internen Speicher") if wahl.get() == "intern" else T("der Karte")
+        if not _frage_ja(f, T("Platz löschen"),
+                         T("%s wird aus %s gelöscht. Das läßt sich nicht "
+                           "rückgängig machen. Fortfahren?") % (platz, speicher)):
+            return
+        mitlaufen_stoppen()
+
+        def arbeit():
+            stand["abbruch"] = False
+            try:
+                meldungen.put(("text", T("Lösche") + " " + platz + " …"))
+                stand["geraet"].loesche(ziel_pfad, ist_ordner=True, rekursiv=True)
+                meldungen.put(("text", T("Gelöscht:") + " " + platz))
+                meldungen.put(("hinweis", T("Gelöscht: %s") % platz))
+                meldungen.put(("neu", None))
+            except Exception as e:
+                meldungen.put(("text", T("Fehler beim Löschen:") + " " + str(e)))
+            finally:
+                stand["abbruch"] = False
+                meldungen.put(("fertig", None))
+
+        stand["laeuft"] = True
+        sperren(True)
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def ordner_aufs_pedal():
+        """Alle Patch-Ordner eines Ordners in den gewählten Speicher schreiben.
+
+        Anlaß (17.11.2026): Eine geholte Kopie ließ sich nur Patch für Patch
+        zurückspielen. Jetzt: Ordner wählen, alle Patch01 … PatchNN werden
+        geschrieben — belegte Plätze vorher gesichert (fünf Stände je Platz),
+        unveränderte übersprungen.
+        """
+        if laeuft_noch():
+            return
+        if stand["geraet"] is None:
+            _hinweis(f, T("Erst „Neu laden“ drücken."))
+            return
+        quell = ordner_waehlen(f, T("Ordner mit Patch-Ordnern wählen"))
+        if not quell:
+            return
+        muster = re.compile(r"^Patch(\d{1,3})$", re.IGNORECASE)
+        patches = []
+        for name in sorted(os.listdir(quell)):
+            treffer = muster.match(name)
+            if treffer and os.path.isdir(os.path.join(quell, name)):
+                patches.append((name, "Patch%02d" % int(treffer.group(1))))
+        if not patches:
+            _hinweis(f, T("Im Ordner liegen keine Patch-Ordner "
+                          "(erwartet: Patch01 … Patch200)."))
+            return
+        speicher = T("internen Speicher") if wahl.get() == "intern" else T("der Karte")
+        if not _frage_ja(f, T("Ganzen Ordner aufs Pedal"),
+                         T("%d Patch-Ordner werden in %s geschrieben. Belegte Plätze "
+                           "werden vorher gesichert, unveränderte übersprungen. "
+                           "Fortfahren?") % (len(patches), speicher)):
+            return
+        mitlaufen_stoppen()
+        ziel_ordner = stand.get("ziel") or os.path.expanduser("~")
+
+        def arbeit():
+            stand["abbruch"] = False
+            try:
+                geschrieben, uebersprungen, gesichert = patches_aufs_pedal(
+                    stand["geraet"], stand["basis"], quell, ziel_ordner,
+                    melden=lambda text: meldungen.put(("text", text)),
+                    stopp=lambda: stand["abbruch"])
+                meldungen.put(("text",
+                               T("Fertig: %d Patches geschrieben, %d übersprungen, "
+                                 "%d vorher gesichert")
+                               % (geschrieben, uebersprungen, gesichert)))
+            except Exception as e:
+                if "Abgebrochen" in type(e).__name__:
+                    meldungen.put(("text", T("Abgebrochen.")))
+                else:
+                    meldungen.put(("text", T("Fehler beim Schreiben:") + " " + str(e)))
+            finally:
+                stand["abbruch"] = False
+                meldungen.put(("fertig", None))
+
+        stand["laeuft"] = True
+        sperren(True)
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def als_zip():
+        if laeuft_noch():
+            return
+        mitlaufen_stoppen()
+        if not stand["patchliste"] or not stand.get("ziel"):
+            _hinweis(f, T("Erst „Neu laden“ drücken."))
+            return
+        name = (T("JamMan") + "-" +
+                (T("intern") if wahl.get() == "intern" else T("Karte")))
+        ziel_datei = datei_speichern(f, T("Als ZIP sichern"),
+                                     name + ".zip", stand["ziel"], "*.zip")
+        if not ziel_datei:
+            return
+        platzliste = [p for p, _, _ in stand["patchliste"]]
+
+        def arbeit():
+            try:
+                meldungen.put(("text", T("Sichere als ZIP …")))
+                _als_zip(stand["geraet"], stand["basis"], platzliste, ziel_datei,
+                         meldung=lambda name, i: meldungen.put(
+                             ("text", "%s %s" % (T("Sichere:"), name))),
+                         stopp=lambda: stand["abbruch"])
+                meldungen.put(("text", T("Fertig:") + " " + ziel_datei))
+            except Exception as e:
+                meldungen.put(("text", T("Fehler beim Sichern:") + " " + str(e)))
+            finally:
+                stand["abbruch"] = False
+                meldungen.put(("fertig", None))
+        stand["laeuft"] = True
+        sperren(True)
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def alle_auswaehlen(*_a):
+        liste.selection_set(0, "end")
+        return "break"
+
+    def setlist_speichern():
+        if not stand["patchliste"]:
+            _hinweis(f, T("Erst „Neu laden“ drücken."))
+            return
+        indizes = [i for i in range(len(stand["patchliste"]))
+                   if liste.selection_includes(i)]
+        if not indizes:
+            # Ohne Auswahl alle Patches nehmen — das ist der häufigste Fall
+            if not _frage_ja(f, 
+                    T("Setlist sichern"),
+                    T("Nichts markiert. Alle %d Patches in die Setlist?"
+                      % len(stand["patchliste"]))):
+                return
+            indizes = list(range(len(stand["patchliste"])))
+        start = einstellung_lesen("usb_setlist_pfad") or stand.get("ziel") or None
+        ziel_datei = datei_speichern(f, T("Setlist sichern"),
+                                     T("Setlist.txt"), start, "*.txt")
+        if not ziel_datei:
+            return
+        einstellung_schreiben("usb_setlist_pfad", os.path.dirname(ziel_datei))
+        _setlist_speichern(stand["patchliste"], indizes, ziel_datei,
+                           stand["geraet"].kopf.get("name", ""))
+        melde(T("Fertig:") + " " + ziel_datei)
+
+    def jamlist_holen():
+        """JamList aus der Bibliothek von JamManager XT als Textdatei holen."""
+        start = einstellung_lesen("usb_setlist_pfad") or os.path.expanduser("~")
+        db = datei_waehlen(f, T("Bibliothek von JamManager XT"), "*.sqlite *.db", start)
+        if not db:
+            return
+        try:
+            listen = jamlists_lesen(db)
+        except Exception as e:
+            _hinweis(f, T("Fehler:") + " " + str(e))
+            return
+        if not listen:
+            _hinweis(f, T("In dieser Bibliothek liegt keine JamList."))
+            return
+        namen = ["%s (%d)" % (l["name"] or "?", len(l["platz"])) for l in listen]
+        index = _frage_auswahl(f, T("JamList w\u00e4hlen"), namen)
+        if index is None:
+            return
+        liste = listen[index]
+        ziel = datei_speichern(f, T("Setlist speichern"),
+                               (liste["name"] or "JamList") + ".txt",
+                               os.path.dirname(db), "*.txt")
+        if not ziel:
+            return
+        eintraege = [(("Patch%02d" % nr), n, "") for nr, n, _ in liste["platz"]]
+        _setlist_speichern(eintraege, list(range(len(eintraege))), ziel)
+        einstellung_schreiben("usb_setlist_pfad", os.path.dirname(ziel))
+        _hinweis(f, T("Geholt: %s\n%d Pl\u00e4tze\n%s")
+                 % (liste["name"], len(eintraege), ziel))
+
+    def jamlist_ablegen():
+        """Eine Textsetlist als JamList in die Bibliothek eintragen."""
+        start = einstellung_lesen("usb_setlist_pfad") or os.path.expanduser("~")
+        db = datei_waehlen(f, T("Bibliothek von JamManager XT"), "*.sqlite *.db", start)
+        if not db:
+            return
+        quelle = datei_waehlen(f, T("Setlist laden"), "*.txt", os.path.dirname(db))
+        if not quelle:
+            return
+        name = os.path.basename(quelle).rsplit(".", 1)[0]
+        if not _frage_ja(f, T("JamList ablegen"),
+                         T("%s%s%s als neue JamList eintragen? Die Bibliothek "
+                           "wird dabei ver\u00e4ndert \u2014 vorher eine Kopie anlegen.")
+                         % ("\u201e", name, "\u201c")):
+            return
+        try:
+            eintraege = []
+            for platz, patch_name in _setlist_lesen(quelle):
+                zahl = int(str(platz).replace("Patch", "") or 0)
+                eintraege.append((zahl, patch_name, ""))
+            kennung = jamlist_schreiben(db, name, eintraege)
+        except Exception as e:
+            _hinweis(f, T("Fehler:") + " " + str(e))
+            return
+        _hinweis(f, T("JamList %s angelegt (id %d, %d Pl\u00e4tze)")
+                 % (name, kennung, len(eintraege)))
+
+    def setlist_holen():
+        mitlaufen_stoppen()
+        if stand["geraet"] is None or not stand.get("ziel"):
+            _hinweis(f, T("Erst „Neu laden“ drücken."))
+            return
+        start = einstellung_lesen("usb_setlist_pfad") or stand.get("ziel") or None
+        quelle = datei_waehlen(f, T("Setlist laden"), "*.txt", start)
+        if not quelle:
+            return
+        einstellung_schreiben("usb_setlist_pfad", os.path.dirname(quelle))
+        try:
+            eintraege = _setlist_lesen(quelle)
+        except Exception as e:
+            messagebox.showerror(T("Fehler"), str(e))
+            return
+        if not eintraege:
+            messagebox.showinfo(T("Hinweis"), T("Die Setlist ist leer."))
+            return
+        platzliste = [p for p, _ in eintraege]
+        wurzel = _hol_wurzel(stand["ziel"],
+                             os.path.basename(stand["basis"].rstrip("/")),
+                             wahl.get())
+
+        def arbeit():
+            try:
+                for i, platz in enumerate(platzliste, 1):
+                    if stand["abbruch"]:
+                        meldungen.put(("text", T("Abgebrochen.")))
+                        return
+                    meldungen.put(("text", "%s %d/%d — %s" %
+                                   (T("Hole Patch"), i, len(platzliste), platz)))
+                    _patch_holen(stand["geraet"], stand["basis"] + platz,
+                                 os.path.join(wurzel, platz),
+                                 stopp=lambda: stand["abbruch"])
+                meldungen.put(("text", T("Fertig:") + " " + wurzel))
+                try:
+                    einstellung_schreiben("usb_letzter_holpfad", wurzel)
+                except Exception:
+                    pass
+                meldungen.put(("oeffnen", wurzel))
+            except Exception as e:
+                meldungen.put(("text", T("Fehler beim Lesen:") + " " + str(e)))
+            finally:
+                stand["abbruch"] = False
+                meldungen.put(("fertig", None))
+        stand["laeuft"] = True
+        sperren(True)
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def rueckgaengig():
+        if laeuft_noch():
+            return
+        sicherung = einstellung_lesen("usb_letzte_sicherung")
+        platz = einstellung_lesen("usb_letzter_platz")
+        speicher = einstellung_lesen("usb_letzter_speicher")
+        if not (sicherung and platz and os.path.isdir(sicherung)):
+            messagebox.showinfo(T("Hinweis"), T("Es gibt nichts rückgängig zu machen."))
+            return
+        if not _frage_ja(f, 
+                T("Rückgängig"),
+                T("%s wird durch die Sicherung ersetzt. Fortsetzen?") % platz):
+            return
+
+        def arbeit():
+            try:
+                ziel_pfad = stand["basis"] + platz
+                meldungen.put(("text", T("Stelle wieder her:") + " " + platz))
+                try:
+                    stand["geraet"].loesche(ziel_pfad, ist_ordner=True, rekursiv=True)
+                except Exception:
+                    pass
+                stand["geraet"].erstelle_ordner(ziel_pfad)
+                _patch_schreiben(stand["geraet"], sicherung, ziel_pfad,
+                                 stopp=lambda: stand["abbruch"])
+                meldungen.put(("text", T("Fertig:") + " " + ziel_pfad))
+                meldungen.put(("neu", None))
+            except Exception as e:
+                meldungen.put(("text", T("Fehler beim Schreiben:") + " " + str(e)))
+            finally:
+                meldungen.put(("fertig", None))
+        stand["laeuft"] = True
+        sperren(True)
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def audio_aufs_pedal():
+        if laeuft_noch():
+            return
+        if stand["geraet"] is None:
+            _hinweis(f, T("Erst „Neu laden“ drücken."))
+            return
+        start = einstellung_lesen("usb_audio_pfad") or stand.get("ziel") or None
+        quelle = datei_waehlen(f, T("Audiodatei wählen"), "*.wav *.aif *.aiff *.aifc *.caf *.mp3 *.m4a *.aac *.flac *.ogg *.opus *.wma", start)
+        einstellung_schreiben("usb_audio_pfad", os.path.dirname(quelle))
+        if not quelle:
+            return
+        platz = _frage_text(f, T("Audio aufs Pedal"),
+                            T("Zielplatz auf dem Pedal (z. B. 17 oder Patch17):"),
+                            "Patch50")
+        platz = _platz_pruefen(f, platz)
+        if not platz:
+            return
+        mitlaufen_stoppen()
+        ziel_pfad = stand["basis"] + platz
+        name = os.path.splitext(os.path.basename(quelle))[0]
+        geraetename = os.path.basename(stand["basis"].rstrip("/")) or "JamManSoloXT"
+
+        vorhanden = False
+        try:
+            _, ordner_da = stand["geraet"].ordner(stand["basis"])
+            vorhanden = platz in ordner_da
+        except Exception:
+            pass
+        if vorhanden and not _frage_ja(f, 
+                T("Audio aufs Pedal"),
+                T("%s ist schon belegt. Der Patch wird vorher auf den Rechner "
+                  "gesichert und dann überschrieben. Fortsetzen?") % platz):
+            return
+
+        def arbeit():
+            import tempfile
+            try:
+                if vorhanden:
+                    platz_ordner = os.path.join(
+                        stand.get("ziel") or os.path.expanduser("~"),
+                        "vor-ueberschreiben", platz)
+                    sicherung = os.path.join(
+                        platz_ordner, datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+                    meldungen.put(("text", T("Sichere den alten Platz …")))
+                    _patch_holen(stand["geraet"], ziel_pfad, sicherung)
+                    sicherung_begrenzen(platz_ordner)
+                    einstellung_schreiben("usb_letzte_sicherung", sicherung)
+                    einstellung_schreiben("usb_letzter_platz", platz)
+                    einstellung_schreiben("usb_letzter_speicher", wahl.get())
+                # Länge prüfen, BEVOR Minuten über USB geschrieben werden:
+                # das Pedal nimmt höchstens 10 Minuten je Loop an (Handbuch).
+                # Am 17.11.2026 lief eine 1238-MB-Datei (~117 Minuten) los.
+                try:
+                    dauer_quelle = wav_info(quelle)[0]
+                except Exception:
+                    dauer_quelle = 0.0
+                if dauer_quelle > MAX_LOOP_SEKUNDEN:
+                    meldungen.put(("text", T("Die Datei ist %s lang — das Pedal nimmt "
+                                             "höchstens 10 Minuten je Loop an. Bitte im "
+                                             "Hauptfenster kürzen oder teilen.")
+                                   % sekunden(dauer_quelle)))
+                    meldungen.put(("fertig", None))
+                    return
+                meldungen.put(("text", T("Wandle die Datei …")))
+                temp = tempfile.mkdtemp()
+                wav = os.path.join(temp, "phrase.wav")
+                if not wandle_nach_44k(quelle, wav):
+                    if ffmpeg_fehlt():
+                        # Der eigentliche Grund: ffmpeg fehlt (17.11.2026
+                        # meldete das Fenster nur „Umwandeln fehlgeschlagen").
+                        meldungen.put(("text", T("Zum Umwandeln fehlt ffmpeg.")))
+                        meldungen.put(("anleitung", ffmpeg_anleitung()))
+                    else:
+                        meldungen.put(("text", T("Umwandeln fehlgeschlagen — die "
+                                                 "Datei muß 44,1 kHz, 16 Bit, "
+                                                 "Stereo werden.")))
+                    return
+                try:
+                    dauer_fertig = wav_info(wav)[0]
+                except Exception:
+                    dauer_fertig = 0.0
+                if dauer_fertig > MAX_LOOP_SEKUNDEN:
+                    meldungen.put(("text", T("Die Datei ist %s lang — das Pedal nimmt "
+                                             "höchstens 10 Minuten je Loop an. Bitte im "
+                                             "Hauptfenster kürzen oder teilen.")
+                                   % sekunden(dauer_fertig)))
+                    meldungen.put(("fertig", None))
+                    return
+                meldungen.put(("text", T("Schreibe aufs Pedal …")))
+                stand["geraet"].loesche(ziel_pfad, ist_ordner=True, rekursiv=True) if vorhanden else None
+                stand["geraet"].erstelle_ordner(ziel_pfad)
+                stand["geraet"].erstelle_ordner(ziel_pfad + "/PhraseA")
+                stand["geraet"].schreibe_datei(ziel_pfad + "/patch.xml",
+                                               _neuer_patch_xml(geraetename, name),
+                                               stopp=lambda: stand["abbruch"])
+                stand["geraet"].schreibe_datei(ziel_pfad + "/PhraseA/phrase.xml",
+                                               _neue_phrase_xml(),
+                                               stopp=lambda: stand["abbruch"])
+                with open(wav, "rb") as fp:
+                    daten = fp.read()
+                stand["geraet"].schreibe_datei(ziel_pfad + "/PhraseA/phrase.wav", daten,
+                                               stopp=lambda: stand["abbruch"],
+                                               fortschritt=lambda f, g: meldungen.put(
+                                                   ("text", "%s %.1f / %.1f MB" %
+                                                    (T("Schreibe:"), f / 1048576.0,
+                                                     g / 1048576.0))))
+                meldungen.put(("text", T("Fertig:") + " " + platz + " — " + name))
+                meldungen.put(("neu", None))
+            except Exception as e:
+                if "Abgebrochen" in type(e).__name__:
+                    meldungen.put(("text", T("Abgebrochen.")))
+                else:
+                    meldungen.put(("text", T("Fehler beim Schreiben:") + " " + str(e)))
+            finally:
+                stand["abbruch"] = False
+                meldungen.put(("fertig", None))
+
+        stand["laeuft"] = True
+        sperren(True)
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def mitlaufen_stoppen():
+        """Mitlaufen beenden, bevor gelesen oder geschrieben wird.
+
+        Zwei Stränge am selben Anschluß brachten das Pedal am 16.11.2026 zum
+        Schweigen: der Mitlauf-Strang nahm Antworten weg, die zum Schreiben
+        gehörten.
+        """
+        stand["mitlaufen"] = False
+
+    # Was während eines Laufs gesperrt wird: alle Knöpfe und Auswahlmenüs
+    def schliessen():
+        # erst den Zeitgeber abbestellen, sonst meldet Tk nach dem Schließen
+        # „invalid command name …abholen" (16.11.2026)
+        stand["zu"] = True
+        try:
+            if stand.get("nach"):
+                f.after_cancel(stand["nach"])
+        except Exception:
+            pass
+        _geraet_schliessen()
+        stand["geraet"] = None
+        _USB_FENSTER["fenster"] = None
+        f.destroy()
+
+    def abbrechen():
+        if stand["laeuft"]:
+            stand["abbruch"] = True
+            melde(T("Wird abgebrochen …"))
+
+    # Bedienung: wenige Knöpfe, der Rest in aufklappbaren Menüs. Am 16.11.2026
+    # waren es 15 Knöpfe in drei Reihen — technisch in Ordnung, aber niemand
+    # findet dort etwas.
+    reihe1 = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    reihe1.pack(fill="x", padx=14, pady=(0, 4))
+    tk.Button(reihe1, text=T("Neu laden"), command=anstossen).pack(side="left")
+    tk.Button(reihe1, text=T("Ins Hauptfenster holen …"),
+              command=alles_holen).pack(side="left", padx=8)
+    tk.Button(reihe1, text=T("Schließen"), command=schliessen).pack(side="right")
+
+    def geschuetzt(befehl):
+        """Einen Befehl so aufrufen, daß ein Fehler als Meldung erscheint.
+
+        Am 16.11.2026 blieb „Audio in den Speicher schreiben“ wirkungslos:
+        im Menübefehl fehlte ein Import, die Ausnahme landete nur im
+        Terminal, im Fenster passierte nichts.
+        """
+        def huelle(*_a, **_k):
+            try:
+                return befehl(*_a, **_k)
+            except Exception as e:
+                messagebox.showerror(T("Fehler"), "%s: %s" % (type(e).__name__, e))
+        return huelle
+
+    def menue(eltern, beschriftung, eintraege):
+        mb = tk.Menubutton(eltern, text=beschriftung + "  ▾", anchor="w",
+                           bg=FARBE_LISTE, fg=FARBE_SCHRIFT,
+                           activebackground=FARBE_AUSWAHL, activeforeground="#ffffff",
+                           relief="raised", bd=1, padx=8, pady=2)
+        m = tk.Menu(mb, tearoff=0, bg=FARBE_LISTE, fg=FARBE_SCHRIFT,
+                    activebackground=FARBE_AUSWAHL, activeforeground="#ffffff")
+        for text, befehl in eintraege:
+            m.add_command(label=text, command=geschuetzt(befehl))
+        mb["menu"] = m
+        mb.pack(side="left", padx=(0, 6))
+        return mb
+
+    reihe2 = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    reihe2.pack(fill="x", padx=14, pady=(0, 6))
+    menue(reihe2, T("Sichern"), [
+        (T("Als ZIP sichern …"), als_zip),
+        (T("Firmware dieses Pedals holen …"), firmware_holen_gui),
+        (T("Speicherabbild aufnehmen …"), speicherabbild_aufnehmen),
+        (T("Speicherabbilder vergleichen …"), speicherabbilder_vergleichen_gui),
+        (T("Sicherungen aufräumen …"),
+         lambda: fenster_aufraeumen(stand.get("ziel") or "", f)),
+    ])
+    menue(reihe2, T("Schreiben"), [
+        (T("Patch-Ordner aufs Pedal …"), aufs_pedal),
+        (T("Ganzen Ordner aufs Pedal …"), ordner_aufs_pedal),
+        (T("Audio in den Speicher schreiben …"), audio_aufs_pedal),
+        (T("Rückgängig"), rueckgaengig),
+        (T("Firmware übernehmen …"), firmware_uebernehmen_gui),
+        (T("Platz löschen …"), platz_loeschen),
+        (T("Plätze aufrücken …"), plaetze_aufruecken),
+    ])
+    menue(reihe2, T("Setlists"), [
+        (T("Alle auswählen"), alle_auswaehlen),
+        (T("JamList aus JamManager XT holen …"), jamlist_holen),
+        (T("Setlist als JamList ablegen …"), jamlist_ablegen),
+        (T("Setlist sichern …"), setlist_speichern),
+        (T("Setlist holen …"), setlist_holen),
+    ])
+    tk.Button(reihe2, text=T("Verbindung neu aufbauen"),
+              command=verbindung_neu).pack(side="left", padx=(0, 6))
+    tk.Button(reihe2, text=T("Abbrechen"), command=abbrechen).pack(side="right")
+
+    # Zielordner dauerhaft anzeigen: nach dem ersten Wählen stand er nur
+    # kurz in der Kopfzeile und war danach weg (16.11.2026).
+    ziel_zeile = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    ziel_zeile.pack(fill="x", padx=14, pady=(0, 10))
+    ziel_label = tk.Label(ziel_zeile, text="", bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+                          font=schrift(9), anchor="w", justify="left", wraplength=430)
+    ziel_label.pack(side="left", fill="x", expand=True)
+
+    # Vorschlag für den Zielordner — auf allen drei Systemen:
+    # macOS und Linux haben ~/Documents, Windows meist auch; fehlt der
+    # Ordner (oder ist er verschoben), wird der Benutzerordner genommen.
+    _dokumente = os.path.expanduser("~/Documents")
+    if not os.path.isdir(_dokumente):
+        _dokumente = os.path.expanduser("~")
+    VORSCHLAG = os.path.join(_dokumente, "JamMan-Sicherung")
+
+    def ziel_anzeigen():
+        if not stand["ziel"]:
+            gespeichert = einstellung_lesen("usb_ziel")
+            if gespeichert:
+                stand["ziel"] = gespeichert
+                stand["ziel_eigen"] = True
+            else:
+                stand["ziel"] = VORSCHLAG      # Vorschlag, noch nicht bestätigt
+                stand["ziel_eigen"] = False
+        text = T("Ziel:") + " " + stand["ziel"]
+        if not stand["ziel_eigen"]:
+            text += "   " + T("(Vorschlag)")
+        ziel_label.config(text=text)
+
+    def ziel_waehlen():
+        p = ordner_waehlen(f, T("Zielordner wählen"),
+                               stand["ziel"] or None)
+        if p:
+            stand["ziel"] = p
+            stand["ziel_eigen"] = True
+            try:
+                einstellung_schreiben("usb_ziel", p)
+            except Exception:
+                pass
+            ziel_anzeigen()
+
+    tk.Button(ziel_zeile, text=T("Ziel ändern …"),
+              command=ziel_waehlen).pack(side="right")
+    ziel_anzeigen()
+
+    f.protocol("WM_DELETE_WINDOW", schliessen)
+
+    # Die Knopfreihen sind mit der Zeit mehr geworden; bei fester Höhe fiel
+    # die unterste Reihe aus dem Fenster (16.11.2026). Deshalb wird die Höhe
+    # nach dem Aufbau am tatsächlichen Bedarf ausgerichtet.
+    try:
+        f.update_idletasks()
+        breite = max(760, f.winfo_reqwidth())
+        hoehe = f.winfo_reqheight()
+        bildschirm = f.winfo_screenheight()
+        hoehe = min(max(hoehe, 520), bildschirm - 120)
+        f.geometry("%dx%d" % (breite, hoehe))
+    except Exception:
+        pass
+
+    # Erst hier einsammeln — jetzt sind alle Knöpfe und Menüs angelegt
+    # (am 17.11.2026 stand die Stelle zu früh, deshalb blieben „Neu laden“,
+    #  „Ins Hauptfenster holen“ und „Verbindung neu aufbauen“ bedienbar).
+    sperrbar.extend(sperrbare_widgets(f, ausnahmen=(T("Abbrechen"), T("Schließen"))))
+
+    f.after(150, abholen)
+    anstossen()
+
+
+def ist_kopie(pfad):
+    """Ist das ein geholter Ordner vom Pedal (also nur auf dem Rechner)?"""
+    pfad = (pfad or "").replace("\\", "/")
+    return "/intern/" in pfad or "/karte/" in pfad
+
+
+def _fenster_titel(basis, unterordner=""):
+    """Überschrift des Hauptfensters passend zu dem, was offen ist.
+
+    Anlaß (16.11.2026): „Speicherkarte des JamMan Solo XT" stand auch dann
+    noch da, als eine geholte Kopie oder der interne Speicher offen war.
+    """
+    pfad = (basis or "").replace("\\", "/")
+    if not pfad:
+        return T("keine Karte")
+    if "/intern/" in pfad:
+        return T("Interner Speicher") + " — " + T("Kopie vom Pedal")
+    if "/karte/" in pfad:
+        return T("Speicherkarte") + " — " + T("Kopie vom Pedal")
+    if "stereo" in (unterordner or "").lower():
+        return T("Speicherkarte des JamMan Stereo")
+    return T("Speicherkarte des JamMan Solo XT")
+
+
 def gui(karte):
     """Oberfläche. Der Ton läuft nebenher: kein Warten, Stopp jederzeit."""
+    # Drei Zeilen im Terminal, damit man sieht, daß es läuft und was es sieht
+    # (18.11.2026: beim Start aus dem Terminal blieb es sonst völlig still).
+    print("  " + T("JamMan Card Tool") + " " + FASSUNG)
+    try:
+        # Nicht den übergebenen Wert zeigen, sondern das, was wirklich gefunden
+        # wurde — am 18.11.2026 stand dort "/media" statt „keine Karte".
+        basis = karte_finden(karte, streng=False)
+        if basis and os.path.isdir(basis):
+            print("  " + T("Karte:") + " " + basis)
+        else:
+            print("  " + T("Karte:") + " " + T("keine Karte gefunden"))
+        print("  " + T("Einstellungen:") + " " + EINSTELLUNG_DATEI)
+    except Exception:
+        pass
+    print("  " + T("Meldungen stehen im Fenster; Fehler zusätzlich in "
+                   "jamman-fehler.log."))
+    print()
     # Sicherung beim Start - vor dem Fenster, damit man den Fortschritt
     # im Terminal sieht und das Fenster nicht einfriert.
     if einstellung_lesen("start_sichern") == "ja":
@@ -4751,44 +10405,64 @@ def gui(karte):
     fenster.minsize(1000, 720)
     fenster.configure(bg=FARBE_HINTERGRUND)
 
-    # Ohne Karte früher: Absturz vor dem Fenster (SystemExit). Unter Windows
-    # blitzte das Fenster kurz auf und schloss sich, unter Linux passierte
-    # gar nichts. Jetzt sagt das Fenster selbst, was zu tun ist.
+    # Ohne Karte: kein Dialog mehr. Früher fragte eine Meldung „Ordner selbst
+    # wählen?" — auf Linux war das der erste Bildschirm, obwohl das Pedal per
+    # USB erreichbar war (Rückmeldung 17.11.2026). Jetzt erscheint das Fenster
+    # mit dem Hinweis, und wenn ein Pedal am Kabel hängt, öffnet sich gleich
+    # das USB-Fenster mit Karte und internem Speicher.
     if basis is None:
-        fenster.withdraw()
-        ordner = None
-        if messagebox.askyesno(
-                T("Keine Karte gefunden"),
-                T("Es liegt keine JamMan-Karte im Rechner.") + "\n\n"
-                + T("Nimm die microSD aus dem Pedal und stecke sie in einen "
-                    "Kartenleser oder Kartenslot. Über das USB-Kabel am Pedal "
-                    "erscheint sie nicht als Laufwerk.") + "\n\n"
-                + T("Ordner selbst wählen?")):
-            ordner = filedialog.askdirectory(title=T("Ordner der Karte wählen"))
-        if not ordner:
-            fenster.destroy()
-            return
-        try:
-            basis = karte_pruefen(ordner)
-        except SystemExit as fehler:
-            messagebox.showerror(T("Keine JamMan-Karte"), str(fehler))
-            fenster.destroy()
-            return
         fenster.deiconify()
 
     # Einmal am Tag bei GitHub nachsehen, ob es eine neuere Fassung gibt.
     # Läuft im Hintergrund: ohne Netz startet das Fenster trotzdem sofort.
+    def jetzt_aktualisieren():
+        """Holt die neueste Fassung im Hintergrund und meldet das Ergebnis.
+
+        Der Download läuft in einem Nebenlauf, damit das Fenster nicht
+        einfriert; der Hauptlauf fragt alle 300 ms nach (tkinter darf nur
+        aus dem Hauptlauf angesprochen werden).
+        """
+        if not frage_ja_nein(
+                fenster, T("Aktualisieren"),
+                T("Die neueste Fassung wird von GitHub geladen und ersetzt die "
+                  "Programmdateien. Ihre Einstellungen und Ihre Karte bleiben "
+                  "unberührt. Fortfahren?")):
+            return
+        stand = {"fertig": False, "ok": False, "text": ""}
+
+        def lauf():
+            try:
+                ok, text = aktualisieren()
+            except Exception as fehler:      # nie ohne Meldung enden
+                ok, text = False, T("Unerwarteter Fehler: %s") % fehler
+            stand["ok"] = ok
+            stand["text"] = text
+            stand["fertig"] = True
+
+        def nachsehen():
+            if not stand["fertig"]:
+                fenster.after(300, nachsehen)
+                return
+            if not stand["ok"]:
+                messagebox.showinfo(T("Nicht aktualisiert"), stand["text"])
+                return
+            if frage_ja_nein(fenster, T("Aktualisiert"),
+                                   stand["text"] + "\n\n"
+                                   + T("Fenster jetzt schließen?")):
+                fenster.destroy()
+
+        threading.Thread(target=lauf, daemon=True).start()
+        fenster.after(300, nachsehen)
+
     def fassung_melden(tag):
         try:
-            if tag and tag != eigene_fassung():
-                if messagebox.askyesno(
-                        T("Neue Fassung verfügbar"),
+            if tag and _numerisch(tag) > _numerisch(eigene_fassung()):
+                if frage_ja_nein(
+                        fenster, T("Neue Fassung verfügbar"),
                         T("Es gibt eine neuere Fassung: %s. Sie benutzen %s.")
                         % (tag, eigene_fassung()) + "\n\n"
-                        + T("Zur Download-Seite wechseln?")):
-                    import webbrowser
-                    webbrowser.open("https://github.com/Suilui1/"
-                                    "jamman-card-tool/releases/latest")
+                        + T("Jetzt aktualisieren?")):
+                    jetzt_aktualisieren()
         except Exception:
             pass
 
@@ -4861,9 +10535,21 @@ def gui(karte):
             messagebox.showinfo(T("Spenden"), SPENDEN_LINK)
 
     tk.Button(leiste, text=T("Spenden"), command=spenden).pack(side="right", padx=(0, 12))
+    def usb_oeffnen():
+        def oeffne(pfad):
+            zustand["basis"] = karte_pruefen(pfad)
+            neu_laden()
+        usb_fenster(fenster, oeffne_karte=oeffne)
+
+    tk.Button(leiste, text=T("Aktualisieren"),
+              command=jetzt_aktualisieren).pack(side="right", padx=(0, 12))
+
+    tk.Button(leiste, text=T("Pedal über USB"),
+              command=usb_oeffnen).pack(side="right", padx=(0, 12))
 
 
-    tk.Label(fenster, text=T("Speicherkarte des JamMan Solo XT"),
+    titel_var = tk.StringVar(value=_fenster_titel(basis, UNTERORDNER if basis else ""))
+    tk.Label(fenster, textvariable=titel_var,
              font=schrift(15, fest=True, titel=True),
              bg=FARBE_HINTERGRUND, fg=FARBE_SCHRIFT).pack(pady=(12, 2))
 
@@ -4876,27 +10562,36 @@ def gui(karte):
     tk.Label(fenster, textvariable=pfad_var, bg=FARBE_HINTERGRUND,
              fg=FARBE_LEISE).pack()
 
+    # Bei einer geholten Kopie ausdrücklich sagen, daß Änderungen hier nur
+    # den Rechner betreffen (17.11.2026).
+    kopie_hinweis = tk.StringVar(value="")
+    if ist_kopie(basis):
+        kopie_hinweis.set(T("Kopie auf dem Rechner — Änderungen hier wirken "
+                            "nicht auf das Pedal."))
+    tk.Label(fenster, textvariable=kopie_hinweis, bg=FARBE_HINTERGRUND,
+             fg="#c8a24a", font=schrift(10), wraplength=1000).pack()
+
+    # Achtungshinweis, wenn hier eine geholte Kopie offen ist und nicht die
+    # Karte selbst. Am 16.11.2026 zweimal verwechselt: „Neu laden" zeigte
+    # dann die halb geholte Kopie, und das sah nach Durcheinander aus.
+    try:
+        sicherungsziel = einstellung_lesen("usb_ziel") or os.path.join(
+            os.path.expanduser("~/Documents"), "JamMan-Sicherung")
+        if basis and os.path.abspath(basis).startswith(
+                os.path.abspath(sicherungsziel) + os.sep):
+            tk.Label(fenster,
+                     text=T("Dies ist eine Kopie vom Pedal, nicht die Karte selbst. "
+                            "Über „Karte wählen“ die Karte öffnen."),
+                     bg=FARBE_HINTERGRUND, fg="#c8a24a",
+                     font=schrift(10), wraplength=1000).pack(pady=(2, 0))
+    except Exception:
+        pass
+
     def zeige_ffmpeg_anleitung():
-        hilfe = tk.Toplevel(fenster)
-        hilfe.title("MP3 und M4A: ffmpeg installieren")
-        hilfe.configure(bg=FARBE_HINTERGRUND)
-        hilfe.geometry("760x560")
-        text = tk.Text(hilfe, wrap="word", font=schrift(12),
-                       bg="#ffffff", fg="#000000", relief="flat",
-                       padx=14, pady=12)
-        text.insert("1.0", ffmpeg_anleitung())
-        text.config(state="disabled")
-        text.pack(fill="both", expand=True, padx=12, pady=12)
-
-        def kopieren():
-            fenster.clipboard_clear()
-            fenster.clipboard_append(ffmpeg_anleitung())
-            status_var.set("Anleitung in die Zwischenablage kopiert")
-
-        knoepfe = tk.Frame(hilfe, bg=FARBE_HINTERGRUND)
-        knoepfe.pack(fill="x", padx=12, pady=(0, 12))
-        tk.Button(knoepfe, text=T("Text kopieren"), command=kopieren).pack(side="left")
-        tk.Button(knoepfe, text=T("Schließen"), command=hilfe.destroy).pack(side="right")
+        # Dasselbe Fenster wie im USB-Fenster: scrollbar, kopierbar und
+        # im Vordergrund (ersetzt die kleinere eigene Fassung vom 16.11.2026).
+        _anleitung_fenster(fenster, ffmpeg_anleitung(),
+                           "MP3 und M4A: ffmpeg installieren")
 
     if ffmpeg_fehlt():
         hinweis = tk.Frame(fenster, bg="#3a3320")
@@ -4908,11 +10603,50 @@ def gui(karte):
         tk.Label(hinweis, text=T("WAV geht auch ohne"),
                  bg="#3a3320", fg="#a0a0a0").pack(side="left", padx=8)
 
-    tk.Label(fenster, text="  %-10s %-28s %8s  %-8s %-7s %s" % (
+    tk.Label(fenster, text="  %-10s %-28s %8s  %-8s %-9s %-6s %s" % (
           T("Ordner"), T("Name"), T("Dauer"), T("Stoppart"), T("Wdg."),
-          T("Rhythmus")),
+          T("Tempo"), T("Rhythmus")),
         font=schrift(12), bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
         anchor="w", justify="left").pack(fill="x", padx=14)
+
+    # Suchen und sortieren (17.11.2026: die Liste ließ sich nur in
+    # Ordnerreihenfolge ansehen — bei 200 Plätzen zu wenig).
+    such_zeile = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    such_zeile.pack(fill="x", padx=14, pady=(2, 2))
+    tk.Label(such_zeile, text=T("Suchen:") + " ", bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE, font=schrift(11)).pack(side="left")
+    such_var = tk.StringVar(value="")
+    # Weißes Feld mit Rahmen und größerer Schrift: auf Windows war das Feld
+    # (dunkel auf dunkel, ohne Rahmen) so flach, daß man nicht sah, ob etwas
+    # darin steht — getippt wurde, aber nichts erschien (18.11.2026).
+    such_eingabe = tk.Entry(such_zeile, textvariable=such_var, width=26,
+                            bg="#ffffff", fg="#000000",
+                            insertbackground="#000000",
+                            relief="solid", borderwidth=1, font=schrift(11))
+    such_eingabe.pack(side="left", ipady=4, pady=2)
+    tk.Label(such_zeile, text="   " + T("Sortierung") + ": ",
+             bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+             font=schrift(11)).pack(side="left")
+    SORTIERUNG = [("Ordner", "ordner"), ("Name", "name"),
+                  ("Dauer", "dauer"), ("Länge", "laenge")]
+    sort_var = tk.StringVar(value="ordner")
+    sort_menue = tk.OptionMenu(such_zeile, sort_var,
+                               *[b for b, _ in SORTIERUNG])
+    sort_menue.config(bg=FARBE_LISTE, fg=FARBE_SCHRIFT, relief="flat",
+                      highlightthickness=0)
+    sort_menue.pack(side="left")
+
+    # Ein Knopf und die Eingabetaste als zweiter Weg: am 18.11.2026 wirkte die
+    # Suche auf Windows, als täte sie nichts — so läßt sich prüfen, ob es am
+    # Tippen (trace) oder am Filtern liegt.
+    such_knopf = tk.Button(such_zeile, text=T("Suchen"),
+                           command=lambda: zeilen_anwenden())
+    such_knopf.pack(side="left", padx=(8, 0))
+    # Fassung neben dem Feld: damit sich zwei entpackte Fassungen im Betrieb
+    # unterscheiden lassen (18.11.2026 — es war unklar, welche läuft).
+    tk.Label(such_zeile, text="  " + FASSUNG, bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE).pack(side="right")
+    such_eingabe.bind("<Return>", lambda e: zeilen_anwenden())
 
     rahmen = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
     rahmen.pack(fill="both", expand=True, padx=14, pady=(0, 6))
@@ -4922,6 +10656,9 @@ def gui(karte):
     # durch (am 10.11.2026 mehrfach bestätigt). Der Einfügestrich wird
     # stattdessen als markierte Zeile "hier ablegen" eingeblendet.
     ZEILE_H = 24
+    such_var.trace_add("write", lambda *a: zeilen_anwenden())
+    sort_var.trace_add("write", lambda *a: zeilen_anwenden())
+
     liste = tk.Listbox(rahmen, font=schrift(13),
                        background="#ffffff", foreground="#000000",
                        selectbackground=FARBE_AUSWAHL, selectforeground="#ffffff",
@@ -5008,6 +10745,64 @@ def gui(karte):
             liste.itemconfig(zustand["marker"], background="#ffe9a8",
                              foreground="#000000")
 
+    def zeilen_anwenden(*_):
+        """Zeilen nach Suchtext filtern und sortieren, dann anzeigen.
+
+        Fehler werden gemeldet statt verschluckt: eine Ausnahme in einem
+        trace-Rückruf zeigt Tk nur in der Konsole, das Fenster bliebe stumm.
+        """
+        try:
+            _zeilen_anwenden()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            try:
+                status_var.set(T("Suche fehlgeschlagen: %s") % e)
+            except Exception:
+                pass
+
+    def _zeilen_anwenden(*_):
+        alle = zustand.get("alle") or []
+        if not any(z.get("nummer") is not None for z in alle):
+            # Rückfall: lieber die gerade angezeigten Zeilen filtern als gar
+            # nichts tun (18.11.2026 — die Suche blieb sonst wirkungslos).
+            alle = [z for z in (zustand.get("zeilen") or []) if z.get("text")]
+        # Das Feld bleibt immer bedienbar. Ein graues Feld war am 18.11.2026
+        # die falsche Antwort: es ließ sich nicht einmal hineinschreiben, und
+        # niemand sah warum. Statt dessen sagt die Statuszeile, was fehlt.
+        hat_patches = any(z.get("nummer") is not None for z in alle)
+        if not alle or not hat_patches:
+            if such_var.get().strip():
+                try:
+                    status_var.set(T("Erst eine Karte oder eine geholte Kopie "
+                                     "öffnen — dann läßt sich suchen."))
+                except Exception:
+                    pass
+            return
+        muster = such_var.get().strip().lower()
+        art = sort_var.get()
+        zeilen = [z for z in alle if z.get("nummer") is not None]
+        hinweise = [z for z in alle if z.get("nummer") is None]
+        if muster:
+            zeilen = [z for z in zeilen if muster in z["text"].lower()]
+        if art == "Name":
+            zeilen.sort(key=lambda z: (z.get("name") or "").lower())
+        elif art == "Dauer":
+            zeilen.sort(key=lambda z: -(z.get("dauer") or 0))
+        elif art == "Länge":
+            zeilen.sort(key=lambda z: (z.get("name") or "").lower(),
+                        reverse=True)
+        rest = [] if muster else hinweise
+        anzeige = zeilen + rest
+        if muster:
+            anzeige = anzeige + [{"text": "  " + T("%d von %d Patches passen "
+                                                  "zu „%s“.")
+                                  % (len(zeilen), len(alle), muster)}]
+        liste_setzen(anzeige)
+        if muster:
+            print("  Suche: %d von %d Patches" % (
+                len(zeilen), sum(1 for z in alle if z.get("nummer") is not None)))
+
     def liste_setzen(zeilen):
         liste.delete(0, "end")
         zustand["zeilen"] = zeilen
@@ -5038,10 +10833,6 @@ def gui(karte):
 
     def liste_index(y):
         return liste.nearest(y)
-
-    def liste_einfuege_index(y):
-        return liste.nearest(y)
-
     def strich_setzen(pos):
         """Markierte Zeile "hier ablegen" an der gewünschten Stelle."""
         if pos == zustand.get("marker"):
@@ -5062,21 +10853,6 @@ def gui(karte):
             liste.delete(pos)
         zustand["marker"] = None
 
-    def liste_rad(e):
-        zustand["nutzer_scroll"] = time.time()
-        liste.yview_scroll(-3 if getattr(e, "delta", 0) > 0 else 3, "units")
-
-    def zeilhoehe():
-        """Tatsächliche Zeilenhöhe der Liste (die Schrift gibt sie vor)."""
-        b0 = liste.bbox(0)
-        b1 = liste.bbox(1)
-        if b0 and b1 and b1[1] > b0[1]:
-            return b1[1] - b0[1]
-        return ZEILE_H
-
-    def sichtbare_zeilen():
-        return max(1, int(liste.winfo_height() / zeilhoehe()))
-
     def seite(richtung):
         """Blätterknöpfe: fünf Zeilen je Druck.
 
@@ -5085,19 +10861,6 @@ def gui(karte):
         """
         zustand["nutzer_scroll"] = time.time()
         liste.yview_scroll(richtung * 5, "units")
-
-    def liste_taste(e):
-        if e.keysym == "Prior":
-            zustand["nutzer_scroll"] = time.time()
-            liste.yview_scroll(-sichtbare_zeilen(), "units")
-        elif e.keysym == "Next":
-            zustand["nutzer_scroll"] = time.time()
-            liste.yview_scroll(sichtbare_zeilen(), "units")
-        elif e.keysym == "Home":
-            liste.yview_moveto(0.0)
-        elif e.keysym == "End":
-            liste.yview_moveto(1.0)
-
     import atexit
     atexit.register(lambda: stoppen_ton(zustand.get("spieler")))
     status_var = tk.StringVar(value="")
@@ -5352,30 +11115,62 @@ def gui(karte):
         vorher = None
         i = liste_auswahl()
         if i and zustand["nummern"]:
-            vorher = zustand["nummern"][i[0]]
+            if 0 <= i[0] < len(zustand["nummern"]):
+                vorher = zustand["nummern"][i[0]]
         zeilen = []
         zustand["nummern"] = []
-        if not zustand["basis"]:
+        # „Neu laden“ muß auch dann helfen, wenn der gemerkte Ordner
+        # verschwunden ist — etwa weil die Karte erst nach dem Start
+        # eingesteckt wurde (16.11.2026: Knopf wirkte wirkungslos).
+        if not zustand["basis"] or not os.path.isdir(zustand["basis"]):
             zustand["basis"] = karte_finden()
         if not zustand["basis"]:
             pfad_var.set("keine Karte gefunden")
-            liste_setzen([{"text": "  Karte einlegen und dann oben links Karte waehlen."}])
-            fenster.title("JamMan Solo XT — keine Karte")
+            try:
+                titel_var.set(T("keine Karte"))
+            except Exception:
+                pass
+            zustand["alle"] = []
+            liste_setzen([
+                {"text": "  " + T("Keine Karte im Rechner gefunden.")},
+                {"text": ""},
+                {"text": "  " + T("Karte im Rechner:  „Karte wählen“ drücken.")},
+                {"text": "  " + T("Karte im Pedal:    oben rechts „Pedal über USB“ — "
+                                  "dort sind Karte und interner Speicher erreichbar.")},
+            ])
+            fenster.title(T("JamMan Card Tool") + " — " + T("keine Karte"))
+            zeilen_anwenden()
             return
         pfad_var.set(zustand["basis"])
+        try:
+            titel_var.set(_fenster_titel(zustand["basis"], UNTERORDNER))
+        except Exception:
+            pass
         for nummer, name, pfad in patches(zustand["basis"]):
             w = phrase_wav(pfad)
-            stop, rhy, loop = patch_einstellungen(pfad)
+            stop, rhy, loop, rueck, bpm = patch_einstellungen(pfad)
             dauer = wav_info(w)[0] if w else 0
             marke = "  ← über 10 min" if dauer > MAX_LOOP_SEKUNDEN else ""
-            zeilen.append({"text": "  %-10s %-28s %8s  %-8s %-7s %s%s" % (
+            # Rückwärts und Tempo gehörten schon immer ins Pedal, standen aber
+            # nirgends (18.11.2026): „↺" hinter der Wiedergabe, BPM als Spalte.
+            wiedergabe = loop + (" ↺" if rueck else "")
+            tempo = ("%d BPM" % round(bpm)) if bpm else "—"
+            zeilen.append({"text": "  %-10s %-28s %8s  %-8s %-9s %-6s %s%s" % (
                 name, patch_name(pfad)[:28], sekunden(dauer) if w else "—",
-                stop, loop, rhy, marke),
-                "nummer": nummer})
+                stop, wiedergabe, tempo, rhy, marke),
+                "nummer": nummer, "name": patch_name(pfad),
+                "dauer": dauer, "bpm": bpm, "rueck": rueck,
+                "hat_ton": bool(w)})
             zustand["nummern"].append(nummer)
-        liste_setzen(zeilen)
+        ohne_ton = sum(1 for zeile in zeilen if not zeile.get("hat_ton", True))
+        if ohne_ton:
+            zeilen.append({"text": "  " + T("%d Patches ohne Ton — nur die "
+                                            "Beschreibung ist geholt.") % ohne_ton})
+        zustand["alle"] = zeilen
+        zeilen_anwenden()
         if zustand["nummern"]:
-            fenster.title(T("JamMan Solo XT") + " — %d" % len(zustand["nummern"]))
+            fenster.title(T("JamMan Card Tool") + " — %s (%d)" % (
+                T("Karte und interner Speicher"), len(zustand["nummern"])))
             if not zustand["nummern"] and zustand["basis"] and not zustand.get("lesefehler_gemeldet"):
                 fehler = karte_lesefehler(zustand["basis"])
                 if fehler:
@@ -5734,8 +11529,8 @@ def gui(karte):
             if os.path.isdir(ort) and os.listdir(ort):
                 start = ort
                 break
-        p = filedialog.askdirectory(title="Speicherkarte des JamMan wählen",
-                                    initialdir=start or None)
+        p = ordner_waehlen(fenster, T("Speicherkarte des JamMan wählen"),
+                               start or None)
         if not p:
             return
         try:
@@ -5745,17 +11540,33 @@ def gui(karte):
             messagebox.showerror("Keine JamMan-Karte", str(e))
 
     def wahl_wert(var):
-        """Angezeigten Text zurück auf den deutschen Wert führen."""
+        """Angezeigten Text zurück auf den internen Wert führen."""
         wert = var.get()
-        for deutsch in ("wie Vorlage", "fade", "instant", "finish",
-                        "silence", "kick", "loop", "single"):
-            if T(deutsch) == wert or deutsch == wert:
-                return deutsch
+        for intern, anzeige in (("wie Vorlage", "wie Vorlage"),
+                                ("fade", "fade"),
+                                ("instant", "sofort"),
+                                ("finish", "ende"),
+                                ("silence", "ohne"),
+                                ("kick", "klick"),
+                                ("loop", "loop"),
+                                ("single", "single")):
+            if wert in (T(anzeige), anzeige, T(intern), intern):
+                return intern
         return wert
 
     def gewaehlt():
+        """Platznummer der markierten Zeile — None bei Hinweiszeilen.
+
+        Hinweiszeilen (etwa „N Patches ohne Ton …") haben keine Nummer; der
+        Zugriff auf zustand["nummern"] lief dabei aus dem Index
+        (18.11.2026: IndexError beim Klick auf eine solche Zeile).
+        """
         i = liste_auswahl()
-        return zustand["nummern"][i[0]] if i else None
+        if not i:
+            return None
+        if 0 <= i[0] < len(zustand["nummern"]):
+            return zustand["nummern"][i[0]]
+        return None
 
     def abspielen():
         # Läuft schon etwas, wird es beendet und der gewählte Patch
@@ -5784,7 +11595,17 @@ def gui(karte):
             zustand["temp"] = datei
             zustand["abschnitte"] = abschnitte
         else:
-            zustand["spieler"] = abspielen_datei(w)
+            # Rückwärts-Patches auch rückwärts vorspielen: das Pedal macht
+            # das anhand von IsReversed, das Fenster spielte sonst das
+            # Original (Rückmeldung 18.11.2026).
+            _, _, _, rueck, _ = patch_einstellungen(alle[n])
+            probe = wav_rueckwaerts(w) if rueck else None
+            if rueck and not probe:
+                status_var.set(T("Rückwärts: ohne ffmpeg keine Hörprobe — "
+                                 "das Pedal spielt es trotzdem rückwärts."))
+            zustand["spieler"] = abspielen_datei(probe or w)
+            if probe:
+                zustand["temp"] = probe
         zustand["vorgemerkt"] = None
         zustand["t0"] = time.time(); zustand["start"] = 0.0
         zustand["spielend"] = n
@@ -5809,11 +11630,9 @@ def gui(karte):
         if not zustand["basis"]:
             messagebox.showinfo("Hinweis", "Erst eine Karte wählen.")
             return
-        datei = filedialog.askopenfilename(
-            title="Audiodatei auswählen",
-            filetypes=[("Audio", "*.wav *.aif *.aiff *.aifc *.caf *.mp3 *.m4a *.aac "
-                                 "*.flac *.ogg *.opus"),
-                        ("Alle", "*.*")])
+        datei = datei_waehlen(fenster, T("Audiodatei wählen"), "*.wav *.aif *.aiff *.aifc *.caf *.mp3 *.m4a *.aac *.flac *.ogg *.opus *.wma",
+                                einstellung_lesen("audio_pfad") or None)
+        einstellung_schreiben("audio_pfad", os.path.dirname(datei))
         if not datei:
             return
 
@@ -5821,7 +11640,7 @@ def gui(karte):
         kuerzen = False
         dauer_datei = wav_info(datei)[0]
         if dauer_datei > MAX_LOOP_SEKUNDEN:
-            if not messagebox.askokcancel("Datei zu lang",
+            if not frage_ja_nein(fenster, "Datei zu lang",
                     "Die Datei ist %.1f Minuten lang.\n\n"
                     "Der JamMan Solo XT nimmt höchstens %d Minuten pro Loop an\n"
                     "(Handbuch, Seite 60). Längere Loops erscheinen auf der Karte,\n"
@@ -5832,7 +11651,7 @@ def gui(karte):
                 return
             kuerzen = True
 
-        if not messagebox.askokcancel("Aufspielen",
+        if not frage_ja_nein(fenster, "Aufspielen",
                 "Die Karte wird verändert:\n\n%s\n\nFortfahren?"
                 % os.path.basename(datei)):
             return
@@ -5868,7 +11687,7 @@ def gui(karte):
         if not zustand["basis"]:
             messagebox.showinfo("Hinweis", "Erst eine Karte wählen.")
             return
-        ziel = filedialog.askdirectory(title="Zielordner für die Sicherung")
+        ziel = ordner_waehlen(fenster, T("Zielordner für die Sicherung"))
         if not ziel:
             return
         befehl_sichern(zustand["basis"], ziel, True)
@@ -5915,7 +11734,7 @@ def gui(karte):
         quelle = kandidaten[0]
         name = os.path.basename(os.path.dirname(quelle))
         stand = name.replace("Sicherung_", "").replace("_", " ")
-        if not messagebox.askokcancel("Sicherung zurückholen",
+        if not frage_ja_nein(fenster, "Sicherung zurückholen",
                 "Patch%d wird aus dieser Sicherung wiederhergestellt:\n\n"
                 "  %s\n\n"
                 "Damit lässt sich zum Beispiel ein Fade zurücknehmen.\n"
@@ -5934,13 +11753,11 @@ def gui(karte):
             messagebox.showinfo("Hinweis", "Erst eine Karte wählen.")
             return
         ordner = os.path.expanduser(SICHERUNG_WURZEL)
-        datei = filedialog.askopenfilename(
-            title="Pegelprotokoll wählen",
-            initialdir=ordner if os.path.isdir(ordner) else os.path.expanduser("~"),
-            filetypes=[("Pegelprotokoll", "Pegelprotokoll_*.txt"), ("Alle", "*.*")])
+        datei = datei_waehlen(fenster, T("Pegelprotokoll wählen"), "*.txt",
+                              ordner if os.path.isdir(ordner) else None)
         if not datei:
             return
-        if not messagebox.askokcancel("Pegel zurückrechnen",
+        if not frage_ja_nein(fenster, "Pegel zurückrechnen",
                 "Die Pegeländerungen aus diesem Protokoll werden umgekehrt:\n\n"
                 "%s\n\nVorher wird alles gesichert. Fortfahren?"
                 % os.path.basename(datei)):
@@ -5965,11 +11782,8 @@ def gui(karte):
         if not (2 <= anzahl <= 60):
             messagebox.showerror("Fehler", "Bitte 2 bis 60 Teile angeben.")
             return
-        datei = filedialog.askopenfilename(
-            title="Audiodatei zum Teilen auswählen",
-            filetypes=[("Audio", "*.wav *.aif *.aiff *.aifc *.caf *.mp3 *.m4a *.aac "
-                                 "*.flac *.ogg *.opus"),
-                        ("Alle", "*.*")])
+        datei = datei_waehlen(fenster, T("Audiodatei zum Teilen auswählen"),
+                              "*.wav *.aif *.aiff *.aifc *.caf *.mp3 *.m4a *.aac *.flac *.ogg *.opus")
         if not datei:
             return
         dauer = wav_info(datei)[0]
@@ -5978,7 +11792,7 @@ def gui(karte):
             return
         art = ("an Pausen geschnitten" if sinnvoll_var.get()
                else "gleichmäßig geschnitten")
-        if not messagebox.askokcancel("Datei teilen",
+        if not frage_ja_nein(fenster, "Datei teilen",
                 "%s\n\n%s wird in %d Teile geteilt (%s).\n"
                 "Jeder Teil landet auf einem freien Platz.\n\nFortfahren?"
                 % (os.path.basename(datei), sekunden(dauer), anzahl, art)):
@@ -6001,7 +11815,7 @@ def gui(karte):
         if not zustand["basis"]:
             messagebox.showinfo("Hinweis", "Erst eine Karte wählen.")
             return
-        if not messagebox.askokcancel("Alle Patches normieren",
+        if not frage_ja_nein(fenster, "Alle Patches normieren",
                 "Alle Patches werden auf gleiche Lautheit gebracht:\n\n"
                 "  Ziel -18 dB Lautheit, Spitze höchstens -1 dB\n\n"
                 "Vorher wird die ganze Karte gesichert - das dauert bei\n"
@@ -6046,7 +11860,7 @@ def gui(karte):
             return
         alle = [nr for nr, _, _ in patches(zustand["basis"])]
         a, b = alle[i[0]], alle[i[1]]
-        if not messagebox.askokcancel("Tauschen",
+        if not frage_ja_nein(fenster, "Tauschen",
                 "Patch%d und Patch%d tauschen die Plätze?\n\n"
                 "Der Inhalt bleibt, nur die Ordnernamen wechseln. "
                 "Vorher wird die Reihenfolge gesichert." % (a, b)):
@@ -6059,6 +11873,31 @@ def gui(karte):
             status_var.set("getauscht: Patch%d ↔ Patch%d" % (a, b))
         except SystemExit as f:
             messagebox.showerror("Fehler", str(f))
+
+    def suchen_dialog():
+        """Suchtext über einen Dialog setzen — zweiter Weg zum Filtern.
+
+        Anlaß (18.11.2026): Auf Windows ließ sich in das Suchfeld über der
+        Liste nicht schreiben. Dieser Dialog kommt ohne das Feld aus.
+        """
+        alt = such_var.get().strip()
+        text = _frage_text(fenster, T("Suchen"),
+                           T("Text im Namen (leer lassen = alles zeigen):"), alt)
+        if text is None:
+            return
+        such_var.set(text)
+        zeilen_anwenden()
+
+    def beschreibung_aendern():
+        n = gewaehlt()
+        if not n or not zustand["basis"]:
+            messagebox.showinfo(T("Hinweis"), T("Erst einen Patch wählen."))
+            return
+        alle = dict((nr, pf) for nr, _, pf in patches(zustand["basis"]))
+        if n not in alle:
+            return
+        beschreibung_fenster(fenster, alle[n])
+        neu_laden()
 
     def einstellungen_anwenden():
         """Setzt die drei Auswahlfelder am GEWÄHLTEN Patch."""
@@ -6104,7 +11943,7 @@ def gui(karte):
             teile.append("")
             teile.append("Achtung: Das verändert die Aufnahme selbst. "
                          "Zweimal angewendet wirkt es zweimal.")
-        if not messagebox.askokcancel("Einstellungen anwenden",
+        if not frage_ja_nein(fenster, "Einstellungen anwenden",
                 "Patch%d bekommt:\n\n%s\n\nVorher wird gesichert. Fortfahren?"
                 % (n, "\n".join(teile))):
             return
@@ -6135,9 +11974,13 @@ def gui(karte):
         if not n or not zustand["basis"]:
             messagebox.showinfo("Hinweis", "Erst einen Patch wählen.")
             return
-        if not messagebox.askokcancel("Löschen",
-                "Patch%d wird von der Karte entfernt.\n\n"
-                "Vorher wird er auf dem Mac gesichert. Fortfahren?" % n):
+        if ist_kopie(zustand["basis"]):
+            frage_text = (T("Patch%d wird aus der Kopie auf dem Rechner entfernt. "
+                            "Das Pedal bleibt unverändert. Fortfahren?") % n)
+        else:
+            frage_text = (T("Patch%d wird von der Karte entfernt. Vorher wird er "
+                            "auf dem Rechner gesichert. Fortfahren?") % n)
+        if not frage_ja_nein(fenster, T("Löschen"), frage_text):
             return
         try:
             befehl_loeschen(zustand["basis"], n, True)
@@ -6148,7 +11991,7 @@ def gui(karte):
     def karte_auswerfen():
         if laeuft():
             stoppen()
-        if not messagebox.askokcancel("Auswerfen",
+        if not frage_ja_nein(fenster, "Auswerfen",
                 "Karte auswerfen? Danach kann sie abgezogen werden."):
             return
         quelle = zustand["basis"] or pfad_var.get()
@@ -6162,7 +12005,7 @@ def gui(karte):
             zustand["marke"] = None
             zeichne_welle()
             zeit_var.set(T("kein Patch gewählt"))
-            fenster.title("JamMan Solo XT")
+            fenster.title(T("JamMan Card Tool") + " — " + T("Karte und interner Speicher"))
         except SystemExit as e:
             messagebox.showerror("Fehler", str(e))
 
@@ -6174,9 +12017,14 @@ def gui(karte):
     # vorhandenen Patch ändern.
     tk.Label(wahl, text=T("Einstellungen:"), bg=FARBE_HINTERGRUND,
              fg=FARBE_LEISE).pack(side="left", padx=(0, 10))
-    for beschriftung, werte in (("Stoppart", ("wie Vorlage", "fade", "instant", "finish")),
-                                ("Rhythmus", ("wie Vorlage", "silence", "kick")),
-                                ("Wiedergabe", ("wie Vorlage", "loop", "single"))):
+    # Angezeigt wird dasselbe Wort wie in der Liste (17.11.2026: dort stand
+    # „sofort“, im Feld „instant“ — das verwirrte zu Recht).
+    for beschriftung, werte in (
+            ("Stoppart", ("wie Vorlage", "fade", "sofort", "ende")),
+            ("Rhythmus", ("wie Vorlage", "ohne", "klick")),
+            ("Wiedergabe", ("wie Vorlage", "loop", "single",
+                            "loop \u21ba",
+                            "single \u21ba"))):
         tk.Label(wahl, text=T(beschriftung), bg=FARBE_HINTERGRUND,
                  fg=FARBE_LEISE).pack(side="left")
         # Anzeige übersetzt, gespeichert wird der deutsche Wert
@@ -6214,6 +12062,7 @@ def gui(karte):
                    ("Datei aufspielen", aufspielen),
                    ("Alles sichern", sichern),
                    ("Pegel zurückrechnen", pegel_zurueck),
+                   ("Suchen \u2026", suchen_dialog),
                    ("Neu laden", neu_laden)))
 
     reihe2 = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
@@ -6224,7 +12073,8 @@ def gui(karte):
              ("Umbenennen", umbenennen),
              ("Platz ändern", platz_aendern),
              ("Sicherung zurückholen", zuruecknehmen),
-             ("Einstellungen anwenden", einstellungen_anwenden))):
+             ("Einstellungen anwenden", einstellungen_anwenden),
+             ("Beschreibung …", beschreibung_aendern))):
         knopf = tk.Button(reihe2, text=T(beschriftung), command=befehl)
         knopf_refs[beschriftung] = knopf
         knopf.grid(row=0, column=spalte, sticky="ew", padx=3)
@@ -6310,17 +12160,23 @@ def gui(karte):
     def zieh_start(e):
         strich_weg()
         i = liste_index(e.y)
-        zustand["von"] = i if 0 <= i < len(zustand["zeilen"]) else None
+        # Nur echte Patch-Zeilen lassen sich ziehen: Hinweiszeilen (etwa
+        # „N Patches ohne Ton …") haben keine Platznummer. Am 18.11.2026
+        # führte das Ziehen einer solchen Zeile zu
+        # „KeyError: None" in auto_scroll.
+        zeile = zustand["zeilen"][i] if 0 <= i < len(zustand["zeilen"]) else None
+        zustand["von"] = (i if zeile is not None
+                          and zeile.get("nummer") is not None else None)
         # Auswahl: einfacher Klick wählt, ⌘ klickt dazu
         if zustand["von"] is not None:
             mehrfach = bool(e.state & 0x0008)      # Command-Taste
             liste_waehlen(zustand["von"], mehrfach=mehrfach)
             welle_laden()
+            teile = zeile["text"].split()
+            status_var.set("ziehen: %s" % (teile[1] if len(teile) > 1 else ""))
         zustand["strich"] = None
-        liste.config(cursor="fleur")
-        if zustand["zeilen"]:
-            status_var.set("ziehen: %s" % zustand["zeilen"][zustand["von"]]["text"].split()[1]
-                           if zustand["von"] is not None else "")
+        if zustand["von"] is not None:
+            liste.config(cursor="fleur")
         auto_scroll()
 
     def auto_scroll():
@@ -6342,12 +12198,6 @@ def gui(karte):
             if schritt:
                 liste.yview_scroll(schritt, "units")
         zustand["auto"] = fenster.after(90, auto_scroll)
-        zustand["ziel"] = None
-        liste.config(cursor="fleur")          # Mauszeiger zeigt: es wird bewegt
-        if zustand["nummern"] and 0 <= zustand["von"] < len(zustand["nummern"]):
-            alle = dict((nr, pf) for nr, _, pf in patches(zustand["basis"]))
-            nr = zustand["nummern"][zustand["von"]]
-            status_var.set("ziehen: %s" % patch_name(alle[nr]))
 
     def zieh_bewegen(e):
         zustand["maus_y"] = e.y
@@ -6410,7 +12260,9 @@ def gui(karte):
         zustand["t_welle"] = fenster.after(150, spaeter)
 
     leinwand.bind("<Configure>", umplan_welle)
-    liste.bind("<Enter>", lambda e: liste.focus_set())
+    # Kein Fokusklau beim Überfahren der Liste: das nahm dem Suchfeld den Fokus
+    # (18.11.2026). Fokus kommt beim Klick — siehe fokus_zurueck.
+
 
     # Klicks irgendwo im Fenster geben den Tastatur-/Rad-Fokus an die Liste
     # zurück. Auf macOS bekommt das Rad Ereignisse des Widgets mit Fokus.
@@ -6430,8 +12282,32 @@ def gui(karte):
         except Exception:
             pass
 
+    def fokus_halten(e=None):
+        """Fokus an die Liste — aber niemals aus einem Eingabefeld heraus.
+
+        Anlaß (18.11.2026): Die alte Regel „Fokus immer zur Liste" nahm dem
+        Suchfeld den Fokus in dem Augenblick, in dem man hineinklickte — es
+        war weiß und nahm nichts an. FocusIn kommt auch für das Fenster selbst,
+        deshalb wird nach kurzer Wartezeit der TATSÄCHLICHE Fokus geprüft.
+        """
+        try:
+            fenster.after(10, spaet_pruefen)
+        except Exception:
+            pass
+
+    def spaet_pruefen():
+        try:
+            jetzt = fenster.focus_get()
+            if jetzt is not None and jetzt.winfo_class() in (
+                    "Entry", "Spinbox", "TEntry", "TCombobox", "Text"):
+                return
+            liste.focus_set()
+        except Exception:
+            pass
+
+    # Klicks geben den Fokus an die Liste zurück — außer aus Eingabefeldern.
     fenster.bind("<ButtonRelease-1>", fokus_zurueck, add="+")
-    fenster.bind("<FocusIn>", lambda e: liste.focus_set(), add="+")
+    fenster.bind("<FocusIn>", fokus_halten, add="+")
     liste.focus_set()
     def umplan_liste(e=None):
         if zustand.get("t_liste"):
@@ -6494,7 +12370,7 @@ def gui(karte):
     # Fenstergröße erst jetzt bestimmen - vorher gibt es noch keine
     # Bedienelemente und die Messung wäre wertlos.
     fenster.update_idletasks()
-    fenster.title("JamMan Solo XT")
+    fenster.title(T("JamMan Card Tool") + " — " + T("Karte und interner Speicher"))
     # Größe aus dem Bedarf der Bedienelemente - sonst werden die rechten
     # Knöpfe abgeschnitten (am 10.11.2026 gesehen: 1162 statt 1080 px).
     fenster.update_idletasks()
@@ -6504,6 +12380,16 @@ def gui(karte):
     hoehe = min(max(720, fenster.winfo_reqheight() + 24), bildschirm_h - 80)
     fenster.geometry("%dx%d" % (breite, hoehe))
     fenster.minsize(min(breite, 1000), min(hoehe, 700))
+
+    # Ohne Karte, aber mit Pedal am Kabel: gleich zeigen, was drin ist.
+    if basis is None:
+        def von_selbst_usb():
+            try:
+                if _greenglass().finde_anschluesse():
+                    usb_oeffnen()
+            except Exception:
+                pass          # kein Pedal, kein USB-Modul: der Hinweis genügt
+        fenster.after(400, von_selbst_usb)
 
     fenster.mainloop()
 
@@ -6526,6 +12412,8 @@ def main():
     p.add_argument("befehl", metavar=T("BEFEHL"),
                    choices=sorted(list(BEFEHLE) + list(BEFEHL_ALIAS)),
                    help=T("was zu tun ist (Liste unten; englische Namen gehen auch)"))
+    p.add_argument("dateien", nargs="*",
+                   help=T("Dateien für „speicherabbild“ und „vergleich“"))
     p.add_argument("--sprache", choices=sorted(SPRACHEN),
                    help=T("Sprache der Ausgabe (Vorgabe: aus dem System)"))
     p.add_argument("--karte", default=standard_karte(),
@@ -6592,6 +12480,101 @@ def main():
         except KeyboardInterrupt:
             print()
         return
+    if a.befehl == "aktualisieren":
+        ok, text = aktualisieren(melden=lambda t: print("  " + t))
+        print(text)
+        return 0 if ok else 1
+    if a.befehl in ("firmware-holen", "firmware-schreiben"):
+        if not a.dateien:
+            print(T("Aufruf:") + " jamman.py " + a.befehl + " <ordner>")
+            return 2
+        g = _geraet_holen(_greenglass())
+        try:
+            if a.befehl == "firmware-holen":
+                geholt = firmware_holen(
+                    g, a.dateien[0],
+                    melden=lambda p: print("  " + str(p).split("nandfs/")[-1]))
+                print(T("Firmware geholt: %d Dateien") % len(geholt))
+            else:
+                if not frage_ja_nein_konsole():
+                    print(T("Abgebrochen."))
+                    return 1
+                ergebnis = firmware_schreiben(
+                    g, a.dateien[0],
+                    melden=lambda p, n: print("  " + str(p).split("nandfs/")[-1]
+                                              + " (%d Bytes)" % n))
+                print(T("Fertig: %d Dateien geschrieben") % len(ergebnis))
+        finally:
+            _geraet_schliessen()
+        return 0
+
+    if a.befehl in ("jamlists", "jamlist-holen", "jamlist-schreiben"):
+        dateien = a.dateien or []
+        if a.befehl == "jamlists":
+            if not dateien:
+                print(T("Aufruf:") + " jamman.py jamlists <JamManager.db.sqlite>")
+                return 2
+            for liste in jamlists_lesen(dateien[0]):
+                print("  %-16s id=%-3d %d " % (liste["name"], liste["id"],
+                                               len(liste["platz"]))
+                      + T("belegte Plätze"))
+            return 0
+        if a.befehl == "jamlist-holen":
+            if len(dateien) < 3:
+                print(T("Aufruf:") + " jamman.py jamlist-holen <db> <Name> <ziel.txt>")
+                return 2
+            for liste in jamlists_lesen(dateien[0]):
+                if liste["name"] == dateien[1]:
+                    patchliste = [(("Patch%02d" % p), n, "") for p, n, _ in liste["platz"]]
+                    _setlist_speichern(patchliste,
+                                       list(range(len(patchliste))), dateien[2])
+                    print(T("Geschrieben: %s (%d Plätze)")
+                          % (dateien[2], len(patchliste)))
+                    return 0
+            print(T("Keine JamList mit dem Namen %s.") % dateien[1])
+            return 1
+        if len(dateien) < 3:
+            print(T("Aufruf:") + " jamman.py jamlist-schreiben <db> <Name> <quelle.txt>")
+            return 2
+        eintraege = [(int(platz.lstrip("Patch") if platz.startswith("Patch")
+                          else platz), name, "")
+                     for platz, name in _setlist_lesen(dateien[2])]
+        kennung = jamlist_schreiben(dateien[0], dateien[1], eintraege)
+        print(T("JamList %s angelegt (id %d, %d Plätze)")
+              % (dateien[1], kennung, len(eintraege)))
+        return 0
+
+    if a.befehl in ("speicherabbild", "vergleich"):
+        if a.befehl == "vergleich":
+            if len(a.dateien or []) < 2:
+                print(T("Aufruf:") + " jamman.py vergleich <a.tsv> <b.tsv>")
+                return 2
+            nur_a, nur_b, anders = speicherabbilder_vergleichen(
+                a.dateien[0], a.dateien[1])
+            print(T("Nur im ersten Bild: %d") % len(nur_a))
+            for pfad in nur_a[:20]:
+                print("  + " + pfad)
+            print(T("Nur im zweiten Bild: %d") % len(nur_b))
+            for pfad in nur_b[:20]:
+                print("  - " + pfad)
+            print(T("Gleicher Pfad, andere Größe: %d") % len(anders))
+            for pfad, groesse_a, groesse_b in anders[:40]:
+                print("  %s  %d → %d" % (pfad, groesse_a, groesse_b))
+            return 0
+        ziel = (a.dateien or [None])[0]
+        if not ziel:
+            print(T("Aufruf:") + " jamman.py speicherabbild <datei.tsv>")
+            return 2
+        g = _geraet_holen(_greenglass())
+        try:
+            anzahl = speicherabbild(g, ziel,
+                                    melden=lambda n, p: print("  %d  %s" % (n, p)))
+            print(T("Speicherabbild geschrieben: %d Einträge nach %s")
+                  % (anzahl, ziel))
+        finally:
+            _geraet_schliessen()
+        return 0
+
     if a.befehl == "auswerfen":
         befehl_auswerfen(a.karte)
         return
@@ -6663,5 +12646,39 @@ def main():
                            kopie=not a.keine_kopie)
 
 
+def _absturz_protokoll(fehler):
+    """Unerwarteten Fehler festhalten und zeigen.
+
+    Nötig, weil das Werkzeug unter Windows ohne Konsolenfenster startet
+    (pythonw): Ohne das Protokoll wäre ein Absturz unsichtbar (17.11.2026).
+    """
+    import traceback
+    text = "".join(traceback.format_exception(fehler))
+    ordner = os.path.dirname(os.path.abspath(__file__))
+    pfad = os.path.join(ordner, "jamman-fehler.log")
+    try:
+        with open(pfad, "a", encoding="utf-8") as datei:
+            datei.write("\n" + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n")
+            datei.write(text)
+    except OSError:
+        pfad = ""
+    try:
+        from tkinter import messagebox
+        messagebox.showerror(
+            T("Unerwarteter Fehler"),
+            (T("Das Werkzeug wurde unerwartet beendet.") + "\n\n"
+             + text[-1200:]
+             + ("\n\n" + T("Protokoll:") + " " + pfad if pfad else "")))
+    except Exception:
+        pass
+    return pfad
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException as fehler:        # auch Strg+C beim Start
+        _absturz_protokoll(fehler)
+        raise

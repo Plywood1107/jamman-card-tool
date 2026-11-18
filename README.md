@@ -1,5 +1,7 @@
 # jamman-card-tool
 
+For the card and the internal memory — over USB as well.
+
 **Manage the SD card of a DigiTech JamMan Solo XT or Stereo from macOS, Windows
 or Linux — without JamManager XT.**
 
@@ -85,6 +87,116 @@ patch folders to `~/JamMan-Sicherung` first.
 
 ---
 
+## Over USB
+
+The pedal does not appear as a drive. It speaks a serial protocol
+("Greenglass", CDC-ACM), and the tool talks to it directly — no driver, no
+JamManager. Button **"Pedal über USB"** opens a window for the pedal's
+**internal memory** and its **SD card**:
+
+* list the patches with their names, switch between internal memory and card
+* fetch everything into the main window (descriptions first, audio after)
+* write a whole patch folder onto the pedal, slot by slot
+* write a whole **fetched folder back at once** ("Schreiben ▾ → Ganzen
+  Ordner aufs Pedal …") — occupied slots are backed up, unchanged ones
+  skipped
+* **delete a slot** ("Schreiben ▾ → Platz löschen …")
+* write an audio file as a new patch (any format, converted to 44.1 kHz /
+  16 bit / stereo)
+* play a loop **backwards** (the pedal reverses it; the window previews it
+  backwards too when ffmpeg is available)
+* see and set the **tempo** per patch (column Tempo, „Beschreibung …“)
+* back everything up as a ZIP, clean up old backups
+* save and fetch setlists
+* read **JamLists from JamManager XT** and store your own setlists as a JamList
+  (the manufacturer's library is an SQLite file, not a special format)
+* **search and sort** in the list (folder, name, duration, reversed name)
+* play a loop **backwards** and see/set the **tempo** per patch
+* **delete a slot** and **close the gaps**
+* take a **memory image** of the pedal and compare two of them (read only)
+* undo the last write
+
+Anything that is overwritten is first copied to the computer; each slot keeps
+its last five backups (`vor-ueberschreiben/<slot>/<stamp>`). Files longer than
+10 minutes are refused — the pedal does not accept them. Speed over USB
+is about 1.3 MB/s — an 8-minute loop takes around a minute. For the card in
+a card reader, use the reader instead; it is many times faster.
+
+On Windows, USB needs `pyserial` (`pip install pyserial`); macOS and Linux
+need nothing extra. On Ubuntu, USB access to the internal memory was
+confirmed on 17 Nov 2026. Windows 10 shows the pedal as "USB Serial Device (COMx)" —
+confirmed on 17 Nov 2026. Reading and writing from Windows is not yet tested.
+
+## Firmware from one pedal to another
+
+The pedal has no firmware server any more: the address JamManager XT used to
+update from (`digitech.com/updater/…`) is gone. If you own two pedals with
+different firmware, the newer one can be copied onto the older one — the tool
+can do that.
+
+**What the firmware actually is.** Not a secret package but files on a QNX
+system inside the pedal:
+
+```
+/mnt/nandfs/usr/IOMgr        I/O manager
+/mnt/nandfs/usr/JamManUI     user interface
+/mnt/nandfs/usr/loopengine   loop engine
+/mnt/nandfs/usr/usbserial    USB serial driver
+/mnt/nandfs/usr/attributes/  button assignment and queue (newer versions only)
+/mnt/nandfs/lib/             devb-sd-at91sam9g35 · devc-serusart
+                             devc-serusb_g · devu-g15-at91sam_g.so
+```
+
+**Procedure.**
+
+```
+1  On the NEWER pedal: "Sichern ▾ → Firmware dieses Pedals holen …"
+   → choose a folder; the eight files are stored below it (…/mnt/nandfs/…)
+2  On the OLDER pedal: "Schreiben ▾ → Firmware übernehmen …"
+   → choose the same folder
+3  First the tool backs up ALL files of the target into
+   sicherung-vor-firmware-<stamp>/
+4  Then it writes them and checks the size of each one
+5  Switch the pedal off and on again; the version appears at start-up
+```
+
+**What deliberately does not happen:**
+
+```
+unit_guid.attr        stays on the target — it is that pedal's own id
+JamManSoloXT.xml      untouched — your settings live there
+.filetable            not copied — the filesystem index belongs to the pedal
+```
+
+**Why "write beside it":** QNX refuses to overwrite a file that is running
+("Resource busy"), so the tool writes `…/JamManUI.neu` and renames it over the
+old one.
+
+**The risk, plainly.** An interruption can make the pedal unusable; the only
+way back is the backup on the computer. On 18 Nov 2026 a Solo XT was moved from
+FirmwareVersion 5376 to 5632 (display showed "1.06") — it worked, but it
+remains surgery on system files.
+
+## macOS: “JamMan.command” was not opened
+
+When the ZIP is downloaded, macOS marks every extracted program (quarantine).
+The first start then shows:
+
+> “JamMan.command” was not opened — Apple could not verify that
+> “JamMan.command” is free of malware.
+
+That is not a fault of the tool but the default for anything not registered
+with Apple. Two ways:
+
+**Allow it once:** right-click (or Ctrl-click) `JamMan.command` in the Finder →
+**Open** → **Open** again in the dialog. After that a double click works.
+
+**Or remove the mark** (Terminal, adjust the path):
+
+```
+xattr -dr com.apple.quarantine /path/to/jamman-card-tool
+```
+
 ## Card layout
 
 Verified on real hardware (2026-10-26):
@@ -126,6 +238,20 @@ Or use "Code" → "Download ZIP" on the project page.
 | macOS | `xcode-select --install`, or Python from [python.org](https://www.python.org/downloads/) | `JamMan.command` |
 | Windows | Python from [python.org](https://www.python.org/downloads/) ("Add python.exe to PATH") | `JamMan.bat` |
 | Linux | `sudo apt install python3-tk` | `./JamMan.sh` |
+
+**Updating:** the button "Update" in the window fetches the latest version from GitHub, verifies it and replaces the program files. The old files go to `sicherung-vor-<old version>/` first; the settings in `~/.jamman-werkzeug.cnf` are not touched. From the command line: `jamman.py aktualisieren`.
+
+**Over USB on Windows:** the pedal appears as a serial device
+("USB Serial Device (COMx)") — no DigiTech driver needed. The tool talks to
+it through `pyserial`:
+
+```
+pip install pyserial
+```
+
+Check the connection in Device Manager under "Ports (COM & LPT)"; if there is
+no COM port, the pedal is not enumerated as a serial device (cable, hub or
+the device itself).
 
 Audio playback uses what the system has: `afplay` (macOS), `winsound`
 (Windows), `aplay`/`paplay`/`mpv`/`ffplay` (Linux).
@@ -217,6 +343,11 @@ The card is found automatically. To point at a specific path use
 **The pedal accepts at most 10 minutes per loop** (manual page 60,
 stereo). Longer files do land on the card, but the pedal does not show
 them — they can even disappear again.
+
+The manual is here:
+<https://eadn-wc05-7545739.nxedge.io/wp-content/uploads/2022/09/DigiTech_JamMan_Solo_XT_Manual.pdf>
+(9 MB, DigiTech). The same source gives the other limits: 44.1 kHz,
+16 bit, stereo, at most 200 loops, microSDHC up to 32 GB.
 
 The tool therefore refuses a file that is too long and offers three ways
 out:

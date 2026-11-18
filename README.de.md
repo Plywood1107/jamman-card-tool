@@ -1,5 +1,7 @@
 # jamman-card-tool — deutsche Anleitung
 
+Für Speicherkarte und internen Speicher — auch über USB.
+
 Die Speicherkarte des **DigiTech JamMan Solo XT und Stereo** von macOS,
 Windows oder Linux aus verwalten — ohne JamManager XT.
 
@@ -66,6 +68,122 @@ eintragen.
 `~/JamMan-Sicherung` gesichert.
 
 ---
+
+## Über USB
+
+Das Pedal erscheint nicht als Laufwerk. Es spricht ein serielles Protokoll
+(„Greenglass", CDC-ACM), und das Werkzeug redet direkt damit — kein Treiber,
+kein JamManager. Der Knopf **„Pedal über USB"** öffnet ein Fenster für den
+**internen Speicher** und die **SD-Karte** des Pedals:
+
+* Patches mit Namen auflisten, zwischen internem Speicher und Karte wechseln
+* alles ins Hauptfenster holen (erst die Beschreibungen, dann die Töne)
+* einen ganzen Patch-Ordner aufs Pedal schreiben, Platz für Platz
+* einen ganzen **geholten Ordner auf einmal** zurückschreiben
+  („Schreiben ▾ → Ganzen Ordner aufs Pedal …") — belegte Plätze werden
+  gesichert, unveränderte übersprungen
+* einen **Platz löschen** („Schreiben ▾ → Platz löschen …")
+* eine Audiodatei als neuen Patch schreiben (jedes Format, umgewandelt auf
+  44,1 kHz / 16 Bit / Stereo)
+* **rückwärts** abspielen (das Pedal dreht den Loop; das Fenster hört ihn
+  zum Prüfen ebenfalls rückwärts, sofern ffmpeg vorhanden ist)
+* das **Tempo** je Patch sehen und setzen (Spalte Tempo, „Beschreibung …“)
+* alles als ZIP sichern, alte Sicherungen aufräumen
+* Setlists sichern und wieder holen
+* **JamLists aus JamManager XT** lesen und eigene Setlists als JamList ablegen
+  (die Bibliothek des Herstellers ist eine SQLite-Datei, kein Sonderformat)
+* **suchen und sortieren** in der Liste (Ordner, Name, Dauer, Länge)
+* **rückwärts** abspielen und das **Tempo** je Patch sehen und setzen
+* einen **Platz löschen** und **Lücken schließen** (Plätze aufrücken)
+* ein **Speicherabbild** des Pedals aufnehmen und zwei vergleichen (nur lesend)
+* den letzten Schreibvorgang rückgängig machen
+
+Was überschrieben wird, liegt vorher auf dem Rechner — je Platz bleiben die
+letzten fünf Sicherungen (`vor-ueberschreiben/<Platz>/<Zeitstempel>`).
+Dateien über 10 Minuten lehnt das Werkzeug ab; das Pedal nimmt sie nicht an.
+Über USB fließen etwa
+1,3 MB/s — ein Acht-Minuten-Loop braucht rund eine Minute. Steckt die Karte
+in einem Leser, nimm den Leser: er ist um ein Vielfaches schneller.
+
+**Aktualisieren:** Der Knopf „Aktualisieren“ im Fenster holt die neueste Fassung von GitHub, prüft sie und ersetzt die Programmdateien. Die alten Dateien wandern vorher nach `sicherung-vor-<alte Fassung>/`; die Einstellungen in `~/.jamman-werkzeug.cnf` bleiben unberührt. Auf der Kommandozeile: `jamman.py aktualisieren`.
+
+Unter Windows braucht USB zusätzlich `pyserial` (`pip install pyserial`);
+macOS und Linux brauchen nichts weiter. Unter Ubuntu ist der Zugriff auf
+den internen Speicher über USB am 17.11.2026 bestätigt. Windows 10 erkennt das Pedal als
+„USB-Seriell-Gerät (COMx)" — am 17.11.2026 bestätigt. Gelesen und geschrieben
+wurde unter Windows noch nicht geprüft.
+
+## Firmware von einem Pedal auf das andere
+
+Das Pedal hat keinen Firmware-Server mehr: die Adresse, von der JamManager XT
+früher aktualisiert hat (`digitech.com/updater/…`), ist abgeschaltet. Wer zwei
+Pedale mit unterschiedlicher Firmware hat, kann den neueren Stand auf das
+ältere übertragen — das Werkzeug kann es.
+
+**Was Firmware hier ist.** Kein geheimnisvolles Paket, sondern Dateien auf
+einem QNX-System im Pedal:
+
+```
+/mnt/nandfs/usr/IOMgr        E/A-Verwalter
+/mnt/nandfs/usr/JamManUI     Bedienoberfläche
+/mnt/nandfs/usr/loopengine   Loop-Engine
+/mnt/nandfs/usr/usbserial    USB-Seriell-Treiber
+/mnt/nandfs/usr/attributes/  Tastenbelegung und Warteschlange (nur neuere Fassungen)
+/mnt/nandfs/lib/             devb-sd-at91sam9g35 · devc-serusart
+                             devc-serusb_g · devu-g15-at91sam_g.so
+```
+
+**Ablauf.**
+
+```
+1  Am NEUEREN Pedal:  „Sichern ▾ → Firmware dieses Pedals holen …"
+   → Ordner wählen; die acht Dateien landen darunter (…/mnt/nandfs/…)
+2  Am ÄLTEREN Pedal:  „Schreiben ▾ → Firmware übernehmen …"
+   → denselben Ordner wählen
+3  Vorher sichert das Werkzeug ALLE Dateien des Zielgeräts nach
+   sicherung-vor-firmware-<Zeitstempel>/
+4  Danach schreibt es die Dateien — und prüft nach jeder die Größe
+5  Pedal aus- und wieder einschalten; die Fassung steht beim Start im Display
+```
+
+**Was dabei bewußt nicht passiert:**
+
+```
+unit_guid.attr        bleibt beim Zielgerät — das ist die Kennung DIESES Pedals
+JamManSoloXT.xml      bleibt unangetastet — darin stehen deine Einstellungen
+.filetable            wird nicht kopiert — der Verzeichnisindex gehört dem Pedal
+```
+
+**Warum „einmal daneben schreiben":** QNX läßt eine Datei nicht überschreiben,
+solange sie läuft („Resource busy"). Das Werkzeug schreibt deshalb erst
+`…/JamManUI.neu` und benennt sie dann über die alte.
+
+**Das Risiko, ohne Beschönigung.** Ein Abbruch mittendrin kann das Pedal
+unbrauchbar machen; es gibt keinen Weg zurück außer der Sicherung auf dem
+Rechner. Am 18.11.2026 wurde ein Solo XT von FirmwareVersion 5376 auf 5632
+gebracht (Anzeige danach „1.06") — es hat funktioniert, aber es bleibt ein
+Eingriff in Systemdateien.
+
+## macOS: „JamMan.command" wurde nicht geöffnet
+
+Lädt man das ZIP aus dem Netz, hängt macOS jedem entpackten Programm eine
+Markierung an (Quarantäne). Beim ersten Start erscheint dann:
+
+> „JamMan.command" nicht geöffnet — Apple konnte nicht überprüfen, ob
+> „JamMan.command" frei von Schadsoftware ist.
+
+Das ist kein Fehler des Werkzeugs, sondern die Voreinstellung für alles, was
+nicht bei Apple angemeldet ist. Zwei Wege:
+
+**Einmal erlauben:** im Finder mit der rechten Maustaste (oder Ctrl-Klick) auf
+`JamMan.command` → **Öffnen** → im Dialog noch einmal **Öffnen**. Danach startet
+es dauerhaft per Doppelklick.
+
+**Oder die Markierung entfernen** (im Terminal, Pfad anpassen):
+
+```
+xattr -dr com.apple.quarantine /Pfad/zum/Ordner/jamman-card-tool
+```
 
 ## Aufbau der Karte
 
@@ -201,6 +319,10 @@ ein Pfad vorgeben.
 **Das Pedal nimmt höchstens 10 Minuten pro Loop an** (Handbuch Seite 60,
 stereo). Längere Dateien landen zwar auf der Karte, erscheinen am Pedal
 aber nicht — sie können sogar wieder verschwinden.
+
+Das Handbuch liegt hier: <https://eadn-wc05-7545739.nxedge.io/wp-content/uploads/2022/09/DigiTech_JamMan_Solo_XT_Manual.pdf>
+(9 MB, DigiTech). Dieselbe Quelle nennt die übrigen Grenzen: 44,1 kHz,
+16 Bit, Stereo, höchstens 200 Loops, microSDHC bis 32 GB.
 
 Das Werkzeug lehnt eine zu lange Datei deshalb ab und bietet drei Wege an:
 

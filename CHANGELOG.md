@@ -1,5 +1,256 @@
 # Changelog
 
+## 3.110 — 2026-11-18
+
+Built on 17–18 November 2026 and tested on Windows 10, Ubuntu and macOS.
+
+### New
+
+* **Firmware from one pedal to another — confirmed on real hardware.**
+  On 18 Nov 2026 a JamMan Solo XT was moved from `FirmwareVersion 5376` to
+  `5632` by fetching the newer pedal's system files and writing them over
+  USB; the pedal then showed **1.06** at start. Two details mattered:
+  running files cannot be overwritten (QNX answers „Resource busy“), so
+  each file is written next to its target and renamed into place; and
+  `usr/attributes/unit_guid.attr` is a per-device id and is never copied.
+* **Firmware from one pedal to another (read and write).** Two pedals were
+  compared with the memory image: the "firmware" is a set of files on a QNX
+  system (`/mnt/nandfs/usr/IOMgr, JamManUI, loopengine, usbserial`,
+  `/mnt/nandfs/lib/…`, `JamManSoloXT.xml`, plus `usr/attributes/` on newer
+  units). "Sichern ▾ → Firmware dieses Pedals holen …" copies those files to
+  the computer; "Firmware übernehmen …" backs up the target pedal's own files
+  to `sicherung-vor-firmware-<stamp>/` and then writes them in a safe order
+  (libraries first, USB driver last), checking the size after each file.
+  `.filetable` is deliberately not copied — it is the filesystem index the
+  pedal maintains itself. Command line: `jamman.py firmware-holen <ordner>`
+  and `firmware-schreiben <ordner>` (asks for confirmation). An interruption
+  can leave the pedal unusable; there is no way back.
+* **Memory images leave out /proc, /dev and the SD card.** The first
+  comparison of two pedals showed 222 differences, almost all of them from the
+  inserted card, the device nodes and the runtime memory.
+* **JamLists from JamManager XT.** The manufacturer's JamLists are not a file
+  format but rows in `JamManager.db.sqlite` (SQLite): `jamlists(id, color,
+  name)` and `loops(…, jamlistid, "Loop #", …)`, where each JamList holds the
+  200 slots of the pedal. The tool now reads that library
+  ("Setlists ▾ → JamList aus JamManager XT holen …") and writes an existing
+  text setlist back as a new JamList ("… als JamList ablegen …"). Command line:
+  `jamman.py jamlists <db>`, `jamlist-holen <db> <name> <ziel.txt>`,
+  `jamlist-schreiben <db> <name> <quelle.txt>`.
+* **Reverse playback and a tempo column.** `phrase.xml` carries `IsReversed`
+  and `BeatsPerMinute`; the tool read neither and always wrote 0 / 90. The
+  list now shows the tempo ("120 BPM") and marks reversed patches with
+  "↺"; the playback choice offers "loop rückwärts" and "single
+  rückwärts". Because the pedal reverses on playback while the window
+  played the file as-is, "Anhören" now renders a reversed copy with ffmpeg
+  (`areverse`) — without ffmpeg it says so and the pedal still plays it
+  backwards.
+* **Descriptions and tempo.** New button "Beschreibung …" edits the fields the
+  pedal stores but the tool never offered: name, artist, genre, rating (0–5),
+  tags, description text and **BPM**. Before, every new patch got
+  `Genre=Unspecified`, `Rating=0` and `BeatsPerMinute=90` — and the tempo is
+  what the pedal's auto-quantize uses.
+* **Search and sort in the list.** A search field filters by any text in the
+  row (patch name, slot, mode), and the list can be sorted by folder, name,
+  duration or reversed name. With 200 slots an unsorted list was hard to use.
+* **Update from inside the tool.** The button "Aktualisieren" (and the daily
+  "new version" prompt) downloads the latest release, checks that the ZIP
+  belongs to the announced version, backs up the files it replaces into
+  `sicherung-vor-<old version>/` and puts the new ones in place. The settings
+  in `~/.jamman-werkzeug.cnf` are not touched. From the command line:
+  `jamman.py aktualisieren`. The running window keeps the old code until it is
+  restarted, and the tool says so.
+* **Whole folder onto the pedal.** "Schreiben ▾ → Ganzen Ordner aufs Pedal …"
+  takes a fetched folder (`Patch01 … PatchNN`) and writes every patch into the
+  chosen memory. Occupied slots are backed up first (five deep), unchanged ones
+  are skipped, and the result reads "Fertig: n geschrieben, m übersprungen,
+  k vorher gesichert". Before, restoring was patch by patch.
+* **Setlists follow the moved slots.** After "Plätze aufrücken" the tool asks
+  whether the setlist files in the last used setlist folder should be adjusted.
+  Each `PatchNN` line is rewritten to the new slot, every changed file is
+  backed up next to it (`<name>.vor-aufruecken-<stamp>.txt`), and the status
+  line says how many files and lines changed.
+* **Close the gaps between slots.** "Schreiben ▾ → Plätze aufrücken …" pulls
+  every occupied slot forward so there is no hole (after deleting Patch16 the
+  list jumped 15 → 17). The order of the patches stays; only the slot numbers
+  change. Each moved slot is backed up first, and the question says that
+  setlists pointing at slot numbers will no longer match.
+* **Delete a slot over USB.** "Schreiben ▾ → Platz löschen …" asks for the
+  slot, names the memory and deletes the patch after a confirmation. Before, a
+  wrongly written slot could only be overwritten — and that meant backing up
+  the unwanted patch over USB first (17 Nov: 1238 MB).
+* **A fetched copy says it is a copy.** Deleting a patch in the main window
+  while it shows a fetched copy removed it only there — the pedal kept it, and
+  the gap in the list looked like a fault (17 Nov). The window now shows
+  "Kopie auf dem Rechner — Änderungen hier wirken nicht auf das Pedal", and the
+  delete confirmation names the copy and says the pedal stays unchanged.
+* **Confirmation buttons speak the chosen language.** Tk's system dialogs
+  labelled their buttons themselves ("Yes"/"No") while the text was German.
+  Confirmations now use the tool's own window with "Ja"/"Nein" (or
+  "Yes"/"No", "Oui"/"Non", …) — every `askyesno` and `askokcancel` was
+  replaced.
+* **The chooser stays in front of the USB window.** The USB window keeps
+  itself on top, so it jumped over the open dialog (17 Nov). The dialog now
+  takes the "always on top" off its parent for the duration and restores it
+  afterwards.
+* **The tool brings its own dialogs.** Opening files (audio, setlist, level
+  log), choosing folders (card, target, patch folder, whole folder, backup) and
+  saving (ZIP, setlist, instructions) all use one window: folders on the left,
+  matching files on the right, hidden entries skipped, a path field, and a name
+  field where needed. Tk's own dialogs and zenity are no longer used; zenity
+  appeared behind the window on GNOME, and Tk's dialog was cramped and showed
+  every hidden file.
+
+### Fixed
+
+* **Start without a card:** the first thing shown was a dialog asking to pick a
+  folder, even when the pedal was reachable over USB. It is gone; the window
+  shows the hint, and if a pedal is attached the USB window opens by itself
+  with the card *and* the internal memory.
+* **Length check before writing audio over USB.** A 1238 MB file
+  (~123 minutes) started writing into the 504 MB internal memory; the pedal
+  accepts at most 10 minutes per loop. The length is now measured before
+  converting and again after, and the write is refused with a clear message.
+* **Ejecting with the card in the pedal:** the tool tried to unmount `/media`
+  and reported a long polkit error chain. It now finds the real mount point
+  (walking up until the device changes); if the card is not in the computer it
+  says so plainly, and a failure names only the first reason.
+* **Hint dialogs no longer hide behind the window.** The USB window keeps
+  itself in front, so its messages (wrong target slot, "press Reload first")
+  appeared behind it. They now open as children of the window, with the window
+  dropping its "always on top" for the duration.
+* **Buttons are locked while a run is active.** Everything except "Abbrechen"
+  and "Schließen" is disabled — the three menus, the memory switch, "Neu
+  laden", "Ins Hauptfenster holen" and "Verbindung neu aufbauen". (The list was
+  collected too early at first, which is why "Verbindung neu aufbauen" stayed
+  usable on 17 Nov; it is now collected after the window is complete.)
+* **Cleaning up an aborted run no longer races the next one.** After
+  "Verbindung neu aufbauen" the aborted run's cleanup question could still be
+  pending while the new run was already writing; deleting its `.part` file
+  produced `[Errno 2] … .part -> … .wav`. The cleanup is skipped while a run is
+  active, and writing a fetched file is retried once if the folder or the
+  `.part` file disappears in between.
+* **Deleting a slot now says so,** and a failed reload no longer empties the
+  list — that is what made the selection look empty after deleting.
+* **Same words in the list and in the dropdowns.** The list showed
+  "sofort/ende/ohne/klick" while the dropdowns offered
+  "instant/finish/silence/kick". Both now use "fade / sofort / ende",
+  "ohne / klick", "loop / single"; the internal values are mapped back.
+* **List says when audio is missing.** Patches whose audio was not fetched yet
+  show "—" in the duration column; a closing line now explains it
+  ("N Patches ohne Ton — nur die Beschreibung ist geholt.").
+* **Fetching says what it actually did.** The status line ends with
+  "Übertragen: N Dateien · unverändert übersprungen: M" — descriptions are
+  re-read every time (small), audio only when its size differs.
+* **Backups before overwriting are kept five deep.** Each write to an occupied
+  slot stores its backup in `vor-ueberschreiben/<slot>/<stamp>/` and removes
+  older ones per slot. Before, the slot folder was overwritten, so only the
+  very last state existed.
+* **Certificate trouble on macOS.** The update check reported
+  `CERTIFICATE_VERIFY_FAILED — unable to get local issuer certificate` with a
+  Python from python.org that never ran "Install Certificates". The check now
+  builds its SSL context from `certifi` if present, otherwise from the system
+  bundle (`/etc/ssl/cert.pem` and friends), and the message explains the fix
+  ("Install Certificates.command" or `pip install certifi`).
+* **"GitHub ist nicht erreichbar" now says why.** The message only appeared
+  when the update check failed — without a reason. It now names the cause, uses
+  a 15 s timeout instead of 8 s, and falls back to the release page's redirect
+  when the API is not reachable (rate limit, blocked API): the tag is read from
+  `…/releases/latest` and the asset URL built from it.
+* **Target slot input is read more tolerantly.** On Windows the field arrived
+  as `_Patch17` and was rejected. Whitespace, quotes, a leading `_`, `.` or
+  `-`, a trailing slash and a bare number (`17`) are accepted and turned into
+  `Patch17`.
+* **The chooser copes with folders it cannot read.** On Windows 10 "Eigene
+  Musik" (a linked library folder) produced `[WinError 5] Zugriff verweigert`
+  and an empty window. The start folder is checked first and the tool falls
+  back to Music/home; an unreadable folder during browsing shows a quiet note
+  instead of a modal error.
+* **Internal fixes found by the checks:** a missing `datei_auswahl()` after a
+  cleanup (NameError when opening a file), a typo `vorhanden`/`vorhandene`
+  when deleting a slot, and two latent ones in the CLI (`fenster`, `pfad`,
+  `wurzel`). `werkzeuge/usb_pruefen.py` now verifies per scope that every name
+  used is defined, and that the required functions still exist.
+
+## 3.109 — 2026-11-17
+
+Small things that only show up in use.
+
+### Fixed
+
+* `greenglass.py` started by double-click on Windows: the console closed
+  before anything could be read. It now prints a short help with the ports it
+  finds and waits for Enter. Errors are shown and the window stays open.
+* **Ejecting the card on Linux** asked for a password and then failed. It now
+  tries `gio` first (runs in the user session, no password), then `udisksctl`
+  with `--no-user-interaction`, then `umount`; a missing program is no longer
+  an exception. If nothing works, the message names the reason and suggests
+  ejecting in the file manager.
+* The main window's empty state now names both routes: card in the computer →
+  "Choose card"; card in the pedal → "Pedal über USB", where the card *and*
+  the internal memory are reachable. Before it only asked for a card, which
+  is wrong when the card is in the pedal.
+
+### Confirmed
+
+* **Windows 10** shows the pedal as "USB Serial Device (COMx)" after
+  `pip install pyserial` — no DigiTech driver needed (confirmed 17 Nov 2026).
+* **Ubuntu** reads the internal memory over USB (confirmed 17 Nov 2026).
+  Reading and writing under Windows is still untested.
+
+### What does not change
+
+No change to how the card or the pedal is written. Anyone on 3.108 loses
+nothing.
+
+
+## 3.108 — 2026-11-16
+
+USB. The pedal's card and its internal memory — read and written.
+
+The JamMan does not appear as a drive over USB; it speaks a serial protocol
+("Greenglass", CDC-ACM). That protocol was documented by the
+[RenanDiaz/jamman-manager](https://github.com/RenanDiaz/jamman-manager)
+project (MIT) and is implemented here independently, in Python, without
+extra libraries on macOS and Linux (Windows needs `pyserial`).
+
+### What is new
+
+* **"Pedal über USB"** — its own window: pick internal memory or SD card,
+  see the patches with their names, fetch everything into the main window.
+* **Writing**: a whole patch folder onto the pedal, or an audio file
+  (WAV, MP3, M4A, AAC, FLAC, OGG, OPUS, WMA, AIFF, CAF) which is converted
+  to 44.1 kHz / 16 bit / stereo and becomes a patch. An occupied slot is
+  backed up to the computer first, then cleared.
+* **Backup as ZIP**, including the internal memory — WAVs are stored
+  uncompressed, which makes the archive much faster.
+* **"Sicherungen aufräumen"**: every run with date and size, delete what is
+  no longer needed. The backup used by undo is marked and asked about
+  separately.
+* **Undo**: the last write can be taken back from its backup.
+* **Setlists**: select patches (⌘-click, ⇧-click, "select all"), save as a
+  text file, fetch a setlist back onto the computer.
+* **Everything fetched is remembered**: `<target>/intern/...` and
+  `<target>/karte/...`, so a second run only fetches what is missing.
+
+### What changed
+
+* The window title says what is open: card, internal memory, or a copy
+  taken from the pedal. A note warns when a copy is open instead of the card.
+* "Reload" finds the card again if the remembered folder has disappeared.
+* The USB window is built from a few buttons and four menus instead of
+  fifteen buttons; confirmation dialogs come to the front; "Cancel" stops
+  within a fraction of a second.
+* Fixed: two threads on the same serial port could silence the pedal — only
+  one speaker at a time now, and a stalled request recovers by itself.
+* Removed: the footswitch assignment and "follow the pedal" — the Solo XT
+  stores those values but does not act on them.
+
+### What does not change
+
+The card itself is handled as before. Anyone on 3.107 loses nothing, and
+nothing is written without backing it up first.
+
+
 ## 3.107 — 2026-11-16
 
 One name everywhere.

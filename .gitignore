@@ -16,3 +16,7 @@ testcard/
 JamMan-Sicherung/
 *.wav
 !example.wav
+
+# Protokoll des Werkzeugs (entsteht beim Absturz)
+jamman-fehler.log
+jamman-start.log
