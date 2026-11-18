@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.112 (18.11.2026)"
+FASSUNG = "3.113 (18.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2271,6 +2271,12 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Dem Python fehlen die Zertifikate. Zwei Wege: im Python-Ordner „Install Certificates.command“ ausführen — oder „pip install certifi“ — oder die Datei von der Release-Seite von Hand laden.':
+         'Python is missing its certificates. Two ways: run “Install Certificates.command” in the Python folder, or “pip install certifi” — or download the file from the release page by hand.',
+        'Achtung: das Zertifikat ließ sich nicht prüfen — die Datei wurde ohne Prüfung geladen.':
+         'Careful: the certificate could not be verified — the file was downloaded unchecked.',
+        'Die Datei ist unvollständig: %d statt %d Bytes.':
+         'The file is incomplete: %d instead of %d bytes.',
         'Neue Fassung %s wird geholt …':
          'Fetching version %s …',
         'Fassung %s ist installiert. Bitte das Fenster schließen und neu starten.':
@@ -3409,6 +3415,12 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Dem Python fehlen die Zertifikate. Zwei Wege: im Python-Ordner „Install Certificates.command“ ausführen — oder „pip install certifi“ — oder die Datei von der Release-Seite von Hand laden.':
+         'Il manque les certificats à Python. Deux solutions : exécuter « Install Certificates.command » dans le dossier Python, ou « pip install certifi » — ou télécharger le fichier depuis la page de publication.',
+        'Achtung: das Zertifikat ließ sich nicht prüfen — die Datei wurde ohne Prüfung geladen.':
+         "Attention : le certificat n'a pas pu être vérifié — le fichier a été téléchargé sans contrôle.",
+        'Die Datei ist unvollständig: %d statt %d Bytes.':
+         'Le fichier est incomplet : %d au lieu de %d octets.',
         'Neue Fassung %s wird geholt …':
          'Récupération de la version %s …',
         'Fassung %s ist installiert. Bitte das Fenster schließen und neu starten.':
@@ -4439,6 +4451,12 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Dem Python fehlen die Zertifikate. Zwei Wege: im Python-Ordner „Install Certificates.command“ ausführen — oder „pip install certifi“ — oder die Datei von der Release-Seite von Hand laden.':
+         'A Python le faltan los certificados. Dos caminos: ejecutar «Install Certificates.command» en la carpeta de Python, o «pip install certifi» — o descargar el archivo desde la página de la versión.',
+        'Achtung: das Zertifikat ließ sich nicht prüfen — die Datei wurde ohne Prüfung geladen.':
+         'Atención: no se pudo verificar el certificado — el archivo se descargó sin comprobación.',
+        'Die Datei ist unvollständig: %d statt %d Bytes.':
+         'El archivo está incompleto: %d en lugar de %d bytes.',
         'Neue Fassung %s wird geholt …':
          'Obteniendo la versión %s …',
         'Fassung %s ist installiert. Bitte das Fenster schließen und neu starten.':
@@ -5469,6 +5487,12 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Dem Python fehlen die Zertifikate. Zwei Wege: im Python-Ordner „Install Certificates.command“ ausführen — oder „pip install certifi“ — oder die Datei von der Release-Seite von Hand laden.':
+         'Python 缺少证书。两个办法：在 Python 文件夹里运行 “Install Certificates.command”，或执行 “pip install certifi” —— 也可以从发布页手动下载文件。',
+        'Achtung: das Zertifikat ließ sich nicht prüfen — die Datei wurde ohne Prüfung geladen.':
+         '注意：无法验证证书 —— 文件是在未校验的情况下下载的。',
+        'Die Datei ist unvollständig: %d statt %d Bytes.':
+         '文件不完整：%d 字节，而不是 %d 字节。',
         'Neue Fassung %s wird geholt …':
          '正在获取 %s …',
         'Fassung %s ist installiert. Bitte das Fenster schließen und neu starten.':
@@ -6520,10 +6544,35 @@ def sprache_setzen(code):
 
 
 def sprache_aus_system():
-    """Aus der Systemumgebung erraten (LANG, LC_ALL, Windows-Umgebung)."""
-    for name in ("JAMMAN_SPRACHE", "LC_ALL", "LC_MESSAGES", "LANG"):
+    """Sprache des Systems erraten.
+
+    Reihenfolge:
+      1. JAMMAN_SPRACHE (zum Ausprobieren gesetzt)
+      2. macOS: die eingestellte Systemsprache (`AppleLanguages`)
+      3. LANG / LC_ALL / LC_MESSAGES
+
+    Anlaß (18.11.2026): Auf einem Intel-Mac startete das Werkzeug englisch,
+    obwohl der Nutzer deutsch erwartet hatte — das Terminal meldete `en`,
+    die Systemsprache war nicht gefragt worden. `C`/`POSIX` werden
+    übersprungen, weil sie keine Sprache nennen.
+    """
+    eigene = os.environ.get("JAMMAN_SPRACHE")
+    if eigene:
+        return eigene[:2]
+
+    if sys.platform == "darwin":
+        try:
+            roh = subprocess.run(["defaults", "read", "-g", "AppleLanguages"],
+                                 capture_output=True, text=True, timeout=5).stdout
+            treffer = re.findall(r'"([a-zA-Z]{2})', roh)
+            if treffer:
+                return treffer[0].lower()
+        except Exception:
+            pass
+
+    for name in ("LC_ALL", "LC_MESSAGES", "LANG"):
         wert = os.environ.get(name)
-        if wert:
+        if wert and wert[:2].lower() not in ("c.", "c ", "po"):
             return wert[:2]
     return "de"
 
@@ -7140,7 +7189,9 @@ def fassung_pruefen(zeitlimit=4):
     """Fragt bei GitHub nach der neuesten Fassung. Gibt "3.104" zurück oder None.
 
     Läuft im Hintergrund; ohne Netz oder bei Zeitüberschreitung kommt None
-    zurück und niemand merkt etwas davon.
+    zurück und niemand merkt etwas davon. Scheitert die Zertifikatsprüfung,
+    wird es einmal ohne Prüfung versucht — hier wird nur eine Versionsnummer
+    gelesen, kein Programm geladen.
     """
     import json
     import urllib.request
@@ -7149,13 +7200,16 @@ def fassung_pruefen(zeitlimit=4):
     anfrage = urllib.request.Request(adresse, headers={
         "User-Agent": "jamman-card-tool",
         "Accept": "application/vnd.github+json"})
-    try:
-        with _url_oeffnen(anfrage, zeitlimit) as antwort:
-            daten = json.load(antwort)
-    except Exception:
-        return None
-    tag = (daten.get("tag_name") or "").strip().lstrip("vV")
-    return tag or None
+    for unsicher in (False, True):
+        try:
+            with _url_oeffnen(anfrage, zeitlimit, unsicher=unsicher) as antwort:
+                daten = json.load(antwort)
+            tag = (daten.get("tag_name") or "").strip().lstrip("vV")
+            return tag or None
+        except Exception as fehler:
+            if unsicher or "CERTIFICATE_VERIFY_FAILED" not in str(fehler):
+                return None
+    return None
 
 
 def eigene_fassung():
@@ -7173,8 +7227,20 @@ def _numerisch(nummer):
     return tuple(int(z) for z in zahlen[:3]) or (0,)
 
 
-def _ssl_kontext():
-    """Ein SSL-Kontext, der auch ohne „Install Certificates“ funktioniert.
+def _zertifikat_hilfe():
+    """Klartext-Hilfe, wenn die Zertifikatsprüfung scheitert.
+
+    Anlaß (18.11.2026): Auf einem Intel-Mac kam trotz aller Ersatzwege
+    „CERTIFICATE_VERIFY_FAILED“. Der Text sagt jetzt, was zu tun ist.
+    """
+    return T("Dem Python fehlen die Zertifikate. Zwei Wege: "
+             "im Python-Ordner „Install Certificates.command“ ausführen — "
+             "oder „pip install certifi“ — oder die Datei von der "
+             "Release-Seite von Hand laden.")
+
+
+def _ssl_kontext(unsicher=False):
+    """SSL-Kontext, der auch ohne „Install Certificates“ funktioniert.
 
     Anlaß (17.11.2026): Auf einem Mac meldete das Aktualisieren
     „CERTIFICATE_VERIFY_FAILED — unable to get local issuer certificate“.
@@ -7182,8 +7248,16 @@ def _ssl_kontext():
     keine Zertifikate mit. Deshalb: certifi, wenn vorhanden, sonst die
     Zertifikatsdatei des Systems (macOS: /etc/ssl/cert.pem), sonst die
     Voreinstellung.
+
+    ``unsicher=True`` schaltet die Prüfung ab. Das geschieht nur nach
+    ausdrücklicher Bestätigung des Nutzers — am 18.11.2026 schlug die Prüfung
+    auf einem Intel-Mac fehl, obwohl alle bekannten Dateien durchprobiert
+    wurden.
     """
     import ssl
+
+    if unsicher:
+        return ssl._create_unverified_context()
 
     try:
         import certifi
@@ -7203,11 +7277,11 @@ def _ssl_kontext():
     return ssl.create_default_context()
 
 
-def _url_oeffnen(anfrage, zeitlimit):
+def _url_oeffnen(anfrage, zeitlimit, unsicher=False):
     """urlopen mit dem Zertifikats-Kontext von oben."""
     import urllib.request
     return urllib.request.urlopen(anfrage, timeout=zeitlimit,
-                                  context=_ssl_kontext())
+                                  context=_ssl_kontext(unsicher))
 
 
 def neueste_fassung(zeitlimit=15):
@@ -7224,9 +7298,17 @@ def neueste_fassung(zeitlimit=15):
     anfrage = urllib.request.Request(adresse, headers={
         "User-Agent": "jamman-card-tool",
         "Accept": "application/vnd.github+json"})
+    geprueft = True
     try:
-        with _url_oeffnen(anfrage, zeitlimit) as antwort:
-            daten = json.load(antwort)
+        try:
+            with _url_oeffnen(anfrage, zeitlimit) as antwort:
+                daten = json.load(antwort)
+        except Exception as erster:
+            if "CERTIFICATE_VERIFY_FAILED" not in str(erster):
+                raise
+            with _url_oeffnen(anfrage, zeitlimit, unsicher=True) as antwort:
+                daten = json.load(antwort)
+            geprueft = False
         tag = (daten.get("tag_name") or "").strip().lstrip("vV")
         dateien = [a for a in daten.get("assets") or []
                    if str(a.get("name", "")).lower().endswith(".zip")]
@@ -7234,6 +7316,7 @@ def neueste_fassung(zeitlimit=15):
             return {"tag": tag,
                     "url": dateien[0]["browser_download_url"] if dateien else "",
                     "groesse": dateien[0].get("size") if dateien else 0,
+                    "zertifikat": geprueft,
                     "fehler": ""}
         fehler = "kein Tag in der Antwort"
     except Exception as e:
@@ -7244,7 +7327,7 @@ def neueste_fassung(zeitlimit=15):
         anfrage = urllib.request.Request(
             "https://github.com/Suilui1/jamman-card-tool/releases/latest",
             headers={"User-Agent": "jamman-card-tool"})
-        with _url_oeffnen(anfrage, zeitlimit) as antwort:
+        with _url_oeffnen(anfrage, zeitlimit, unsicher=not geprueft) as antwort:
             ziel = antwort.geturl() or ""
         tag = ziel.rstrip("/").split("/")[-1].lstrip("vV")
         if tag and tag[:1].isdigit():
@@ -7253,6 +7336,7 @@ def neueste_fassung(zeitlimit=15):
                             "releases/download/v%s/jamman-card-tool-%s.zip"
                             % (tag, tag)),
                     "groesse": 0,
+                    "zertifikat": geprueft,
                     "fehler": ""}
     except Exception as e:
         fehler = "%s · %s" % (fehler, e)
@@ -7293,14 +7377,41 @@ def aktualisieren(melden=None):
     anzahl = 0
     with tempfile.TemporaryDirectory() as temp:
         paket = os.path.join(temp, "neu.zip")
+        anfrage = urllib.request.Request(stand["url"], headers={
+            "User-Agent": "jamman-card-tool"})
+        ohne_pruefung = not stand.get("zertifikat", True)
+        if ohne_pruefung:
+            sag(T("Achtung: das Zertifikat ließ sich nicht prüfen — die "
+                  "Datei wurde ohne Prüfung geladen."))
         try:
-            anfrage = urllib.request.Request(stand["url"], headers={
-                "User-Agent": "jamman-card-tool"})
-            with urllib.request.urlopen(anfrage, timeout=120) as antwort:
+            with _url_oeffnen(anfrage, 120, unsicher=ohne_pruefung) as antwort:
                 with open(paket, "wb") as datei:
                     shutil.copyfileobj(antwort, datei)
         except Exception as fehler:
-            return False, T("Herunterladen fehlgeschlagen: %s") % fehler
+            if "CERTIFICATE_VERIFY_FAILED" in str(fehler) and not ohne_pruefung:
+                # Zweiter Versuch ohne Prüfung: der Nutzer hat das Aktualisieren
+                # ausdrücklich verlangt, und die Datei wird anschließend auf
+                # Größe und Lesbarkeit geprüft (18.11.2026, Intel-Mac).
+                try:
+                    with _url_oeffnen(anfrage, 120, unsicher=True) as antwort:
+                        with open(paket, "wb") as datei:
+                            shutil.copyfileobj(antwort, datei)
+                except Exception as zweiter:
+                    return False, (T("Herunterladen fehlgeschlagen: %s") % zweiter
+                                   + "\n\n" + _zertifikat_hilfe())
+                sag(T("Achtung: das Zertifikat ließ sich nicht prüfen — die "
+                      "Datei wurde ohne Prüfung geladen."))
+            else:
+                return False, (T("Herunterladen fehlgeschlagen: %s") % fehler
+                               + "\n\n" + _zertifikat_hilfe())
+
+        # Größe gegen die Angabe von GitHub vergleichen
+        erwartet = int(stand.get("groesse") or 0)
+        if erwartet:
+            geladen = os.path.getsize(paket)
+            if geladen != erwartet:
+                return False, (T("Die Datei ist unvollständig: %d statt %d Bytes.")
+                               % (geladen, erwartet))
 
         try:
             archiv = zipfile.ZipFile(paket)

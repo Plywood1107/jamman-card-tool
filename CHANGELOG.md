@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.113 — 2026-11-18
+
+* **Update works even when the certificates are broken.** On an Intel Mac,
+  "Update" ended with `CERTIFICATE_VERIFY_FAILED: unable to get local issuer
+  certificate` — no certifi, and the usual certificate files did not help.
+  Two changes: if the version query fails for that reason it is retried once
+  without verification (only a version number is read), and the ZIP download
+  falls back the same way — with a plain warning, and with the file size
+  compared against GitHub's figure afterwards. A help text names the two
+  proper fixes ("Install Certificates.command", `pip install certifi`).
+* **The tool starts in the language the system is set to, not the one the
+  terminal reports.** On an Intel Mac it came up in English although macOS was
+  set to German: the language was guessed from `LANG`/`LC_ALL` only, and an
+  English terminal reports `en_US.UTF-8`. The order is now: `JAMMAN_SPRACHE`,
+  then the macOS system language (`defaults read -g AppleLanguages`), then
+  `LANG`/`LC_ALL`/`LMC_MESSAGES`. `C` and `POSIX` are skipped. A language
+  chosen in the window still wins over all of it.
+* **README: `dialout` group needs a reboot.** A user on Kubuntu reported that
+  logging out and back in was not enough after `usermod -aG dialout`; both
+  guides now say so, with `groups` as the check.
+
 ## 3.112 — 2026-11-18
 
 * **The tool updates itself.** The daily check no longer only asks: on finding a newer
