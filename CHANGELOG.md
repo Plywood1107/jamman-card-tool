@@ -11,6 +11,13 @@
   `JamMan Card Tool.app` renamed to `.app.alt` on the next update — it is not
   deleted, only taken out of the way.
 
+* **Windows: the update no longer stops at a read-only file.** A user on
+  Windows 10 got `[Errno 13] Permission denied: …\.gitignore` — the package
+  contained a development file that Windows had marked read-only. Two changes:
+  files whose name starts with a dot are no longer part of the package or of
+  the update, and if a target file is read-only the update clears that flag and
+  tries once more before reporting an error.
+
 ## 3.115 — 2026-11-18
 
 * **macOS: the Terminal closes together with the tool.** `JamMan.command` asks

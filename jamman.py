@@ -7452,6 +7452,11 @@ def aktualisieren(melden=None):
                     continue
                 if name.startswith("/") or ".." in name.split("/"):
                     continue
+                # Mit einem Punkt beginnende Dateien (.gitignore & Co.) gehören
+                # nicht ins Programm; unter Windows sind sie außerdem oft
+                # schreibgeschützt (Rückmeldung 18.11.2026: Errno 13).
+                if any(teil.startswith(".") for teil in name.split("/")):
+                    continue
                 alt = os.path.join(ziel_ordner, name)
                 if os.path.exists(alt):
                     unter = os.path.join(sicherung, name)
@@ -7466,12 +7471,28 @@ def aktualisieren(melden=None):
                     continue
                 if name.startswith("/") or ".." in name.split("/"):
                     continue
+                # Mit einem Punkt beginnende Dateien (.gitignore & Co.) gehören
+                # nicht ins Programm; unter Windows sind sie außerdem oft
+                # schreibgeschützt (Rückmeldung 18.11.2026: Errno 13).
+                if any(teil.startswith(".") for teil in name.split("/")):
+                    continue
                 ziel = os.path.join(ziel_ordner, name)
                 try:
                     os.makedirs(os.path.dirname(ziel), exist_ok=True)
                     with archiv.open(name) as quelle_datei:
                         with open(ziel, "wb") as ziel_datei:
                             shutil.copyfileobj(quelle_datei, ziel_datei)
+                except PermissionError as fehler:
+                    # Unter Windows sind Dateien aus einem ZIP oft
+                    # schreibgeschützt; Recht lockern und einmal wiederholen.
+                    try:
+                        os.chmod(ziel, 0o666)
+                        with archiv.open(name) as quelle_datei:
+                            with open(ziel, "wb") as ziel_datei:
+                                shutil.copyfileobj(quelle_datei, ziel_datei)
+                    except OSError:
+                        return False, (T("Die Programmdateien lassen sich hier "
+                                         "nicht ersetzen: %s") % fehler)
                 except OSError as fehler:
                     return False, (T("Die Programmdateien lassen sich hier nicht "
                                      "ersetzen: %s") % fehler)
