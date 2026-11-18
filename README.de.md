@@ -111,9 +111,17 @@ in einem Leser, nimm den Leser: er ist um ein Vielfaches schneller.
 **Automatisch:** Das Werkzeug sieht einmal am Tag bei GitHub nach und installiert eine neuere Fassung selbst. Abschalten mit dem Häkchen „Update beim Start" — dann fragt es wie früher nach.
 Unter Windows braucht USB zusätzlich `pyserial` (`pip install pyserial`);
 macOS und Linux brauchen nichts weiter. Unter Ubuntu ist der Zugriff auf
-den internen Speicher über USB am 17.11.2026 bestätigt. Windows 10 erkennt das Pedal als
-„USB-Seriell-Gerät (COMx)" — am 17.11.2026 bestätigt. Gelesen und geschrieben
-wurde unter Windows noch nicht geprüft.
+den internen Speicher über USB am 17.11.2026 bestätigt.
+
+**Linux: Gruppe `dialout` — und danach wirklich neu starten.** Fehlt der
+Zugriff, gehört der Benutzer nicht zur Gruppe `dialout`:
+`sudo usermod -aG dialout $USER`. Nach dem Befehl reicht Ab- und Anmelden
+nicht immer — ein Nutzer unter Kubuntu hat es am 18.11.2026 erst nach einem
+**Neustart** zum Laufen gebracht. Wer `groups` aufruft und `dialout` dort
+nicht sieht, ist noch in der alten Sitzung.
+
+Windows 10 erkennt das Pedal als „USB-Seriell-Gerät (COMx)" — am 17.11.2026
+bestätigt. Gelesen und geschrieben wurde unter Windows noch nicht geprüft.
 
 ## Firmware von einem Pedal auf das andere
 

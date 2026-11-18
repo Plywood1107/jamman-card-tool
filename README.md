@@ -124,8 +124,16 @@ a card reader, use the reader instead; it is many times faster.
 
 On Windows, USB needs `pyserial` (`pip install pyserial`); macOS and Linux
 need nothing extra. On Ubuntu, USB access to the internal memory was
-confirmed on 17 Nov 2026. Windows 10 shows the pedal as "USB Serial Device (COMx)" —
-confirmed on 17 Nov 2026. Reading and writing from Windows is not yet tested.
+confirmed on 17 Nov 2026.
+
+**Linux: `dialout` group — and reboot afterwards.** If the pedal is not
+found, the user is usually not in the `dialout` group:
+`sudo usermod -aG dialout $USER`. Logging out and back in is not always
+enough — a user on Kubuntu needed a **reboot** on 18 Nov 2026 before it
+worked. If `groups` does not list `dialout`, the session is still the old one.
+
+Windows 10 shows the pedal as "USB Serial Device (COMx)" — confirmed on
+17 Nov 2026. Reading and writing from Windows is not yet tested.
 
 ## Firmware from one pedal to another
 
