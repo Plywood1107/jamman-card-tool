@@ -125,15 +125,15 @@ bestätigt. Gelesen und geschrieben wurde unter Windows noch nicht geprüft.
 
 ## Starten
 
-**macOS:** „JamMan Card Tool.app" doppelklicken. Es öffnet sich nur das
-Fenster, kein Terminal — und nach dem Schließen bleibt nichts offen.
-Beim ersten Mal kann macOS die App blockieren („unbekannter Entwickler"):
-dann **Rechtsklick → Öffnen**. Das gilt nur einmal.
+**macOS:** `JamMan.command` doppelklicken. Es öffnet sich ein Terminal (das
+macht macOS bei `.command`-Dateien so), und nach dem Schließen des Werkzeugs
+**schließt sich das Fenster mit**. Beim ersten Mal fragt macOS, ob das Skript
+„Terminal" steuern darf — einmal **Erlauben**, danach ist Ruhe.
 
-**Wer `JamMan.command` nimmt**, bekommt ein Terminalfenster, weil macOS das
-bei `.command`-Dateien so macht. Damit es sich nach dem Schließen von selbst
-zumacht: Terminal → Einstellungen → Profile → „Shell" → „Wenn die Shell
-beendet wird: Fenster schließen".
+Wer das nicht erlauben will, drückt „Nicht erlauben"; dann bleibt das Fenster
+wie bisher stehen, und derselbe Effekt läßt sich ohne Rückfrage einstellen:
+Terminal → Einstellungen → Profile → „Shell" → „Wenn die Shell beendet wird:
+Fenster schließen".
 
 **Windows:** `JamMan.bat` doppelklicken (ohne Konsolenfenster) oder
 `JamMan-mit-Konsole.bat`, wenn Meldungen sichtbar bleiben sollen.

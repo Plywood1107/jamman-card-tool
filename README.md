@@ -137,14 +137,13 @@ Windows 10 shows the pedal as "USB Serial Device (COMx)" — confirmed on
 
 ## Starting it
 
-**macOS:** double-click **"JamMan Card Tool.app"**. Only the window opens — no
-Terminal, and nothing stays open afterwards. macOS may block the app the first
-time ("unidentified developer"): then **right-click → Open**. That is needed
-once.
+**macOS:** double-click `JamMan.command`. macOS opens a Terminal for
+`.command` files, and **the window closes together with the tool** when you
+quit. The first time macOS asks whether the script may control Terminal —
+allow it once, and that is the end of it.
 
-If you prefer `JamMan.command`, macOS opens a Terminal window — that is how
-`.command` files work. To have it close itself: Terminal → Settings → Profiles
-→ "Shell" → "When the shell exits: Close the window".
+If you would rather not allow that, the same effect is a setting: Terminal →
+Settings → Profiles → "Shell" → "When the shell exits: Close the window".
 
 **Windows:** `JamMan.bat` (no console window) or `JamMan-mit-Konsole.bat` if
 you want messages to stay visible.

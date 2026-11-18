@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.115 — 2026-11-18
+
+* **macOS: the Terminal closes together with the tool.** `JamMan.command` asks
+  Terminal to close its window when the tool quits — macOS asks once whether
+  the script may control Terminal. If you decline, the window stays as before;
+  the same effect is available as a Terminal setting (Profiles → Shell → "When
+  the shell exits: Close the window").
+
+  The app bundle from 3.114 is gone again: macOS refuses to start a downloaded
+  and therefore quarantined app that is only ad-hoc signed ("Das Programm …
+  kann nicht geöffnet werden"), and notarising it would need a paid Apple
+  developer account. A `.command` is what users can actually start.
+
 ## 3.114 — 2026-11-18
 
 * **macOS: no Terminal window any more.** Double-clicking `JamMan.command`
