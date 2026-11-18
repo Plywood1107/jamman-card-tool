@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.111 (18.11.2026)"
+FASSUNG = "3.112 (18.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2271,6 +2271,16 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Neue Fassung %s wird geholt …':
+         'Fetching version %s …',
+        'Fassung %s ist installiert. Bitte das Fenster schließen und neu starten.':
+         'Version %s is installed. Please close the window and start again.',
+        'Update beim Start':
+         'Update on start',
+        'Neue Fassung %s wird geholt …':
+         'Fetching version %s …',
+        'Die Karte ist eingebunden, aber das Dateisystem liefert\nLesefehler:\n\n%s\n\nDas liegt an der Karte oder am Einhängepunkt, nicht am\nWerkzeug.\n\nErste Schritte:\n  - Karte im JamMan einschalten (das Pedal prüft sie)\n  - dmesg | tail -20\n  - aushängen und prüfen: sudo fsck.vfat -n <gerät>\n    bzw. sudo exfatfsck <gerät>':
+         'The card is mounted, but the file system reports read errors:\n\n%s\n\nThat is the card or the mount point, not the tool.\n\nFirst steps:\n  - put the card into the JamMan and switch it on (the pedal checks it)\n  - dmesg | tail -20\n  - unmount and check: sudo fsck.vfat -n <device>\n    or sudo exfatfsck <device>',
         'kein Pedal':
          'no pedal',
         'Beschreibung …':
@@ -3399,6 +3409,16 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Neue Fassung %s wird geholt …':
+         'Récupération de la version %s …',
+        'Fassung %s ist installiert. Bitte das Fenster schließen und neu starten.':
+         'La version %s est installée. Veuillez fermer la fenêtre et redémarrer.',
+        'Update beim Start':
+         'Mise à jour au démarrage',
+        'Neue Fassung %s wird geholt …':
+         'Récupération de la version %s …',
+        'Die Karte ist eingebunden, aber das Dateisystem liefert\nLesefehler:\n\n%s\n\nDas liegt an der Karte oder am Einhängepunkt, nicht am\nWerkzeug.\n\nErste Schritte:\n  - Karte im JamMan einschalten (das Pedal prüft sie)\n  - dmesg | tail -20\n  - aushängen und prüfen: sudo fsck.vfat -n <gerät>\n    bzw. sudo exfatfsck <gerät>':
+         "La carte est montée, mais le système de fichiers signale des erreurs de lecture :\n\n%s\n\nCela vient de la carte ou du point de montage, pas de l'outil.\n\nPremiers pas :\n  - mettre la carte dans la JamMan et l'allumer (la pédale la vérifie)\n  - dmesg | tail -20\n  - démonter et vérifier : sudo fsck.vfat -n <périphérique>\n    ou sudo exfatfsck <périphérique>",
         'kein Pedal':
          'pas de pédale',
         'Beschreibung …':
@@ -4419,6 +4439,16 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Neue Fassung %s wird geholt …':
+         'Obteniendo la versión %s …',
+        'Fassung %s ist installiert. Bitte das Fenster schließen und neu starten.':
+         'La versión %s está instalada. Cierra la ventana y vuelve a iniciar.',
+        'Update beim Start':
+         'Actualizar al inicio',
+        'Neue Fassung %s wird geholt …':
+         'Obteniendo la versión %s …',
+        'Die Karte ist eingebunden, aber das Dateisystem liefert\nLesefehler:\n\n%s\n\nDas liegt an der Karte oder am Einhängepunkt, nicht am\nWerkzeug.\n\nErste Schritte:\n  - Karte im JamMan einschalten (das Pedal prüft sie)\n  - dmesg | tail -20\n  - aushängen und prüfen: sudo fsck.vfat -n <gerät>\n    bzw. sudo exfatfsck <gerät>':
+         'La tarjeta está montada, pero el sistema de archivos informa errores de lectura:\n\n%s\n\nEs la tarjeta o el punto de montaje, no la herramienta.\n\nPrimeros pasos:\n  - poner la tarjeta en el JamMan y encenderlo (el pedal la comprueba)\n  - dmesg | tail -20\n  - desmontar y comprobar: sudo fsck.vfat -n <dispositivo>\n    o sudo exfatfsck <dispositivo>',
         'kein Pedal':
          'ningún pedal',
         'Beschreibung …':
@@ -5439,6 +5469,16 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Neue Fassung %s wird geholt …':
+         '正在获取 %s …',
+        'Fassung %s ist installiert. Bitte das Fenster schließen und neu starten.':
+         '已安装 %s。请关闭窗口并重新启动。',
+        'Update beim Start':
+         '启动时更新',
+        'Neue Fassung %s wird geholt …':
+         '正在获取 %s …',
+        'Die Karte ist eingebunden, aber das Dateisystem liefert\nLesefehler:\n\n%s\n\nDas liegt an der Karte oder am Einhängepunkt, nicht am\nWerkzeug.\n\nErste Schritte:\n  - Karte im JamMan einschalten (das Pedal prüft sie)\n  - dmesg | tail -20\n  - aushängen und prüfen: sudo fsck.vfat -n <gerät>\n    bzw. sudo exfatfsck <gerät>':
+         '卡片已挂载，但文件系统报告读取错误：\n\n%s\n\n问题在卡片或挂载点，不在工具。\n\n第一步：\n  - 把卡片插入 JamMan 并开机（踏板会检查卡片）\n  - dmesg | tail -20\n  - 卸载并检查：sudo fsck.vfat -n <设备>\n    或 sudo exfatfsck <设备>',
         'kein Pedal':
          '没有踏板',
         'Beschreibung …':
@@ -10467,15 +10507,54 @@ def gui(karte):
         threading.Thread(target=lauf, daemon=True).start()
         fenster.after(300, nachsehen)
 
-    def fassung_melden(tag):
+    def _status(text):
+        """Statuszeile setzen — oder, falls es sie noch nicht gibt, die Konsole."""
         try:
-            if tag and _numerisch(tag) > _numerisch(eigene_fassung()):
+            status_var.set(text)
+        except Exception:
+            print("  " + str(text))
+
+    def fassung_melden(tag):
+        """Meldet eine neuere Fassung — und installiert sie, wenn gewünscht.
+
+        „Automatisch" heißt: ohne Rückfrage holen und einsetzen, danach einmal
+        sagen, daß ein Neustart nötig ist. Abschaltbar über die Einstellung
+        update_auto = nein (Häkchen „Update beim Start").
+        """
+        try:
+            if not tag or _numerisch(tag) <= _numerisch(eigene_fassung()):
+                return
+            automatisch = einstellung_lesen("update_auto") != "nein"
+            if not automatisch:
                 if frage_ja_nein(
                         fenster, T("Neue Fassung verfügbar"),
                         T("Es gibt eine neuere Fassung: %s. Sie benutzen %s.")
                         % (tag, eigene_fassung()) + "\n\n"
                         + T("Jetzt aktualisieren?")):
                     jetzt_aktualisieren()
+                return
+            _status(T("Neue Fassung %s wird geholt …") % tag)
+            stand = {"fertig": False, "ok": False, "text": ""}
+
+            def lauf():
+                try:
+                    stand["ok"], stand["text"] = aktualisieren()
+                except Exception as f:
+                    stand["ok"], stand["text"] = False, str(f)
+                stand["fertig"] = True
+
+            def nachsehen():
+                if not stand["fertig"]:
+                    fenster.after(300, nachsehen)
+                    return
+                _status(stand["text"])
+                if stand["ok"]:
+                    messagebox.showinfo(
+                        T("Aktualisiert"),
+                        T("Fassung %s ist installiert. Bitte das Fenster "
+                          "schließen und neu starten.") % tag)
+            threading.Thread(target=lauf, daemon=True).start()
+            fenster.after(300, nachsehen)
         except Exception:
             pass
 
@@ -10713,6 +10792,23 @@ def gui(karte):
                    selectcolor=FARBE_HINTERGRUND).pack(side="left", padx=(0, 14))
     tk.Checkbutton(zeile_unten, text=T("automatisch weiter"),
                    variable=weiter_var, bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+                   activebackground=FARBE_HINTERGRUND,
+                   activeforeground=FARBE_SCHRIFT,
+                   selectcolor=FARBE_HINTERGRUND).pack(side="left", padx=(0, 14))
+    # Automatisches Aktualisieren: an, solange nichts anderes gesagt wurde.
+    update_auto_var = tk.BooleanVar(
+        value=einstellung_lesen("update_auto") != "nein")
+
+    def update_auto_umschalten():
+        try:
+            einstellung_schreiben("update_auto",
+                                  "ja" if update_auto_var.get() else "nein")
+        except Exception:
+            pass
+
+    tk.Checkbutton(zeile_unten, text=T("Update beim Start"),
+                   variable=update_auto_var, command=update_auto_umschalten,
+                   bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
                    activebackground=FARBE_HINTERGRUND,
                    activeforeground=FARBE_SCHRIFT,
                    selectcolor=FARBE_HINTERGRUND).pack(side="left", padx=(0, 14))
@@ -11138,7 +11234,7 @@ def gui(karte):
         if not zustand["basis"] or not os.path.isdir(zustand["basis"]):
             zustand["basis"] = karte_finden()
         if not zustand["basis"]:
-            pfad_var.set("keine Karte gefunden")
+            pfad_var.set(T("keine Karte gefunden"))
             try:
                 titel_var.set(T("keine Karte"))
             except Exception:
@@ -11189,16 +11285,16 @@ def gui(karte):
                 if fehler:
                     zustand["lesefehler_gemeldet"] = True
                     messagebox.showerror(
-                        "Karte nicht lesbar",
-                        "Die Karte ist eingebunden, aber das Dateisystem liefert\n"
-                        "Lesefehler:\n\n%s\n\n"
-                        "Das liegt an der Karte oder am Einhängepunkt, nicht am\n"
-                        "Werkzeug.\n\n"
-                        "Erste Schritte:\n"
-                        "  - Karte im JamMan einschalten (das Pedal prüft sie)\n"
-                        "  - dmesg | tail -20\n"
-                        "  - aushängen und prüfen: sudo fsck.vfat -n <gerät>\n"
-                        "    bzw. sudo exfatfsck <gerät>"
+                        T("Karte nicht lesbar"),
+                        T("Die Karte ist eingebunden, aber das Dateisystem liefert\n"
+                          "Lesefehler:\n\n%s\n\n"
+                          "Das liegt an der Karte oder am Einhängepunkt, nicht am\n"
+                          "Werkzeug.\n\n"
+                          "Erste Schritte:\n"
+                          "  - Karte im JamMan einschalten (das Pedal prüft sie)\n"
+                          "  - dmesg | tail -20\n"
+                          "  - aushängen und prüfen: sudo fsck.vfat -n <gerät>\n"
+                          "    bzw. sudo exfatfsck <gerät>")
                         % "\n".join(fehler[:4]))
             if behalte and vorher is not None and vorher in zustand["nummern"]:
                 i = zustand["nummern"].index(vorher)
@@ -11359,10 +11455,10 @@ def gui(karte):
             try:
                 nummer = int(platz_eingabe.get().strip())
             except (ValueError, AttributeError):
-                messagebox.showerror("Fehler", "Bitte eine Platznummer eintragen.")
+                messagebox.showerror(T("Fehler"), T("Bitte eine Platznummer eintragen."))
                 return
         if nummer not in nummern:
-            messagebox.showerror("Fehler", "Platz %d gibt es nicht." % nummer)
+            messagebox.showerror(T("Fehler"), "Platz %d gibt es nicht." % nummer)
             return
         zustand["vorgemerkt"] = nummer
         # Kette für den vorgemerkten Patch schon jetzt bauen: reine
@@ -11414,10 +11510,10 @@ def gui(karte):
                 try:
                     nummer = int(roh)
                 except ValueError:
-                    messagebox.showerror("Fehler", "Bitte eine Platznummer eintragen.")
+                    messagebox.showerror(T("Fehler"), T("Bitte eine Platznummer eintragen."))
                     return
         if nummer not in nummern:
-            messagebox.showerror("Fehler",
+            messagebox.showerror(T("Fehler"),
                                  "Platz %d gibt es auf dieser Karte nicht." % nummer)
             return
         i = nummern.index(nummer)
@@ -11550,7 +11646,7 @@ def gui(karte):
             zustand["basis"] = karte_pruefen(p)
             neu_laden()
         except SystemExit as e:
-            messagebox.showerror("Keine JamMan-Karte", str(e))
+            messagebox.showerror(T("Keine JamMan-Karte"), str(e))
 
     def wahl_wert(var):
         """Angezeigten Text zurück auf den internen Wert führen."""
@@ -11589,12 +11685,12 @@ def gui(karte):
             stoppen(merker_weg=False)
         n = gewaehlt()
         if not n:
-            messagebox.showinfo("Hinweis", "Erst einen Patch in der Liste wählen.")
+            messagebox.showinfo(T("Hinweis"), T("Erst einen Patch in der Liste wählen."))
             return
         alle = dict((nr, pf) for nr, _, pf in patches(zustand["basis"]))
         w = phrase_wav(alle[n])
         if not w:
-            messagebox.showerror("Fehler", "Patch%d hat keine WAV." % n)
+            messagebox.showerror(T("Fehler"), "Patch%d hat keine WAV." % n)
             return
         # Nahtloses Weiterspielen: lieber eine einzige Datei aus mehreren
         # Patches bauen als jeden Patch einzeln zu starten (das ergab eine
@@ -11641,7 +11737,7 @@ def gui(karte):
 
     def aufspielen():
         if not zustand["basis"]:
-            messagebox.showinfo("Hinweis", "Erst eine Karte wählen.")
+            messagebox.showinfo(T("Hinweis"), T("Erst eine Karte wählen."))
             return
         datei = datei_waehlen(fenster, T("Audiodatei wählen"), "*.wav *.aif *.aiff *.aifc *.caf *.mp3 *.m4a *.aac *.flac *.ogg *.opus *.wma",
                                 einstellung_lesen("audio_pfad") or None)
@@ -11671,7 +11767,7 @@ def gui(karte):
         try:
             gain_wert, normieren = pegel_lesen()
         except ValueError:
-            messagebox.showerror("Fehler",
+            messagebox.showerror(T("Fehler"),
                 "Beim Pegel bitte eine Zahl in dB eintragen (z. B. -3), "
                 "oder das Feld leer lassen.")
             return
@@ -11685,7 +11781,7 @@ def gui(karte):
                 try:
                     fade_wert = float(roh)
                 except ValueError:
-                    messagebox.showerror("Fehler", "Bei Fade am Ende bitte eine Zahl in Sekunden eintragen.")
+                    messagebox.showerror(T("Fehler"), T("Bei Fade am Ende bitte eine Zahl in Sekunden eintragen."))
                     return
                 if fade_wert <= 0:
                     fade_wert = None
@@ -11694,23 +11790,23 @@ def gui(karte):
                               begrenzen_var.get(), kuerzen=kuerzen)
             neu_laden()
         except SystemExit as e:
-            messagebox.showerror("Fehler", str(e))
+            messagebox.showerror(T("Fehler"), str(e))
 
     def sichern():
         if not zustand["basis"]:
-            messagebox.showinfo("Hinweis", "Erst eine Karte wählen.")
+            messagebox.showinfo(T("Hinweis"), T("Erst eine Karte wählen."))
             return
         ziel = ordner_waehlen(fenster, T("Zielordner für die Sicherung"))
         if not ziel:
             return
         befehl_sichern(zustand["basis"], ziel, True)
-        messagebox.showinfo("Sicherung", "Fertig. Ordner:\n%s" % ziel)
+        messagebox.showinfo(T("Sicherung"), "Fertig. Ordner:\n%s" % ziel)
 
     def umbenennen():
         """Namen des gewählten Patches ändern."""
         n = gewaehlt()
         if not n:
-            messagebox.showinfo("Hinweis", "Erst einen Patch in der Liste wählen.")
+            messagebox.showinfo(T("Hinweis"), T("Erst einen Patch in der Liste wählen."))
             return
         alle = dict((nr, pf) for nr, _, pf in patches(zustand["basis"]))
         alt = patch_name(alle[n])
@@ -11720,7 +11816,7 @@ def gui(karte):
             return
         neu = neu.strip()
         if not neu:
-            messagebox.showinfo("Hinweis", "Der Name darf nicht leer sein.")
+            messagebox.showinfo(T("Hinweis"), T("Der Name darf nicht leer sein."))
             return
         if neu == alt:
             return
@@ -11729,18 +11825,18 @@ def gui(karte):
             neu_laden()
             status_var.set("umbenannt: %s → %s" % (alt, neu))
         except SystemExit as e:
-            messagebox.showerror("Fehler", str(e))
+            messagebox.showerror(T("Fehler"), str(e))
 
     def zuruecknehmen():
         """Sicherung des gewählten Patches zurückholen (z. B. Fade rückgängig)."""
         n = gewaehlt()
         if not n:
-            messagebox.showinfo("Hinweis", "Erst einen Patch in der Liste wählen.")
+            messagebox.showinfo(T("Hinweis"), T("Erst einen Patch in der Liste wählen."))
             return
         ordner = os.path.expanduser(SICHERUNG_WURZEL)
         kandidaten = zuruecknehmen_kandidaten(ordner, n)
         if not kandidaten:
-            messagebox.showerror("Fehler",
+            messagebox.showerror(T("Fehler"),
                 "Für Patch%d liegt in %s keine Sicherung mit Aufnahme."
                 % (n, ordner))
             return
@@ -11758,12 +11854,12 @@ def gui(karte):
             neu_laden()
             status_var.set("Patch%d zurückgeholt" % n)
         except SystemExit as e:
-            messagebox.showerror("Fehler", str(e))
+            messagebox.showerror(T("Fehler"), str(e))
 
     def pegel_zurueck():
         """Pegeländerung aus einem Protokoll zurückrechnen."""
         if not zustand["basis"]:
-            messagebox.showinfo("Hinweis", "Erst eine Karte wählen.")
+            messagebox.showinfo(T("Hinweis"), T("Erst eine Karte wählen."))
             return
         ordner = os.path.expanduser(SICHERUNG_WURZEL)
         datei = datei_waehlen(fenster, T("Pegelprotokoll wählen"), "*.txt",
@@ -11778,22 +11874,22 @@ def gui(karte):
         try:
             befehl_pegel_umkehren(zustand["basis"], datei, True)
             neu_laden()
-            status_var.set("Pegel zurückgerechnet")
+            status_var.set(T("Pegel zurückgerechnet"))
         except SystemExit as e:
-            messagebox.showerror("Fehler", str(e))
+            messagebox.showerror(T("Fehler"), str(e))
 
     def datei_teilen():
         """Eine Datei in mehrere Patches aufteilen."""
         if not zustand["basis"]:
-            messagebox.showinfo("Hinweis", "Erst eine Karte wählen.")
+            messagebox.showinfo(T("Hinweis"), T("Erst eine Karte wählen."))
             return
         try:
             anzahl = int(teile_eingabe.get().strip() or "2")
         except ValueError:
-            messagebox.showerror("Fehler", "Bei Teile bitte eine ganze Zahl eintragen.")
+            messagebox.showerror(T("Fehler"), T("Bei Teile bitte eine ganze Zahl eintragen."))
             return
         if not (2 <= anzahl <= 60):
-            messagebox.showerror("Fehler", "Bitte 2 bis 60 Teile angeben.")
+            messagebox.showerror(T("Fehler"), T("Bitte 2 bis 60 Teile angeben."))
             return
         datei = datei_waehlen(fenster, T("Audiodatei zum Teilen auswählen"),
                               "*.wav *.aif *.aiff *.aifc *.caf *.mp3 *.m4a *.aac *.flac *.ogg *.opus")
@@ -11801,7 +11897,7 @@ def gui(karte):
             return
         dauer = wav_info(datei)[0]
         if dauer <= 0:
-            messagebox.showerror("Fehler", "Die Datei ist nicht lesbar.")
+            messagebox.showerror(T("Fehler"), T("Die Datei ist nicht lesbar."))
             return
         art = ("an Pausen geschnitten" if sinnvoll_var.get()
                else "gleichmäßig geschnitten")
@@ -11821,12 +11917,12 @@ def gui(karte):
             neu_laden()
             status_var.set("in %d Patches geteilt" % anzahl)
         except SystemExit as e:
-            messagebox.showerror("Fehler", str(e))
+            messagebox.showerror(T("Fehler"), str(e))
 
     def alle_normieren():
         """Alle Patches auf gleiche Lautheit bringen."""
         if not zustand["basis"]:
-            messagebox.showinfo("Hinweis", "Erst eine Karte wählen.")
+            messagebox.showinfo(T("Hinweis"), T("Erst eine Karte wählen."))
             return
         if not frage_ja_nein(fenster, "Alle Patches normieren",
                 "Alle Patches werden auf gleiche Lautheit gebracht:\n\n"
@@ -11843,13 +11939,13 @@ def gui(karte):
             neu_laden()
             status_var.set("alle Patches normiert")
         except SystemExit as e:
-            messagebox.showerror("Fehler", str(e))
+            messagebox.showerror(T("Fehler"), str(e))
 
     def platz_aendern():
         """Patch auf eine bestimmte Platznummer legen."""
         n = gewaehlt()
         if not n:
-            messagebox.showinfo("Hinweis", "Erst einen Patch in der Liste wählen.")
+            messagebox.showinfo(T("Hinweis"), T("Erst einen Patch in der Liste wählen."))
             return
         neu = simpledialog.askinteger("Platz ändern",
                 "Patch%d soll auf welchen Platz?\n"
@@ -11861,15 +11957,15 @@ def gui(karte):
             neu_laden()
             status_var.set("Patch%d ist jetzt auf Platz %d" % (n, neu))
         except SystemExit as e:
-            messagebox.showerror("Fehler", str(e))
+            messagebox.showerror(T("Fehler"), str(e))
 
     def tauschen():
         """Zwei markierte Patches tauschen die Plätze."""
         i = liste_auswahl()
         if len(i) != 2:
-            messagebox.showinfo("Hinweis",
-                "Zum Tauschen genau ZWEI Patches markieren:\n"
-                "ersten anklicken, zweiten mit gedrückter Cmd-Taste (⌘).")
+            messagebox.showinfo(T("Hinweis"),
+                T("Zum Tauschen genau ZWEI Patches markieren:\n"
+                  "ersten anklicken, zweiten mit gedrückter Cmd-Taste (⌘)."))
             return
         alle = [nr for nr, _, _ in patches(zustand["basis"])]
         a, b = alle[i[0]], alle[i[1]]
@@ -11885,7 +11981,7 @@ def gui(karte):
             liste_waehlen(i[1], mehrfach=True)
             status_var.set("getauscht: Patch%d ↔ Patch%d" % (a, b))
         except SystemExit as f:
-            messagebox.showerror("Fehler", str(f))
+            messagebox.showerror(T("Fehler"), str(f))
 
     def suchen_dialog():
         """Suchtext über einen Dialog setzen — zweiter Weg zum Filtern.
@@ -11916,7 +12012,7 @@ def gui(karte):
         """Setzt die drei Auswahlfelder am GEWÄHLTEN Patch."""
         n = gewaehlt()
         if not n:
-            messagebox.showinfo("Hinweis", "Erst einen Patch in der Liste wählen.")
+            messagebox.showinfo(T("Hinweis"), T("Erst einen Patch in der Liste wählen."))
             return
         st = None if wahl_wert(stopp_wahl) == "wie Vorlage" else wahl_wert(stopp_wahl)
         rh = None if wahl_wert(rhythmus_wahl) == "wie Vorlage" else wahl_wert(rhythmus_wahl)
@@ -11927,20 +12023,17 @@ def gui(karte):
             try:
                 fade_wert = float(roh)
             except ValueError:
-                messagebox.showerror("Fehler",
-                    "Bei Fade am Ende bitte eine Zahl in Sekunden eintragen.")
+                messagebox.showerror(T("Fehler"), T("Bei Fade am Ende bitte eine Zahl in Sekunden eintragen."))
                 return
             if fade_wert <= 0:
                 fade_wert = None
         try:
             gain_wert, normieren = pegel_lesen()
         except ValueError:
-            messagebox.showerror("Fehler",
-                "Beim Pegel bitte eine Zahl in dB eintragen (z. B. -3).")
+            messagebox.showerror(T("Fehler"), T("Beim Pegel bitte eine Zahl in dB eintragen (z. B. -3)."))
             return
         if not (st or rh or wg or fade_wert or gain_wert or normieren):
-            messagebox.showinfo("Hinweis",
-                "Oben steht überall „wie Vorlage - dann gibt es nichts zu ändern.")
+            messagebox.showinfo(T("Hinweis"), T("Oben steht überall „wie Vorlage - dann gibt es nichts zu ändern."))
             return
         teile = []
         if st: teile.append("Stopp: %s" % st)
@@ -11965,12 +12058,12 @@ def gui(karte):
                            fade_wert, gain_wert, normieren, begrenzen_var.get())
             neu_laden()
         except SystemExit as e:
-            messagebox.showerror("Fehler", str(e))
+            messagebox.showerror(T("Fehler"), str(e))
 
     def verschieben(schritt):
         n = gewaehlt()
         if not n or not zustand["basis"]:
-            messagebox.showinfo("Hinweis", "Erst einen Patch wählen.")
+            messagebox.showinfo(T("Hinweis"), T("Erst einen Patch wählen."))
             return
         alle = [nr for nr, _, _ in patches(zustand["basis"])]
         platz = alle.index(n) + 1 + schritt if n in alle else 0
@@ -11980,12 +12073,12 @@ def gui(karte):
             befehl_verschieben(zustand["basis"], alle.index(n) + 1, platz, True)
             neu_laden()
         except SystemExit as e:
-            messagebox.showerror("Fehler", str(e))
+            messagebox.showerror(T("Fehler"), str(e))
 
     def loeschen():
         n = gewaehlt()
         if not n or not zustand["basis"]:
-            messagebox.showinfo("Hinweis", "Erst einen Patch wählen.")
+            messagebox.showinfo(T("Hinweis"), T("Erst einen Patch wählen."))
             return
         if ist_kopie(zustand["basis"]):
             frage_text = (T("Patch%d wird aus der Kopie auf dem Rechner entfernt. "
@@ -11999,7 +12092,7 @@ def gui(karte):
             befehl_loeschen(zustand["basis"], n, True)
             neu_laden()
         except SystemExit as e:
-            messagebox.showerror("Fehler", str(e))
+            messagebox.showerror(T("Fehler"), str(e))
 
     def karte_auswerfen():
         if laeuft():
@@ -12011,7 +12104,7 @@ def gui(karte):
         try:
             befehl_auswerfen(quelle if os.path.isdir(quelle) else standard_karte())
             zustand["basis"] = None
-            pfad_var.set("keine Karte gefunden")
+            pfad_var.set(T("keine Karte gefunden"))
             liste_setzen([{"text": "  Karte ausgeworfen. Neue Karte einlegen und Karte wählen."}])
             zustand["welle"] = []
             zustand["dauer"] = 0.0
@@ -12020,7 +12113,7 @@ def gui(karte):
             zeit_var.set(T("kein Patch gewählt"))
             fenster.title(T("JamMan Card Tool") + " — " + T("Karte und interner Speicher"))
         except SystemExit as e:
-            messagebox.showerror("Fehler", str(e))
+            messagebox.showerror(T("Fehler"), str(e))
 
     # --- Auswahlfelder -----------------------------------------------------
     wahl = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
@@ -12258,7 +12351,7 @@ def gui(karte):
             liste_zeigen(nach)
             status_var.set("verschoben: %s → Platz %d" % (alle[von], nach + 1))
         except SystemExit as f:
-            messagebox.showerror("Fehler", str(f))
+            messagebox.showerror(T("Fehler"), str(f))
 
     leinwand.bind("<Button-1>", springe)
     def umplan_welle(e=None):

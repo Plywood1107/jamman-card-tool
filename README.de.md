@@ -107,6 +107,8 @@ in einem Leser, nimm den Leser: er ist um ein Vielfaches schneller.
 
 **Aktualisieren:** Der Knopf „Aktualisieren“ im Fenster holt die neueste Fassung von GitHub, prüft sie und ersetzt die Programmdateien. Die alten Dateien wandern vorher nach `sicherung-vor-<alte Fassung>/`; die Einstellungen in `~/.jamman-werkzeug.cnf` bleiben unberührt. Auf der Kommandozeile: `jamman.py aktualisieren`.
 
+
+**Automatisch:** Das Werkzeug sieht einmal am Tag bei GitHub nach und installiert eine neuere Fassung selbst. Abschalten mit dem Häkchen „Update beim Start" — dann fragt es wie früher nach.
 Unter Windows braucht USB zusätzlich `pyserial` (`pip install pyserial`);
 macOS und Linux brauchen nichts weiter. Unter Ubuntu ist der Zugriff auf
 den internen Speicher über USB am 17.11.2026 bestätigt. Windows 10 erkennt das Pedal als

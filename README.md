@@ -241,6 +241,8 @@ Or use "Code" → "Download ZIP" on the project page.
 
 **Updating:** the button "Update" in the window fetches the latest version from GitHub, verifies it and replaces the program files. The old files go to `sicherung-vor-<old version>/` first; the settings in `~/.jamman-werkzeug.cnf` are not touched. From the command line: `jamman.py aktualisieren`.
 
+
+**Automatically:** once a day the tool asks GitHub, and if there is a newer version it installs it without asking, then says to restart. The checkbox “Update beim Start” turns that off and it asks as before.
 **Over USB on Windows:** the pedal appears as a serial device
 ("USB Serial Device (COMx)") — no DigiTech driver needed. The tool talks to
 it through `pyserial`:

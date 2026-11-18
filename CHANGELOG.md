@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.112 — 2026-11-18
+
+* **The tool updates itself.** The daily check no longer only asks: on finding a newer
+  release it fetches and installs it, then says that the window has to be closed and
+  opened again. A checkbox **"Update beim Start"** turns this off (setting
+  `update_auto = nein`); then it asks as before. The button "Aktualisieren" stays.
+* **Dialogs speak the chosen language.** In the main window, German texts were
+  shown in every language — "keine Karte gefunden" under the English title,
+  and 24 messages in the dialogs ("Erst eine Karte wählen.", "Fehler",
+  "Die Datei ist nicht lesbar." …). All of them go through `T()` now, and the
+  check script looks for German interface texts that bypass the catalogue:
+  a literal that is a known German text but is not wrapped in `T()`.
+  Reported by the author while testing the English interface.
+
 ## 3.111 — 2026-11-18
 
 * **Fix: crash when the USB connection fails.** If connecting to the pedal did
