@@ -1,0 +1,33 @@
+#!/bin/bash
+# Startet das JamMan Card Tool ohne Terminalfenster.
+#
+# Anlaß (18.11.2026): Beim Doppelklick auf JamMan.command bleibt nach dem
+# Schließen des Werkzeugs ein Terminalfenster stehen. Ein Programm mit
+# .app-Hülle wird vom Finder gestartet und braucht kein Terminal.
+#
+# Die Hülle liegt IN diesem Ordner; das Werkzeug ist drei Ebenen darüber.
+
+HIER="$(cd "$(dirname "$0")/../../.." && pwd)"
+cd "$HIER" || exit 1
+KARTE="${KARTE:-}"
+
+# Python mit Tk 8.6 oder neuer suchen (Tk 8.5 zeichnet keinen Text).
+for P in /usr/local/bin/python3 /opt/homebrew/bin/python3 \
+         /Library/Frameworks/Python.framework/Versions/Current/bin/python3 \
+         /usr/bin/python3 "$(command -v python3 2>/dev/null)"; do
+    [ -x "$P" ] || continue
+    if "$P" -c "import tkinter,sys; sys.exit(0 if tkinter.TkVersion >= 8.6 else 1)" >/dev/null 2>&1; then
+        # pythonw, wenn vorhanden: dann gibt es auch keinen Dock-Eintrag
+        # für den Interpreter, nur den des Fensters.
+        PYW="${P%python3}pythonw"
+        [ -x "$PYW" ] || PYW="$P"
+        if [ -n "$KARTE" ]; then
+            exec "$PYW" jamman.py gui --karte "$KARTE"
+        fi
+        exec "$PYW" jamman.py gui
+    fi
+done
+
+# Kein passendes Python: Meldung im Finder-Stil statt im Nichts.
+osascript -e 'display dialog "Es wurde kein Python 3 mit Tk 8.6 oder neuer gefunden.\n\nFür das Fenster: Python von python.org installieren.\n\nEs geht auch im Textmenü: JamMan.command wählen." buttons {"OK"} default button 1 with title "JamMan Card Tool"' >/dev/null 2>&1
+exit 1

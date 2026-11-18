@@ -123,6 +123,23 @@ nicht sieht, ist noch in der alten Sitzung.
 Windows 10 erkennt das Pedal als „USB-Seriell-Gerät (COMx)" — am 17.11.2026
 bestätigt. Gelesen und geschrieben wurde unter Windows noch nicht geprüft.
 
+## Starten
+
+**macOS:** „JamMan Card Tool.app" doppelklicken. Es öffnet sich nur das
+Fenster, kein Terminal — und nach dem Schließen bleibt nichts offen.
+Beim ersten Mal kann macOS die App blockieren („unbekannter Entwickler"):
+dann **Rechtsklick → Öffnen**. Das gilt nur einmal.
+
+**Wer `JamMan.command` nimmt**, bekommt ein Terminalfenster, weil macOS das
+bei `.command`-Dateien so macht. Damit es sich nach dem Schließen von selbst
+zumacht: Terminal → Einstellungen → Profile → „Shell" → „Wenn die Shell
+beendet wird: Fenster schließen".
+
+**Windows:** `JamMan.bat` doppelklicken (ohne Konsolenfenster) oder
+`JamMan-mit-Konsole.bat`, wenn Meldungen sichtbar bleiben sollen.
+
+**Linux:** `./JamMan.sh`.
+
 ## Firmware von einem Pedal auf das andere
 
 Das Pedal hat keinen Firmware-Server mehr: die Adresse, von der JamManager XT

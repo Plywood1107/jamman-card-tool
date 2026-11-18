@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.114 — 2026-11-18
+
+* **macOS: no Terminal window any more.** Double-clicking `JamMan.command`
+  opens a Terminal, and macOS leaves it sitting there after the program ends.
+  The package now contains **"JamMan Card Tool.app"** — the same start-up, but
+  as an app bundle: only the window opens, and nothing stays behind. The
+  bundle looks for a Python with Tk 8.6 or newer exactly like the `.command`
+  does, and uses `pythonw` when present. Both guides explain the first-start
+  step (right-click → Open) and, for `.command` users, the Terminal setting
+  that closes the window when the shell exits.
+
 ## 3.113 — 2026-11-18
 
 * **Update works even when the certificates are broken.** On an Intel Mac,

@@ -135,6 +135,22 @@ worked. If `groups` does not list `dialout`, the session is still the old one.
 Windows 10 shows the pedal as "USB Serial Device (COMx)" — confirmed on
 17 Nov 2026. Reading and writing from Windows is not yet tested.
 
+## Starting it
+
+**macOS:** double-click **"JamMan Card Tool.app"**. Only the window opens — no
+Terminal, and nothing stays open afterwards. macOS may block the app the first
+time ("unidentified developer"): then **right-click → Open**. That is needed
+once.
+
+If you prefer `JamMan.command`, macOS opens a Terminal window — that is how
+`.command` files work. To have it close itself: Terminal → Settings → Profiles
+→ "Shell" → "When the shell exits: Close the window".
+
+**Windows:** `JamMan.bat` (no console window) or `JamMan-mit-Konsole.bat` if
+you want messages to stay visible.
+
+**Linux:** `./JamMan.sh`.
+
 ## Firmware from one pedal to another
 
 The pedal has no firmware server any more: the address JamManager XT used to
