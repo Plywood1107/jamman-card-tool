@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.111 — 2026-11-18
+
+* **Fix: crash when the USB connection fails.** If connecting to the pedal did
+  not work, a late list message could still reach the window, and `anzeigen()`
+  read the device name from a device that was no longer there:
+  `AttributeError: 'NoneType' object has no attribute 'kopf'`. The window now
+  shows "kein Pedal" instead and stays usable. Reported by a user on Ubuntu
+  (Kubuntu) whose pedal did not connect — the card reader path was unaffected.
+
 ## 3.110 — 2026-11-18
 
 Built on 17–18 November 2026 and tested on Windows 10, Ubuntu and macOS.

@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.110 (18.11.2026)"
+FASSUNG = "3.111 (18.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2271,6 +2271,8 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'kein Pedal':
+         'no pedal',
         'Beschreibung …':
          'Description …',
         'Rückwärts: ohne ffmpeg keine Hörprobe — das Pedal spielt es trotzdem rückwärts.':
@@ -3397,6 +3399,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'kein Pedal':
+         'pas de pédale',
         'Beschreibung …':
          'Description …',
         'Rückwärts: ohne ffmpeg keine Hörprobe — das Pedal spielt es trotzdem rückwärts.':
@@ -4415,6 +4419,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'kein Pedal':
+         'ningún pedal',
         'Beschreibung …':
          'Descripción …',
         'Rückwärts: ohne ffmpeg keine Hörprobe — das Pedal spielt es trotzdem rückwärts.':
@@ -5433,6 +5439,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'kein Pedal':
+         '没有踏板',
         'Beschreibung …':
          '描述…',
         'Rückwärts: ohne ffmpeg keine Hörprobe — das Pedal spielt es trotzdem rückwärts.':
@@ -9166,8 +9174,12 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
             groesse_txt = ("%.1f MB" % (groesse / 1048576.0)) if groesse else "—"
             liste.insert("end", "%s  ·  %s  ·  %s" %
                          (platz, name or T("(ohne Namen)"), groesse_txt))
-        p = stand["geraet"].kopf
-        melde("%s — %s" % (p["name"],
+        # Ohne Gerät gibt es keinen Namen — das passiert, wenn die Verbindung
+        # scheitert, die Liste aber trotzdem aufgebaut wird (Rückmeldung
+        # 18.11.2026: AttributeError 'NoneType' object has no attribute 'kopf').
+        geraet = stand.get("geraet")
+        name = geraet.kopf.get("name") if geraet is not None else T("kein Pedal")
+        melde("%s — %s" % (name,
                            T("Interner Speicher") if wahl.get() == "intern" else T("SD-Karte")))
         try:
             f.lift()
@@ -9904,8 +9916,9 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
         if not ziel_datei:
             return
         einstellung_schreiben("usb_setlist_pfad", os.path.dirname(ziel_datei))
-        _setlist_speichern(stand["patchliste"], indizes, ziel_datei,
-                           stand["geraet"].kopf.get("name", ""))
+        geraet = stand.get("geraet")
+        geraetename = geraet.kopf.get("name", "") if geraet is not None else ""
+        _setlist_speichern(stand["patchliste"], indizes, ziel_datei, geraetename)
         melde(T("Fertig:") + " " + ziel_datei)
 
     def jamlist_holen():
