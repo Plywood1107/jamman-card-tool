@@ -29,13 +29,11 @@ fenster_zu() {
     osascript -e "tell application \"Terminal\" to close (every window whose tty is \"$MEIN_TTY\")" >/dev/null 2>&1
 }
 
-LÄUFT=0
 for P in /usr/local/bin/python3 /opt/homebrew/bin/python3 \
          /Library/Frameworks/Python.framework/Versions/Current/bin/python3 \
          /usr/bin/python3 "$(command -v python3 2>/dev/null)"; do
     [ -x "$P" ] || continue
     if "$P" -c "import tkinter,sys; sys.exit(0 if tkinter.TkVersion >= 8.6 else 1)" >/dev/null 2>&1; then
-        LÄUFT=1
         if [ -n "$KARTE" ]; then
             "$P" jamman.py gui --karte "$KARTE"
         else

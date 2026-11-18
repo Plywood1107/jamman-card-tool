@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.116 — 2026-11-18
+
+* **A "Quit" button.** Closes the window cleanly; the start script then closes
+  the Terminal as well. Asked for after the app bundle had to go.
+* **`JamMan.command` no longer prints shell errors.** A variable had an umlaut
+  in its name (`LÄUFT`), which bash does not allow: two "command not found"
+  lines appeared at start although the tool ran fine.
+* **The dead app bundle is tidied away.** Anyone who had 3.114 gets
+  `JamMan Card Tool.app` renamed to `.app.alt` on the next update — it is not
+  deleted, only taken out of the way.
+
 ## 3.115 — 2026-11-18
 
 * **macOS: the Terminal closes together with the tool.** `JamMan.command` asks

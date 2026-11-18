@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.115 (18.11.2026)"
+FASSUNG = "3.116 (18.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2271,6 +2271,8 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Beenden':
+         'Quit',
         'Dem Python fehlen die Zertifikate. Zwei Wege: im Python-Ordner „Install Certificates.command“ ausführen — oder „pip install certifi“ — oder die Datei von der Release-Seite von Hand laden.':
          'Python is missing its certificates. Two ways: run “Install Certificates.command” in the Python folder, or “pip install certifi” — or download the file from the release page by hand.',
         'Achtung: das Zertifikat ließ sich nicht prüfen — die Datei wurde ohne Prüfung geladen.':
@@ -3415,6 +3417,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Beenden':
+         'Quitter',
         'Dem Python fehlen die Zertifikate. Zwei Wege: im Python-Ordner „Install Certificates.command“ ausführen — oder „pip install certifi“ — oder die Datei von der Release-Seite von Hand laden.':
          'Il manque les certificats à Python. Deux solutions : exécuter « Install Certificates.command » dans le dossier Python, ou « pip install certifi » — ou télécharger le fichier depuis la page de publication.',
         'Achtung: das Zertifikat ließ sich nicht prüfen — die Datei wurde ohne Prüfung geladen.':
@@ -4451,6 +4455,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Beenden':
+         'Salir',
         'Dem Python fehlen die Zertifikate. Zwei Wege: im Python-Ordner „Install Certificates.command“ ausführen — oder „pip install certifi“ — oder die Datei von der Release-Seite von Hand laden.':
          'A Python le faltan los certificados. Dos caminos: ejecutar «Install Certificates.command» en la carpeta de Python, o «pip install certifi» — o descargar el archivo desde la página de la versión.',
         'Achtung: das Zertifikat ließ sich nicht prüfen — die Datei wurde ohne Prüfung geladen.':
@@ -5487,6 +5493,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Beenden':
+         '退出',
         'Dem Python fehlen die Zertifikate. Zwei Wege: im Python-Ordner „Install Certificates.command“ ausführen — oder „pip install certifi“ — oder die Datei von der Release-Seite von Hand laden.':
          'Python 缺少证书。两个办法：在 Python 文件夹里运行 “Install Certificates.command”，或执行 “pip install certifi” —— 也可以从发布页手动下载文件。',
         'Achtung: das Zertifikat ließ sich nicht prüfen — die Datei wurde ohne Prüfung geladen.':
@@ -7468,6 +7476,18 @@ def aktualisieren(melden=None):
                     return False, (T("Die Programmdateien lassen sich hier nicht "
                                      "ersetzen: %s") % fehler)
                 anzahl += 1
+
+    # Reste aus 3.114: die ad-hoc signierte App-Hülle startet unter Quarantäne
+    # nicht und verwirrt nur. Sie wird umbenannt, nicht gelöscht (18.11.2026).
+    alte_app = os.path.join(ziel_ordner, "JamMan Card Tool.app")
+    if os.path.exists(alte_app):
+        ziel_name = os.path.join(ziel_ordner, "JamMan Card Tool.app.alt")
+        try:
+            if os.path.exists(ziel_name):
+                shutil.rmtree(ziel_name, ignore_errors=True)
+            os.rename(alte_app, ziel_name)
+        except OSError:
+            pass
 
     return True, (T("Fassung %s ist installiert (%d Dateien). "
                     "Bitte das Fenster schließen und neu starten.")
@@ -10718,6 +10738,19 @@ def gui(karte):
         fenster.destroy()
         gui(basis_aktuell)
 
+    # Eigener Knopf zum Beenden, ganz rechts hinter der Sprachwahl
+    # (18.11.2026). Beendet das Fenster sauber; das Startskript schließt
+    # danach auch das Terminal. Zuerst gepackt heißt bei side="right":
+    # am weitesten rechts.
+    def beenden():
+        try:
+            fenster.destroy()
+        except Exception:
+            pass
+
+    tk.Button(leiste, text=T("Beenden"), command=beenden).pack(side="right",
+                                                              padx=(12, 0))
+
     tk.OptionMenu(leiste, sprach_var, *SPRACHEN.values(),
                   command=sprache_waehlen).pack(side="right")
     tk.Label(leiste, text="Sprache / Language", bg=FARBE_HINTERGRUND,
@@ -10749,6 +10782,7 @@ def gui(karte):
 
     tk.Button(leiste, text=T("Pedal über USB"),
               command=usb_oeffnen).pack(side="right", padx=(0, 12))
+
 
 
     titel_var = tk.StringVar(value=_fenster_titel(basis, UNTERORDNER if basis else ""))
