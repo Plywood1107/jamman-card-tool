@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.127 (19.11.2026)"
+FASSUNG = "3.128 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2586,6 +2586,10 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Fenster zu schmal für seinen Inhalt: %d von %d Pixel — bitte breiter ziehen':
+         'Window too narrow for its content: %d of %d pixels — please widen it',
+        'abgeschnittene Beschriftung: %s':
+         'clipped label: %s',
         'Die letzte Sicherung stammt aus dem anderen Speicher. Bitte oben umschalten und es noch einmal versuchen.':
          'The last backup comes from the other storage. Please switch above and try again.',
         'deutscher Text in der Anzeige: %s':
@@ -3942,6 +3946,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Fenster zu schmal für seinen Inhalt: %d von %d Pixel — bitte breiter ziehen':
+         'Fenêtre trop étroit pour son contenu : %d sur %d pixels — élargissez-le',
+        'abgeschnittene Beschriftung: %s':
+         'libellé coupé : %s',
         'Die letzte Sicherung stammt aus dem anderen Speicher. Bitte oben umschalten und es noch einmal versuchen.':
          "La dernière sauvegarde vient de l'autre mémoire. Changez de mémoire en haut et réessayez.",
         'deutscher Text in der Anzeige: %s':
@@ -5206,6 +5214,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Fenster zu schmal für seinen Inhalt: %d von %d Pixel — bitte breiter ziehen':
+         'Ventana demasiado estrecha para su contenido: %d de %d píxeles — amplíala',
+        'abgeschnittene Beschriftung: %s':
+         'etiqueta cortada: %s',
         'Die letzte Sicherung stammt aus dem anderen Speicher. Bitte oben umschalten und es noch einmal versuchen.':
          'La última copia de seguridad es del otro almacenamiento. Cambia arriba e inténtalo de nuevo.',
         'deutscher Text in der Anzeige: %s':
@@ -6470,6 +6482,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Fenster zu schmal für seinen Inhalt: %d von %d Pixel — bitte breiter ziehen':
+         '窗口比内容窄：%d / %d 像素 —— 请拉宽',
+        'abgeschnittene Beschriftung: %s':
+         '文字被截断：%s',
         'Die letzte Sicherung stammt aus dem anderen Speicher. Bitte oben umschalten und es noch einmal versuchen.':
          '上次备份来自另一个存储器。请在上方切换后重试。',
         'deutscher Text in der Anzeige: %s':
@@ -8901,6 +8917,42 @@ def funktionstest(sprachen=None, still=False):
                             self.update()
                     except Exception:
                         pass
+
+                # Breiten prüfen: wird eine Beschriftung abgeschnitten?
+                # Anlaß (19.11.2026): „Pegeländerung zurücknehmen …" war
+                # deutsch und französisch abgeschnitten; gefunden hat es der
+                # Nutzer mit dem Auge, nicht der Test. Jetzt mißt er mit.
+                try:
+                    if self.winfo_width() < self.winfo_reqwidth() - 2:
+                        fehler_liste.append(
+                            T("Fenster zu schmal für seinen Inhalt: %d von %d Pixel "
+                              "— bitte breiter ziehen")
+                            % (self.winfo_width(), self.winfo_reqwidth()))
+                    else:
+                        enge = []
+                        def breiten_sammeln(w):
+                            art = w.winfo_class()
+                            if art in ("Button", "Checkbutton", "Radiobutton",
+                                       "Label", "Menubutton"):
+                                try:
+                                    if not w.winfo_ismapped():
+                                        return
+                                    text = str(w.cget("text")).strip()
+                                    if not text:
+                                        return
+                                    if w.winfo_width() < w.winfo_reqwidth() - 1:
+                                        enge.append(text.splitlines()[0][:28])
+                                except Exception:
+                                    pass
+                            for kind in w.winfo_children():
+                                breiten_sammeln(kind)
+                        breiten_sammeln(self)
+                        if enge:
+                            fehler_liste.append(
+                                T("abgeschnittene Beschriftung: %s")
+                                % ", ".join(sorted(set(enge))[:5]))
+                except Exception:
+                    pass
 
                 # Sprache prüfen: steht in einer anderen Sprache noch
                 # deutscher Text im Fenster? (19.11.2026 ergänzt)
@@ -15678,7 +15730,22 @@ def gui(karte):
     bildschirm_h = fenster.winfo_screenheight()
     breite = min(max(1000, fenster.winfo_reqwidth() + 24), bildschirm_b - 40)
     hoehe = min(max(720, fenster.winfo_reqheight() + 24), bildschirm_h - 80)
-    fenster.geometry("%dx%d" % (breite, hoehe))
+    # Gemerkte Größe und Lage behalten (19.11.2026): Sie wurde oben gesetzt und
+    # hier bisher überschrieben — das Merken der Fenstergröße war damit
+    # wirkungslos. Behalten wird sie nur, wenn sie groß genug ist; sonst wächst
+    # sie auf den Bedarf, damit nichts abgeschnitten wird.
+    if _geo and "x" in _geo:
+        import re as _re
+        treffer = _re.match(r"^(\d+)x(\d+)([+-]-?\d+[+-]-?\d+)?$", _geo.strip())
+        if treffer:
+            b_alt, h_alt = int(treffer.group(1)), int(treffer.group(2))
+            breite = min(max(b_alt, breite), bildschirm_b - 40)
+            hoehe = min(max(h_alt, hoehe), bildschirm_h - 80)
+            fenster.geometry("%dx%d%s" % (breite, hoehe, treffer.group(3) or ""))
+        else:
+            fenster.geometry("%dx%d" % (breite, hoehe))
+    else:
+        fenster.geometry("%dx%d" % (breite, hoehe))
     fenster.minsize(min(breite, 1000), min(hoehe, 700))
 
     # Ohne Karte, aber mit Pedal am Kabel: gleich zeigen, was drin ist.

@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.128 — 2026-11-19
+
+* **The self test now measures labels.** For every button, checkbox and label it
+  compares the width it got with the width it needs and reports
+  "clipped label: …". Found this way: nothing yet — but the class of defect that
+  the author spotted with his eyes ("Pegeländerung zurücknehmen …" clipped in
+  German and French) is now checked on every machine. Proven with a squeezed
+  button in a narrow frame: 120 of 235 pixels → reported.
+* **The remembered window size is kept.** It was applied at start and then
+  overwritten by the computed size, so "remember size and position" never
+  worked. Now the saved size wins; it only grows when the content needs more.
+* Anything else unchanged.
+
 ## 3.127 — 2026-11-19
 
 **Documentation for reviewers — no change to the program itself.**
