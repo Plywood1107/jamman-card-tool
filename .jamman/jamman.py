@@ -2586,6 +2586,8 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Selbsttest nach Update':
+         'Self test after update',
         'Fenster zu schmal für seinen Inhalt: %d von %d Pixel — bitte breiter ziehen':
          'Window too narrow for its content: %d of %d pixels — please widen it',
         'abgeschnittene Beschriftung: %s':
@@ -3946,6 +3948,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Selbsttest nach Update':
+         'Test après mise à jour',
         'Fenster zu schmal für seinen Inhalt: %d von %d Pixel — bitte breiter ziehen':
          'Fenêtre trop étroit pour son contenu : %d sur %d pixels — élargissez-le',
         'abgeschnittene Beschriftung: %s':
@@ -5214,6 +5218,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Selbsttest nach Update':
+         'Prueba tras actualizar',
         'Fenster zu schmal für seinen Inhalt: %d von %d Pixel — bitte breiter ziehen':
          'Ventana demasiado estrecha para su contenido: %d de %d píxeles — amplíala',
         'abgeschnittene Beschriftung: %s':
@@ -6482,6 +6488,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Selbsttest nach Update':
+         '更新后自检',
         'Fenster zu schmal für seinen Inhalt: %d von %d Pixel — bitte breiter ziehen':
          '窗口比内容窄：%d / %d 像素 —— 请拉宽',
         'abgeschnittene Beschriftung: %s':
@@ -9646,6 +9654,13 @@ def aktualisieren(melden=None):
         except OSError:
             pass
 
+    # Merker für „Selbsttest nach Update" (19.11.2026): Beim nächsten Start
+    # läuft der Test einmal, wenn das Häkchen gesetzt ist.
+    try:
+        if einstellung_lesen("selbsttest_nach_update") == "ja":
+            einstellung_schreiben("selbsttest_noetig", "1")
+    except Exception:
+        pass
     return True, (T("Fassung %s ist installiert (%d Dateien). "
                     "Bitte das Fenster schließen und neu starten.")
                   % (stand["tag"], anzahl))
@@ -13809,6 +13824,27 @@ def gui(karte):
                    activebackground=FARBE_HINTERGRUND,
                    activeforeground=FARBE_SCHRIFT,
                    selectcolor=FARBE_HINTERGRUND).pack(side="left", padx=(0, 14))
+
+    # Selbsttest nach einem Update (19.11.2026): Eine neue Fassung kann etwas
+    # kaputt machen, was erst beim Klicken auffällt. Wer das Häkchen setzt,
+    # bekommt nach der nächsten Aktualisierung einmal den Selbsttest — im
+    # Hintergrund, mit demselben Bericht wie der Knopf im Kopf.
+    test_after_var = tk.BooleanVar(
+        value=einstellung_lesen("selbsttest_nach_update") == "ja")
+
+    def test_after_umschalten():
+        try:
+            einstellung_schreiben("selbsttest_nach_update",
+                                  "ja" if test_after_var.get() else "nein")
+        except Exception:
+            pass
+
+    tk.Checkbutton(zeile_unten, text=T("Selbsttest nach Update"),
+                   variable=test_after_var, command=test_after_umschalten,
+                   bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+                   activebackground=FARBE_HINTERGRUND,
+                   activeforeground=FARBE_SCHRIFT,
+                   selectcolor=FARBE_HINTERGRUND).pack(side="left", padx=(0, 14))
     # Blättern bekommt eine eigene Zeile (19.11.2026): In einer Zeile mit den
     # drei Voreinstellungen wurden die Knöpfe auf schmalen Bildschirmen
     # abgeschnitten („▲ 5" französisch, „vormerken").
@@ -15797,6 +15833,38 @@ def gui(karte):
     except Exception:
         pass
     fenster.minsize(min(breite, 1000), min(hoehe, 700))
+
+    # Selbsttest nach einem Update (19.11.2026): einmal, im Hintergrund, mit
+    # demselben Bericht wie der Knopf. Läuft als eigener Prozeß, weil der
+    # Selbsttest selbst Fenster baut und das im Hauptfaden laufen muß.
+    def _selbsttest_nach_update():
+        import subprocess as _sp
+        import sys as _sys
+        befehl = [_sys.executable, os.path.abspath(__file__), "funktionstest"]
+        try:
+            lauf = _sp.Popen(befehl, stdout=_sp.PIPE, stderr=_sp.STDOUT, text=True)
+        except Exception:
+            return
+
+        def nachsehen():
+            if lauf.poll() is None:
+                fenster.after(500, nachsehen)
+                return
+            try:
+                ausgabe = lauf.stdout.read() if lauf.stdout else ""
+            except Exception:
+                ausgabe = ""
+            if ausgabe.strip():
+                bericht_fenster(fenster, ausgabe)
+        fenster.after(500, nachsehen)
+
+    try:
+        if (einstellung_lesen("selbsttest_nach_update") == "ja"
+                and einstellung_lesen("selbsttest_noetig") == "1"):
+            einstellung_schreiben("selbsttest_noetig", "nein")
+            fenster.after(1500, _selbsttest_nach_update)
+    except Exception:
+        pass
 
     # Ohne Karte, aber mit Pedal am Kabel: gleich zeigen, was drin ist.
     if basis is None:

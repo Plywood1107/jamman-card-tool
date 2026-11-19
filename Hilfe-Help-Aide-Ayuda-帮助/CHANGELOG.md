@@ -2,6 +2,10 @@
 
 ## 3.131 — 2026-11-19
 
+* **Self test after an update, if you want it.** New check box in the settings
+  row. With it, the next successful update leaves a marker; on the following
+  start the tool runs the self test once in the background and shows the same
+  report as the button in the header. Nothing runs by itself if the box is off.
 * **The window re-measures a second time, 200 ms after opening.** On Linux some
   check boxes are mapped after the first layout pass, so the first measurement
   missed them: French "Mise à jour au démarrage" was clipped. Now the window
