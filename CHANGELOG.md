@@ -1,5 +1,171 @@
 # Changelog
 
+## 3.117 — 2026-11-19
+
+* **Gaps are visible, and can be closed on demand.** After deleting a slot the
+  numbering has a hole: the window now says `Lücke bei Platz 10 — „Lücken
+  schließen" rückt die folgenden Plätze nach vorn.` and there is a **button of
+  that name**. Nothing is renamed by itself — closing a single gap in a card
+  with 34 patches renames 25 folders, and every setlist that refers to slot
+  numbers would then point somewhere else.
+* **The search understands slot numbers.** Typing `10` now finds slot 10 (the
+  folder is called `Patch010`); if that slot does not exist the list says
+  `Platz 10 ist nicht belegt — die Liste hat eine Lücke.` instead of `0 von 34`.
+* **The confirmation for "Alle normieren" tells the truth.** It still said the
+  whole card would be backed up and named a duration; now it says that patches
+  which already match stay untouched and only the others are backed up and
+  rewritten. No extra question in between — one confirmation, then it runs.
+* **Stoppart, Rhythmus and Wiedergabe go back to "wie Vorlage" after an undo.**
+  Reported 19.11.2026: patch 1 was set to a reversed loop, then undone — the
+  patch was a plain loop again, but the field still showed the "loop ↺" symbol.
+  Those three fields describe what you are about to apply, not what the patch
+  is; after an undo they start clean. Verified in the running window: after
+  "Zurücknehmen" the field reads "wie Vorlage" and `phrase.xml` holds
+  `IsReversed>0`.
+* **Setlists are a list too.** After closing the gaps, "Setlists anpassen" shows
+  the setlist files found in the last used folder — name and number of slots,
+  all preselected, single ones clicked off — instead of asking for a folder.
+  Each rewritten file is copied to `<name>.gesichert-<time>` first. "Anderer
+  Ordner …" switches the folder and is remembered. Verified: a file with three
+  slot lines had two rewritten (`Patch11`→`Patch10`, `Patch12`→`Patch11`), the
+  third left alone, backup beside it.
+* **Shortcuts and a memory for the window.** ⌘/Strg+O card, +S backups,
+  +R reload, +F search dialog, +L close gaps; the hint line names them. The
+  window remembers size, position and the last sort order (measured: closing at
+  `1200x760+120+80` stores exactly that).
+* **A list instead of a file dialog.** "Pegeländerung zurücknehmen …" shows the
+  level logs as a list: date, what was done ("alle normieren"), how many
+  patches — newest first and preselected with "← neueste". Under the list a line
+  names the slots it would touch (`betrifft Platz: 2, 5, 11`), Enter or a double
+  click takes the marked one, Esc closes. Verified by opening the dialog and
+  pressing the button: it returns the newest log.
+* **"Normierung zurücknehmen …" is now "Pegeländerung zurücknehmen …".** It was
+  never about the selected patch: it reads a level log (`Pegelprotokoll_…txt`)
+  and reverses the gain of every patch listed there — usually all patches that
+  a normalise run touched. The name said "Normierung", but the log also covers
+  plain `+3 dB` changes. The confirmation now states how many patches and what
+  the log is called, and only those patches are backed up (before: the whole
+  card, 1.3 GB). Measured with a log naming 2 of 3 patches: 2 backed up,
+  2 changed.
+* **A single backup can be the source.** Passing one backup folder
+  (`…/Sicherung_…_vor_fade`) to "Zurücknehmen" failed, because a list of
+  backups was expected inside it. Found 19.11.2026 while restoring patch 2 by
+  hand.
+* **"Zurücknehmen" found the wrong backup — three blind spots, all fixed.**
+  Reported 19.11.2026 after reversing a patch: the undo offered a four-day-old
+  normalise backup.
+  1. Backups that hold only `patch.xml` and `phrase.xml` (name, stop mode,
+     rhythm, playback — the reverse!) were skipped entirely, because the search
+     required a `phrase.wav`. Reversing therefore left no undo point at all.
+     They are found now, and restoring one leaves the recording untouched.
+  2. Whole-card backups (`JamManSicherung_…/JamManSoloXT/Patch02`) were
+     invisible — the search only looked one level deep.
+  3. Candidates were sorted by folder name, not by time, so `Sicherung_…` and
+     `JamManSicherung_…` did not sort chronologically.
+  Rescue archives (`…_rettung`) are excluded: their slots are renumbered, so
+  their "Patch02" is not slot 2 of the card.
+* **Timing for the slow moments.** Reversing a patch and undoing a step are
+  logged with their duration to `jamman-fehler.log` (`[Zeit] …`): ffmpeg,
+  chain building, the undo copy and the reload after it. Measured on a 3 MB
+  file: `pegel_info` 0.11 s, `pegel_anpassen` 0.32 s, `ffmpeg areverse`
+  0.09 s, chain of 35 patches 0.10 s — so if a beachball appears, the log says
+  which step it was, instead of guessing.
+* **Reversed patches are only converted once.** The reversed file is cached
+  under the temporary folder `jamman-rueckwaerts/`, keyed by path, size and
+  modification time: second playback 0.00 s instead of 0.09 s. Capped at 40
+  files.
+* **"Alle normieren" leaves finished patches alone.** It used to rewrite every
+  WAV and to back up the whole card first — 35 patches, 1.3 GB — even when the
+  level was already right. Now the level is measured before anything is
+  written: patches within 0.05 dB of the target are skipped, only the rest are
+  backed up and rewritten, and the summary says how many stayed untouched.
+  Measured on a card with three patches (one already at −18 dB): 1 skipped,
+  2 changed, `(2, 1)` returned; a card where everything is right reports
+  "Nichts zu tun" and touches nothing.
+* **Interface review, everyday use.** Four changes:
+  * "Löschen" moved to the end of its row — it sat between "Alle normieren"
+    and "Karte auswerfen".
+  * The bottom line is two things now: the three settings, then a separator and
+    the heading "Blättern:" in front of Platz/nächster/vormerken/▲5/▼5.
+  * One vocabulary for levels: "Normierung zurücknehmen …" (was "Pegel
+    zurückrechnen"), "auf −1 dB Spitze normalisieren", "Anhebung höchstens auf
+    0 dB".
+  * The "Suchen …" button is gone — the field above does the same, and the
+    dialog is still on Cmd/Strg+F (it was the workaround for the Windows
+    typing bug of 17.11.).
+  Measured before changing anything: window 1662 px, the longest row needed
+  1062 px; without a selected patch 12 buttons are grey, 18 usable.
+* **Four translations corrected, one missing.** `Patch%d → Patch%d` stays
+  untranslated (it is a folder name), "Rette" is "Sauvegarde" in French,
+  "markiert" agrees in gender (sélectionnée / marcada), and the English rescue
+  sentence is no longer mangled. "Sicherungen verwalten …" was missing from the
+  catalogue entirely — the button label is translated via `T(variable)`, so no
+  check looked at it. `texte_pruefen.py` now also checks labels that come from
+  `("Text", function)` tuples; it found exactly that one.
+* **Plural for the gap hint.** "Lücke bei Platz …" became "Lücken bei den
+  Plätzen …" when there is more than one.
+* **"Sicherung zurückholen" is now "Zurücknehmen (letzter Schritt)".** It always
+  restores the newest backup of the selected patch — it is an undo, not a
+  restore from an archive. The name now says so, and it sits next to
+  "Sicherungen verwalten …" (which is the archive side).
+* **Backup buttons next to each other.** "Sicherungen …" (now "Sicherungen
+  verwalten …") sat in the card row while "Sicherung zurückholen" sat in the
+  editing row — two similar names in two places. Both are in the first row now,
+  side by side.
+* **"Neueste behalten" takes a number instead of four buttons.** The buttons
+  `1 2 3 5` were an arbitrary ladder (4 was missing) and did the opposite of
+  what the label suggests. Now there is a number field (default 3, range
+  1…count) and one button "ältere markieren"; the line below still says how
+  many are marked and how much space that frees.
+* **"Sicherungen …" sits where "Alles sichern" used to be.** In the row with
+  "Karte wählen" and "Datei aufspielen" — card actions together, navigation
+  (Platz, nächster, ▲5…) separate.
+* **The backup folder is created and used by itself.** `~/JamMan-Sicherung` is
+  made on first use and remembered; the dialog opens on it without asking.
+  A new button "Anderer Ordner …" is there for the case where you do want to
+  keep backups somewhere else — and that choice is remembered too.
+* **Backing up and cleaning up are one place now.** "Alles sichern" is gone from
+  the button row; "Sicherungen …" opens the list and offers "Neue Sicherung
+  anlegen (alles sichern)" right there. One less button, and the two things
+  that belong together sit together.
+* **A "Sicherungen …" button in the main window.** The clean-up dialog used to
+  be reachable only after a backup or from the USB window; now it opens
+  directly and remembers which folder it last used.
+* **"Rescue backup": one file instead of thirteen.** A new button in the
+  clean-up dialog copies every patch that exists in only one backup into a
+  single new backup (`JamManSicherung_<date>_rettung`) and writes the mapping
+  to `Rettung.txt` inside it. Measured on the author's archive: 13 patches,
+  797 MB — instead of keeping 13 backups with 20.9 GB. After that the old ones
+  can be deleted without losing a single patch.
+* **The clean-up dialog knows which backups are irreplaceable.** Every patch
+  carries an `<ID>` in its `patch.xml`; a patch whose ID appears in exactly one
+  backup cannot be recovered anywhere else. Those backups are marked in the
+  list (`⟨1 Patch nur hier⟩`) and the default selection leaves them alone.
+  Measured on 53 backups: 0.1 s, 13 backups hold unique patches.
+* **The clean-up dialog now offers a sensible default.** The buttons
+  "Neueste behalten: 1 2 3 5" marked the newest ones — and marked means deleted
+  here, so pressing "3" would have removed the three newest backups. They now
+  mark everything *except* the newest n, a line shows what is marked
+  (`48 markiert · 18,1 GB`), and one button applies the default: **keep the
+  newest 3 and everything from the last 7 days.**
+* **"Back up everything" remembers where.** The folder chooser starts in
+  `~/JamMan-Sicherung` (created if missing) or in the folder used last time, and
+  right after a backup it offers to look through the older ones and delete them.
+* **The clean-up dialog only lists backups.** It used to list every folder in
+  the chosen directory; with a backup accidentally in the home folder it
+  offered "Applications" and "Documents" for deletion. Only names starting
+  with `JamManSicherung_`, `Sicherung_`, `Hole_` or `vor-ueberschreiben` are
+  shown now.
+* **The folder chooser returns the folder you selected.** Pressing "Öffnen" on a
+  highlighted folder used to return the folder that was open, not the one
+  selected — the backup landed one level too high (reported 19.11.2026). The
+  highlighted folder now shows in the "Auswahl:" line and is the one returned.
+* **The counter counts patches, not rows.** `1 von 12` became `1 von 11` —
+  hint rows were being counted.
+* Closing gaps keeps the digit width of the folder names (`Patch011` →
+  `Patch010`, never `Patch10`), saves the mapping to `~/JamMan-Sicherung`
+  first, and afterwards offers to rewrite setlist files.
+
 ## 3.116 — 2026-11-18
 
 * **A "Quit" button.** Closes the window cleanly; the start script then closes

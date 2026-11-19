@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.116 (18.11.2026)"
+FASSUNG = "3.117 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -515,7 +515,18 @@ def befehl_pegel_umkehren(basis, protokoll, schreiben, wurzel=None):
                 e["ordner"], e["name"][:24], e["faktor"], e["faktor"]))
         print(T("  Trockenlauf — nichts geändert. Mit --schreiben ausführen."))
         return
-    ziel = sicher_ablegen(basis, [pf for _, _, pf in patches(basis)],
+    # Nur sichern, was auch geändert wird. Anlaß (19.11.2026): Hier wurde die
+    # ganze Karte kopiert (bei 35 Patches 1,3 GB), obwohl das Protokoll oft
+    # nur wenige Patches nennt.
+    alle = dict((n, pf) for n, _, pf in patches(basis))
+    betroffen = []
+    for e in eintraege:
+        for nummer, pfad in alle.items():
+            if os.path.basename(pfad) == e["ordner"]:
+                if os.path.exists(os.path.join(pfad, "PhraseA", "phrase.wav")):
+                    betroffen.append(pfad)
+                break
+    ziel = sicher_ablegen(basis, betroffen or [pf for _, _, pf in patches(basis)],
                           "vor_pegel_umkehren", wurzel)
     gemacht = 0
     for e in eintraege:
@@ -1221,6 +1232,36 @@ def patch_einstellungen(pfad):
     return stop, rhy, loop, rueck, bpm
 
 
+class _Zeit:
+    """Mißt eine Arbeitsstufe und schreibt sie ins Fehlerprotokoll.
+
+    Anlaß (19.11.2026): Beim Umkehren und Zurücknehmen erschien ein
+    „Beachball", obwohl die Datei kurz ist. Ohne Messung ist nicht zu sagen,
+    welcher Schritt hängt — also wird jeder Schritt mit Dauer protokolliert.
+    """
+
+    def __init__(self, name):
+        self.name = name
+
+    def __enter__(self):
+        import time as _zeit
+        self.t0 = _zeit.time()
+        return self
+
+    def __exit__(self, art, wert, spur):
+        import time as _zeit
+        dauer = _zeit.time() - self.t0
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "jamman-fehler.log"), "a", encoding="utf-8") as f:
+                f.write("%s  [Zeit] %-28s %.2f s\n"
+                        % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                           self.name, dauer))
+        except OSError:
+            pass
+        return False
+
+
 def wav_rueckwaerts(pfad, ziel=None):
     """Eine WAV rückwärts schreiben und den Pfad zurückgeben.
 
@@ -1233,10 +1274,41 @@ def wav_rueckwaerts(pfad, ziel=None):
 
     if not werkzeug_pfad("ffmpeg"):
         return None
-    ziel = ziel or os.path.join(tempfile.mkdtemp(), "rueckwaerts.wav")
-    r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", pfad,
-                        "-af", "areverse", ziel],
-                       capture_output=True)
+    # Zwischenspeicher: dieselbe Datei wird beim zweiten Anhören nicht erneut
+    # umgerechnet (19.11.2026). Der Schlüssel enthält Pfad, Größe und
+    # Änderungszeit; ändert sich die Datei, entsteht ein neuer Eintrag.
+    try:
+        st = os.stat(pfad)
+        kennung = "%s|%d|%d" % (os.path.abspath(pfad), st.st_size, int(st.st_mtime))
+    except OSError:
+        kennung = os.path.abspath(pfad)
+    ordner = os.path.join(tempfile.gettempdir(), "jamman-rueckwaerts")
+    try:
+        os.makedirs(ordner, exist_ok=True)
+    except OSError:
+        ordner = tempfile.mkdtemp()
+    import hashlib
+    zwischen = os.path.join(ordner, hashlib.sha1(kennung.encode()).hexdigest()[:16] + ".wav")
+    if ziel is None and os.path.exists(zwischen):
+        return zwischen
+    # Aufräumen: höchstens 40 Hörproben liegen lassen (19.11.2026).
+    try:
+        vorhanden = [os.path.join(ordner, x) for x in os.listdir(ordner)
+                     if x.endswith(".wav")]
+        if len(vorhanden) > 40:
+            vorhanden.sort(key=lambda f: os.path.getmtime(f))
+            for alt_datei in vorhanden[:len(vorhanden) - 40]:
+                try:
+                    os.remove(alt_datei)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    ziel = ziel or zwischen
+    with _Zeit("ffmpeg areverse"):
+        r = subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", pfad,
+                            "-af", "areverse", ziel],
+                           capture_output=True)
     if r.returncode != 0 or not os.path.exists(ziel):
         return None
     return ziel
@@ -2271,6 +2343,132 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Doppelklick spielt · Ziehen ordnet um · ⌘ zwei markieren, dann Tauschen · Esc hält an · ⌘O Karte, ⌘S Sicherungen, ⌘L Lücken':
+         'Double click plays · drag reorders · ⌘ marks two, then Swap · Esc stops · ⌘O card, ⌘S backups, ⌘L gaps',
+        'Setlist-Dateien':
+         'Setlist files',
+        'Anpassen':
+         'Adjust',
+        'Erst eine Datei markieren.':
+         'Mark a file first.',
+        '%d Datei(en) angepasst, %d Zeile(n) umgeschrieben.':
+         '%d file(s) adjusted, %d line(s) rewritten.',
+        'In diesem Ordner liegen keine Setlist-Dateien:\n%s\n\nBitte einen anderen Ordner wählen.':
+         'There are no setlist files in this folder:\n%s\n\nPlease choose another folder.',
+        'Alle sind markiert — einzelne mit Klick abwählen.':
+         'All are marked — click to unmark single ones.',
+        'betrifft Platz: %s':
+         'affects slot: %s',
+        'Pegeländerung zurücknehmen':
+         'Undo level change',
+        'Es gibt noch keine Pegelprotokolle.':
+         'There are no level logs yet.',
+        'Pegelprotokolle':
+         'Level logs',
+        'Welche Änderung soll zurückgenommen werden?':
+         'Which change should be undone?',
+        'Erst ein Protokoll markieren.':
+         'Mark a log first.',
+        'Im Protokoll stehen keine Einträge.':
+         'The log contains no entries.',
+        'Ein Patch (Platz %s)':
+         'One patch (slot %s)',
+        '%d Patches':
+         '%d patches',
+        '%s aus diesem Protokoll werden umgekehrt:\n\n%s\n\nNur diese Patches werden vorher gesichert. Fortfahren?':
+         '%s from this log are reversed:\n\n%s\n\nOnly those patches are backed up first. Continue?',
+        'Pegeländerung zurücknehmen …':
+         'Undo level change …',
+        '  Trockenlauf — nichts geändert.':
+         '  Dry run — nothing changed.',
+        '  Jetziger Stand gesichert: %s':
+         '  Current state saved: %s',
+        '  Einstellungen von Patch%d zurückgeholt.':
+         '  Settings of patch %d restored.',
+        'Patch%d: Name, Stoppart, Rhythmus und Wiedergabe kommen aus dieser Sicherung zurück:\n\n  %s\n\nDie Aufnahme bleibt unberührt — sie war in dieser Sicherung nicht enthalten.\nDer jetzige Stand wird vorher gesichert.':
+         'Patch %d: name, stop mode, rhythm and playback come back from this backup:\n\n  %s\n\nThe recording is left alone — it was not part of this backup.\nThe current state is saved first.',
+        'Patch%d wird aus dieser Sicherung wiederhergestellt:\n\n  %s\n\nDamit lässt sich zum Beispiel ein Fade zurücknehmen.\nDer jetzige Stand wird vorher gesichert.':
+         'Patch %d is restored from this backup:\n\n  %s\n\nThis can undo a fade, for example.\nThe current state is saved first.',
+        'Patch%d zurückgeholt':
+         'Patch %d restored',
+        'Alle Patches werden auf gleiche Lautheit gebracht:\n\n  Ziel -18 dB Lautheit, Spitze höchstens -1 dB\n\nPatches, die schon passen, bleiben unangetastet. Nur die\nübrigen werden vorher gesichert und neu geschrieben.\n\nFortfahren?':
+         'All patches are brought to the same loudness:\n\n  target -18 dB loudness, peak at most -1 dB\n\nPatches that already match are left untouched. Only the others are\nbacked up and rewritten.\n\nContinue?',
+        '  Nichts zu tun: alle Patches liegen bereits auf der Ziel-Lautheit.':
+         '  Nothing to do: every patch is already at the target loudness.',
+        '  Ein Patch war schon auf Ziel und blieb unverändert.':
+         '  One patch was already at target and stayed untouched.',
+        '  Schon auf Ziel: %d von %d Patches — unverändert gelassen.':
+         '  Already at target: %d of %d patches — left untouched.',
+        '  %d Patches waren schon auf Ziel und blieben unverändert.':
+         '  %d patches were already at target and stayed untouched.',
+        'Blättern':
+         'Browsing',
+        'Normierung zurücknehmen …':
+         'Undo normalisation …',
+        'auf −1 dB Spitze normalisieren':
+         'normalise to −1 dB peak',
+        'Anhebung höchstens auf 0 dB':
+         'limit boost to 0 dB at most',
+        'Sicherungen verwalten …':
+         'Manage backups …',
+        'Lücken bei den Plätzen %s%s — „Lücken schließen“ rückt die folgenden Plätze nach vorn.':
+         'Gaps at slots %s%s — “Close the gaps” moves the following slots forward.',
+        'Zurücknehmen (letzter Schritt)':
+         'Undo (last step)',
+        'Zurücknehmen':
+         'Undo',
+        'ältere markieren':
+         'mark the older ones',
+        'Anderer Ordner …':
+         'Another folder …',
+        'Neue Sicherung anlegen (alles sichern)':
+         'Create a new backup (everything)',
+        'Sicherungen …':
+         'Backups …',
+        'Ordner mit den Sicherungen':
+         'Folder with the backups',
+        'Sammelsicherung':
+         'Rescue backup',
+        'Rette':
+         'Rescuing',
+        'Es gibt keine unersetzlichen Patches.':
+         'There are no irreplaceable patches.',
+        '%d Patches wurden nach %s kopiert. Die Zuordnung steht dort in Rettung.txt. Jetzt lassen sich die alten Sicherungen löschen.':
+         '%d patches were copied to %s. The mapping is in Rettung.txt in that folder. The old backups can now be deleted.',
+        'Nur die unersetzlichen Patches retten':
+         'Rescue only the irreplaceable patches',
+        '⟨%d Patch nur hier⟩':
+         '⟨%d patch only here⟩',
+        '%d markiert · %.1f MB':
+         '%d marked · %.1f MB',
+        'nichts markiert':
+         'nothing marked',
+        'Vorgabe: neueste 3 und letzte 7 Tage behalten':
+         'Default: keep the newest 3 and the last 7 days',
+        'Fertig. Ordner:\n%s':
+         'Done. Folder:\n%s',
+        'Alte Sicherungen in diesem Ordner ansehen und löschen?':
+         'Look at the older backups in this folder and delete some?',
+        'Lücke bei Platz %s%s — „Lücken schließen“ rückt die folgenden Plätze nach vorn.':
+         'Gap at slot %s%s — “Close the gaps” moves the following slots forward.',
+        'Platz %s ist nicht belegt — die Liste hat eine Lücke.':
+         'Slot %s is not occupied — there is a gap in the list.',
+        'Lücken schließen':
+         'Close the gaps',
+        'Patch%d → Patch%d':
+         'Patch%d → Patch%d',
+        '%d Patches rücken nach vorn: %s%s\n\nDie Reihenfolge bleibt, nur die Platznummern ändern sich. Die Zuordnung wird vorher gesichert. Setlist-Dateien, die auf Platznummern zeigen, stimmen danach nicht mehr. Fortfahren?':
+         '%d patches move forward: %s%s\n\nThe order stays the same, only the slot numbers change. The mapping is saved beforehand. Setlist files that refer to slot numbers will no longer match. Continue?',
+        'Aufgerückt: %d Patches':
+         'Moved up: %d patches',
+        'Sollen vorhandene Setlist-Dateien auf die neuen Platznummern umgeschrieben werden?':
+         'Should existing setlist files be rewritten to the new slot numbers?',
+        'Ordner mit Setlist-Dateien':
+         'Folder with setlist files',
+        'Setlists angepaßt: %d Datei(en)':
+         'Setlists adjusted: %d file(s)',
+        'Fehler: Platz %d ist belegt (%s).':
+         'Error: slot %d is occupied (%s).',
         'Beenden':
          'Quit',
         'Dem Python fehlen die Zertifikate. Zwei Wege: im Python-Ordner „Install Certificates.command“ ausführen — oder „pip install certifi“ — oder die Datei von der Release-Seite von Hand laden.':
@@ -3417,6 +3615,132 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Doppelklick spielt · Ziehen ordnet um · ⌘ zwei markieren, dann Tauschen · Esc hält an · ⌘O Karte, ⌘S Sicherungen, ⌘L Lücken':
+         'Double-clic lit · glisser réordonne · ⌘ marque deux, puis Échanger · Échap arrête · ⌘O carte, ⌘S sauvegardes, ⌘L lacunes',
+        'Setlist-Dateien':
+         'Fichiers de setlist',
+        'Anpassen':
+         'Adapter',
+        'Erst eine Datei markieren.':
+         "Sélectionnez d'abord un fichier.",
+        '%d Datei(en) angepasst, %d Zeile(n) umgeschrieben.':
+         '%d fichier(s) adapté(s), %d ligne(s) réécrite(s).',
+        'In diesem Ordner liegen keine Setlist-Dateien:\n%s\n\nBitte einen anderen Ordner wählen.':
+         "Il n'y a pas de fichiers de setlist dans ce dossier :\n%s\n\nVeuillez choisir un autre dossier.",
+        'Alle sind markiert — einzelne mit Klick abwählen.':
+         'Tous sont sélectionnés — cliquez pour en désélectionner.',
+        'betrifft Platz: %s':
+         "concerne l'emplacement : %s",
+        'Pegeländerung zurücknehmen':
+         'Annuler le changement de niveau',
+        'Es gibt noch keine Pegelprotokolle.':
+         "Il n'y a pas encore de journaux de niveau.",
+        'Pegelprotokolle':
+         'Journaux de niveau',
+        'Welche Änderung soll zurückgenommen werden?':
+         'Quel changement faut-il annuler ?',
+        'Erst ein Protokoll markieren.':
+         "Sélectionnez d'abord un journal.",
+        'Im Protokoll stehen keine Einträge.':
+         'Le journal ne contient aucune entrée.',
+        'Ein Patch (Platz %s)':
+         'Un patch (emplacement %s)',
+        '%d Patches':
+         '%d patchs',
+        '%s aus diesem Protokoll werden umgekehrt:\n\n%s\n\nNur diese Patches werden vorher gesichert. Fortfahren?':
+         '%s de ce journal sont inversés :\n\n%s\n\nSeuls ces patchs sont sauvegardés avant. Continuer ?',
+        'Pegeländerung zurücknehmen …':
+         'Annuler le changement de niveau …',
+        '  Trockenlauf — nichts geändert.':
+         '  Essai à blanc — rien de modifié.',
+        '  Jetziger Stand gesichert: %s':
+         '  État actuel sauvegardé : %s',
+        '  Einstellungen von Patch%d zurückgeholt.':
+         '  Réglages du patch %d restaurés.',
+        'Patch%d: Name, Stoppart, Rhythmus und Wiedergabe kommen aus dieser Sicherung zurück:\n\n  %s\n\nDie Aufnahme bleibt unberührt — sie war in dieser Sicherung nicht enthalten.\nDer jetzige Stand wird vorher gesichert.':
+         "Patch %d : nom, mode d'arrêt, rythme et lecture reviennent de cette sauvegarde :\n\n  %s\n\nL'enregistrement reste intact — il ne faisait pas partie de cette sauvegarde.\nL'état actuel est sauvegardé avant.",
+        'Patch%d wird aus dieser Sicherung wiederhergestellt:\n\n  %s\n\nDamit lässt sich zum Beispiel ein Fade zurücknehmen.\nDer jetzige Stand wird vorher gesichert.':
+         "Le patch %d est restauré depuis cette sauvegarde :\n\n  %s\n\nCela permet par exemple d'annuler un fondu.\nL'état actuel est sauvegardé avant.",
+        'Patch%d zurückgeholt':
+         'Patch %d restauré',
+        'Alle Patches werden auf gleiche Lautheit gebracht:\n\n  Ziel -18 dB Lautheit, Spitze höchstens -1 dB\n\nPatches, die schon passen, bleiben unangetastet. Nur die\nübrigen werden vorher gesichert und neu geschrieben.\n\nFortfahren?':
+         'Tous les patchs sont ramenés à la même sonie :\n\n  cible -18 dB de sonie, crête -1 dB au plus\n\nLes patchs déjà corrects ne sont pas touchés. Seuls les autres sont\nsauvegardés puis réécrits.\n\nContinuer ?',
+        '  Nichts zu tun: alle Patches liegen bereits auf der Ziel-Lautheit.':
+         '  Rien à faire : tous les patchs sont déjà au niveau cible.',
+        '  Ein Patch war schon auf Ziel und blieb unverändert.':
+         '  Un patch était déjà au niveau cible et est resté tel quel.',
+        '  Schon auf Ziel: %d von %d Patches — unverändert gelassen.':
+         '  Déjà au niveau cible : %d sur %d patchs — laissés tels quels.',
+        '  %d Patches waren schon auf Ziel und blieben unverändert.':
+         '  %d patchs étaient déjà au niveau cible et sont restés tels quels.',
+        'Blättern':
+         'Navigation',
+        'Normierung zurücknehmen …':
+         'Annuler la normalisation …',
+        'auf −1 dB Spitze normalisieren':
+         'normaliser à −1 dB crête',
+        'Anhebung höchstens auf 0 dB':
+         "limiter l'amplification à 0 dB au plus",
+        'Sicherungen verwalten …':
+         'Gérer les sauvegardes …',
+        'Lücken bei den Plätzen %s%s — „Lücken schließen“ rückt die folgenden Plätze nach vorn.':
+         'Lacunes aux emplacements %s%s — « Combler les lacunes » fait avancer les emplacements suivants.',
+        'Zurücknehmen (letzter Schritt)':
+         'Annuler (dernière étape)',
+        'Zurücknehmen':
+         'Annuler',
+        'ältere markieren':
+         'marquer les plus anciennes',
+        'Anderer Ordner …':
+         'Autre dossier …',
+        'Neue Sicherung anlegen (alles sichern)':
+         'Créer une nouvelle sauvegarde (tout)',
+        'Sicherungen …':
+         'Sauvegardes …',
+        'Ordner mit den Sicherungen':
+         'Dossier des sauvegardes',
+        'Sammelsicherung':
+         'Sauvegarde de secours',
+        'Rette':
+         'Sauvegarde',
+        'Es gibt keine unersetzlichen Patches.':
+         "Il n'y a pas de patchs irremplaçables.",
+        '%d Patches wurden nach %s kopiert. Die Zuordnung steht dort in Rettung.txt. Jetzt lassen sich die alten Sicherungen löschen.':
+         '%d patchs ont été copiés vers %s. La correspondance se trouve dans Rettung.txt. Les anciennes sauvegardes peuvent maintenant être supprimées.',
+        'Nur die unersetzlichen Patches retten':
+         'Sauver seulement les patchs irremplaçables',
+        '⟨%d Patch nur hier⟩':
+         '⟨%d patch seulement ici⟩',
+        '%d markiert · %.1f MB':
+         '%d sélectionnée(s) · %.1f Mo',
+        'nichts markiert':
+         'rien de sélectionné',
+        'Vorgabe: neueste 3 und letzte 7 Tage behalten':
+         'Par défaut : garder les 3 plus récentes et les 7 derniers jours',
+        'Fertig. Ordner:\n%s':
+         'Terminé. Dossier :\n%s',
+        'Alte Sicherungen in diesem Ordner ansehen und löschen?':
+         'Voir les anciennes sauvegardes dans ce dossier et en supprimer ?',
+        'Lücke bei Platz %s%s — „Lücken schließen“ rückt die folgenden Plätze nach vorn.':
+         "Lacune à l'emplacement %s%s — « Combler les lacunes » fait avancer les emplacements suivants.",
+        'Platz %s ist nicht belegt — die Liste hat eine Lücke.':
+         "L'emplacement %s n'est pas occupé — la liste a une lacune.",
+        'Lücken schließen':
+         'Combler les lacunes',
+        'Patch%d → Patch%d':
+         'Patch%d → Patch%d',
+        '%d Patches rücken nach vorn: %s%s\n\nDie Reihenfolge bleibt, nur die Platznummern ändern sich. Die Zuordnung wird vorher gesichert. Setlist-Dateien, die auf Platznummern zeigen, stimmen danach nicht mehr. Fortfahren?':
+         "%d patches avancent : %s%s\n\nL'ordre reste le même, seuls les numéros d'emplacement changent. La correspondance est sauvegardée avant. Les fichiers de setlist qui renvoient à des numéros ne correspondront plus. Continuer ?",
+        'Aufgerückt: %d Patches':
+         'Avancés : %d patches',
+        'Sollen vorhandene Setlist-Dateien auf die neuen Platznummern umgeschrieben werden?':
+         'Faut-il réécrire les fichiers de setlist existants avec les nouveaux numéros ?',
+        'Ordner mit Setlist-Dateien':
+         'Dossier avec fichiers de setlist',
+        'Setlists angepaßt: %d Datei(en)':
+         'Setlists adaptées : %d fichier(s)',
+        'Fehler: Platz %d ist belegt (%s).':
+         "Erreur : l'emplacement %d est occupé (%s).",
         'Beenden':
          'Quitter',
         'Dem Python fehlen die Zertifikate. Zwei Wege: im Python-Ordner „Install Certificates.command“ ausführen — oder „pip install certifi“ — oder die Datei von der Release-Seite von Hand laden.':
@@ -4455,6 +4779,132 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Doppelklick spielt · Ziehen ordnet um · ⌘ zwei markieren, dann Tauschen · Esc hält an · ⌘O Karte, ⌘S Sicherungen, ⌘L Lücken':
+         'Doble clic reproduce · arrastrar reordena · ⌘ marca dos, luego Intercambiar · Esc detiene · ⌘O tarjeta, ⌘S copias, ⌘L huecos',
+        'Setlist-Dateien':
+         'Archivos de setlist',
+        'Anpassen':
+         'Ajustar',
+        'Erst eine Datei markieren.':
+         'Marca primero un archivo.',
+        '%d Datei(en) angepasst, %d Zeile(n) umgeschrieben.':
+         '%d archivo(s) ajustado(s), %d línea(s) reescrita(s).',
+        'In diesem Ordner liegen keine Setlist-Dateien:\n%s\n\nBitte einen anderen Ordner wählen.':
+         'No hay archivos de setlist en esta carpeta:\n%s\n\nElige otra carpeta.',
+        'Alle sind markiert — einzelne mit Klick abwählen.':
+         'Todos están marcados — haz clic para desmarcar alguno.',
+        'betrifft Platz: %s':
+         'afecta a la plaza: %s',
+        'Pegeländerung zurücknehmen':
+         'Deshacer cambio de nivel',
+        'Es gibt noch keine Pegelprotokolle.':
+         'Todavía no hay registros de nivel.',
+        'Pegelprotokolle':
+         'Registros de nivel',
+        'Welche Änderung soll zurückgenommen werden?':
+         '¿Qué cambio debe deshacerse?',
+        'Erst ein Protokoll markieren.':
+         'Marca primero un registro.',
+        'Im Protokoll stehen keine Einträge.':
+         'El registro no tiene entradas.',
+        'Ein Patch (Platz %s)':
+         'Un parche (plaza %s)',
+        '%d Patches':
+         '%d parches',
+        '%s aus diesem Protokoll werden umgekehrt:\n\n%s\n\nNur diese Patches werden vorher gesichert. Fortfahren?':
+         '%s de este registro se invierten:\n\n%s\n\nSólo esos parches se guardan antes. ¿Continuar?',
+        'Pegeländerung zurücknehmen …':
+         'Deshacer cambio de nivel …',
+        '  Trockenlauf — nichts geändert.':
+         '  Prueba en seco — nada cambiado.',
+        '  Jetziger Stand gesichert: %s':
+         '  Estado actual guardado: %s',
+        '  Einstellungen von Patch%d zurückgeholt.':
+         '  Ajustes del parche %d restaurados.',
+        'Patch%d: Name, Stoppart, Rhythmus und Wiedergabe kommen aus dieser Sicherung zurück:\n\n  %s\n\nDie Aufnahme bleibt unberührt — sie war in dieser Sicherung nicht enthalten.\nDer jetzige Stand wird vorher gesichert.':
+         'Parche %d: nombre, modo de parada, ritmo y reproducción vuelven de esta copia:\n\n  %s\n\nLa grabación no se toca — no formaba parte de esta copia.\nEl estado actual se guarda antes.',
+        'Patch%d wird aus dieser Sicherung wiederhergestellt:\n\n  %s\n\nDamit lässt sich zum Beispiel ein Fade zurücknehmen.\nDer jetzige Stand wird vorher gesichert.':
+         'El parche %d se restaura desde esta copia:\n\n  %s\n\nAsí se puede deshacer un fundido, por ejemplo.\nEl estado actual se guarda antes.',
+        'Patch%d zurückgeholt':
+         'Parche %d restaurado',
+        'Alle Patches werden auf gleiche Lautheit gebracht:\n\n  Ziel -18 dB Lautheit, Spitze höchstens -1 dB\n\nPatches, die schon passen, bleiben unangetastet. Nur die\nübrigen werden vorher gesichert und neu geschrieben.\n\nFortfahren?':
+         'Todos los parches se llevan al mismo volumen:\n\n  objetivo −18 dB de sonoridad, pico como máximo −1 dB\n\nLos parches que ya encajan quedan sin tocar. Sólo los demás se\nguardan y se reescriben.\n\n¿Continuar?',
+        '  Nichts zu tun: alle Patches liegen bereits auf der Ziel-Lautheit.':
+         '  Nada que hacer: todos los parches ya están en el nivel objetivo.',
+        '  Ein Patch war schon auf Ziel und blieb unverändert.':
+         '  Un parche ya estaba en el objetivo y quedó sin tocar.',
+        '  Schon auf Ziel: %d von %d Patches — unverändert gelassen.':
+         '  Ya en el objetivo: %d de %d parches — sin tocar.',
+        '  %d Patches waren schon auf Ziel und blieben unverändert.':
+         '  %d parches ya estaban en el objetivo y quedaron sin tocar.',
+        'Blättern':
+         'Navegar',
+        'Normierung zurücknehmen …':
+         'Deshacer normalización …',
+        'auf −1 dB Spitze normalisieren':
+         'normalizar a −1 dB de pico',
+        'Anhebung höchstens auf 0 dB':
+         'limitar el aumento a 0 dB como máximo',
+        'Sicherungen verwalten …':
+         'Gestionar copias …',
+        'Lücken bei den Plätzen %s%s — „Lücken schließen“ rückt die folgenden Plätze nach vorn.':
+         'Huecos en las plazas %s%s — «Cerrar los huecos» adelanta las plazas siguientes.',
+        'Zurücknehmen (letzter Schritt)':
+         'Deshacer (último paso)',
+        'Zurücknehmen':
+         'Deshacer',
+        'ältere markieren':
+         'marcar las más antiguas',
+        'Anderer Ordner …':
+         'Otra carpeta …',
+        'Neue Sicherung anlegen (alles sichern)':
+         'Crear una copia nueva (todo)',
+        'Sicherungen …':
+         'Copias …',
+        'Ordner mit den Sicherungen':
+         'Carpeta con las copias',
+        'Sammelsicherung':
+         'Copia de rescate',
+        'Rette':
+         'Rescatando',
+        'Es gibt keine unersetzlichen Patches.':
+         'No hay parches irremplazables.',
+        '%d Patches wurden nach %s kopiert. Die Zuordnung steht dort in Rettung.txt. Jetzt lassen sich die alten Sicherungen löschen.':
+         '%d parches se copiaron a %s. La correspondencia está en Rettung.txt. Ahora se pueden borrar las copias antiguas.',
+        'Nur die unersetzlichen Patches retten':
+         'Rescatar sólo los parches irremplazables',
+        '⟨%d Patch nur hier⟩':
+         '⟨%d parche sólo aquí⟩',
+        '%d markiert · %.1f MB':
+         '%d marcada(s) · %.1f MB',
+        'nichts markiert':
+         'nada marcado',
+        'Vorgabe: neueste 3 und letzte 7 Tage behalten':
+         'Por defecto: conservar las 3 más recientes y los últimos 7 días',
+        'Fertig. Ordner:\n%s':
+         'Listo. Carpeta:\n%s',
+        'Alte Sicherungen in diesem Ordner ansehen und löschen?':
+         '¿Ver las copias antiguas de esta carpeta y borrar alguna?',
+        'Lücke bei Platz %s%s — „Lücken schließen“ rückt die folgenden Plätze nach vorn.':
+         'Hueco en la plaza %s%s — «Cerrar los huecos» adelanta las plazas siguientes.',
+        'Platz %s ist nicht belegt — die Liste hat eine Lücke.':
+         'La plaza %s no está ocupada — la lista tiene un hueco.',
+        'Lücken schließen':
+         'Cerrar los huecos',
+        'Patch%d → Patch%d':
+         'Patch%d → Patch%d',
+        '%d Patches rücken nach vorn: %s%s\n\nDie Reihenfolge bleibt, nur die Platznummern ändern sich. Die Zuordnung wird vorher gesichert. Setlist-Dateien, die auf Platznummern zeigen, stimmen danach nicht mehr. Fortfahren?':
+         '%d parches avanzan: %s%s\n\nEl orden no cambia, sólo los números de plaza. La correspondencia se guarda antes. Los archivos de setlist que se refieren a números de plaza ya no coincidirán. ¿Continuar?',
+        'Aufgerückt: %d Patches':
+         'Avanzados: %d parches',
+        'Sollen vorhandene Setlist-Dateien auf die neuen Platznummern umgeschrieben werden?':
+         '¿Deben reescribirse los archivos de setlist existentes con los nuevos números?',
+        'Ordner mit Setlist-Dateien':
+         'Carpeta con archivos de setlist',
+        'Setlists angepaßt: %d Datei(en)':
+         'Setlists ajustadas: %d archivo(s)',
+        'Fehler: Platz %d ist belegt (%s).':
+         'Error: la plaza %d está ocupada (%s).',
         'Beenden':
          'Salir',
         'Dem Python fehlen die Zertifikate. Zwei Wege: im Python-Ordner „Install Certificates.command“ ausführen — oder „pip install certifi“ — oder die Datei von der Release-Seite von Hand laden.':
@@ -5493,6 +5943,132 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Doppelklick spielt · Ziehen ordnet um · ⌘ zwei markieren, dann Tauschen · Esc hält an · ⌘O Karte, ⌘S Sicherungen, ⌘L Lücken':
+         '双击播放 · 拖动排序 · ⌘ 选两个后交换 · Esc 停止 · ⌘O 存储卡，⌘S 备份，⌘L 空位',
+        'Setlist-Dateien':
+         'Setlist 文件',
+        'Anpassen':
+         '调整',
+        'Erst eine Datei markieren.':
+         '请先选择一个文件。',
+        '%d Datei(en) angepasst, %d Zeile(n) umgeschrieben.':
+         '已调整 %d 个文件，改写 %d 行。',
+        'In diesem Ordner liegen keine Setlist-Dateien:\n%s\n\nBitte einen anderen Ordner wählen.':
+         '此文件夹中没有 Setlist 文件：\n%s\n\n请选择其他文件夹。',
+        'Alle sind markiert — einzelne mit Klick abwählen.':
+         '已全部选中 —— 单击可取消选择。',
+        'betrifft Platz: %s':
+         '涉及位置：%s',
+        'Pegeländerung zurücknehmen':
+         '撤销电平改动',
+        'Es gibt noch keine Pegelprotokolle.':
+         '还没有电平记录。',
+        'Pegelprotokolle':
+         '电平记录',
+        'Welche Änderung soll zurückgenommen werden?':
+         '要撤销哪一次改动？',
+        'Erst ein Protokoll markieren.':
+         '请先选择一个记录。',
+        'Im Protokoll stehen keine Einträge.':
+         '记录中没有条目。',
+        'Ein Patch (Platz %s)':
+         '一个音色（位置 %s）',
+        '%d Patches':
+         '%d 个音色',
+        '%s aus diesem Protokoll werden umgekehrt:\n\n%s\n\nNur diese Patches werden vorher gesichert. Fortfahren?':
+         '将反转此记录中的 %s：\n\n%s\n\n只备份这些音色。继续吗？',
+        'Pegeländerung zurücknehmen …':
+         '撤销电平改动 …',
+        '  Trockenlauf — nichts geändert.':
+         '  试运行 —— 未做改动。',
+        '  Jetziger Stand gesichert: %s':
+         '  当前状态已备份：%s',
+        '  Einstellungen von Patch%d zurückgeholt.':
+         '  已恢复 %d 号音色的设置。',
+        'Patch%d: Name, Stoppart, Rhythmus und Wiedergabe kommen aus dieser Sicherung zurück:\n\n  %s\n\nDie Aufnahme bleibt unberührt — sie war in dieser Sicherung nicht enthalten.\nDer jetzige Stand wird vorher gesichert.':
+         '%d 号音色：名称、停止方式、节奏和播放方式将从该备份恢复：\n\n  %s\n\n录音不受影响 —— 该备份中不含录音。\n当前状态会事先备份。',
+        'Patch%d wird aus dieser Sicherung wiederhergestellt:\n\n  %s\n\nDamit lässt sich zum Beispiel ein Fade zurücknehmen.\nDer jetzige Stand wird vorher gesichert.':
+         '%d 号音色将从该备份恢复：\n\n  %s\n\n例如可以撤销淡出。\n当前状态会事先备份。',
+        'Patch%d zurückgeholt':
+         '已恢复 %d 号音色',
+        'Alle Patches werden auf gleiche Lautheit gebracht:\n\n  Ziel -18 dB Lautheit, Spitze höchstens -1 dB\n\nPatches, die schon passen, bleiben unangetastet. Nur die\nübrigen werden vorher gesichert und neu geschrieben.\n\nFortfahren?':
+         '所有音色统一到相同响度：\n\n  目标 −18 dB 响度，峰值最高 −1 dB\n\n已经合适的音色不改动。只对其余音色先备份再重写。\n\n继续吗？',
+        '  Nichts zu tun: alle Patches liegen bereits auf der Ziel-Lautheit.':
+         '  无需处理：所有音色都已达到目标响度。',
+        '  Ein Patch war schon auf Ziel und blieb unverändert.':
+         '  有一个音色已在目标电平，未改动。',
+        '  Schon auf Ziel: %d von %d Patches — unverändert gelassen.':
+         '  已在目标电平：%d / %d 个音色 —— 未改动。',
+        '  %d Patches waren schon auf Ziel und blieben unverändert.':
+         '  %d 个音色已在目标电平，未改动。',
+        'Blättern':
+         '翻页',
+        'Normierung zurücknehmen …':
+         '撤销标准化 …',
+        'auf −1 dB Spitze normalisieren':
+         '标准化到 −1 dB 峰值',
+        'Anhebung höchstens auf 0 dB':
+         '提升最多到 0 dB',
+        'Sicherungen verwalten …':
+         '管理备份 …',
+        'Lücken bei den Plätzen %s%s — „Lücken schließen“ rückt die folgenden Plätze nach vorn.':
+         '位置 %s%s 处有空缺 —— “补齐空位”会把后面的位置前移。',
+        'Zurücknehmen (letzter Schritt)':
+         '撤销（上一步）',
+        'Zurücknehmen':
+         '撤销',
+        'ältere markieren':
+         '标记更早的',
+        'Anderer Ordner …':
+         '其他文件夹 …',
+        'Neue Sicherung anlegen (alles sichern)':
+         '新建备份（全部）',
+        'Sicherungen …':
+         '备份 …',
+        'Ordner mit den Sicherungen':
+         '存放备份的文件夹',
+        'Sammelsicherung':
+         '救援备份',
+        'Rette':
+         '正在抢救',
+        'Es gibt keine unersetzlichen Patches.':
+         '没有不可替代的音色。',
+        '%d Patches wurden nach %s kopiert. Die Zuordnung steht dort in Rettung.txt. Jetzt lassen sich die alten Sicherungen löschen.':
+         '%d 个音色已复制到 %s。对应关系见其中的 Rettung.txt。现在可以删除旧的备份了。',
+        'Nur die unersetzlichen Patches retten':
+         '只抢救不可替代的音色',
+        '⟨%d Patch nur hier⟩':
+         '⟨仅此处有 %d 个音色⟩',
+        '%d markiert · %.1f MB':
+         '已标记 %d 项 · %.1f MB',
+        'nichts markiert':
+         '未标记任何项',
+        'Vorgabe: neueste 3 und letzte 7 Tage behalten':
+         '默认：保留最新 3 个和最近 7 天',
+        'Fertig. Ordner:\n%s':
+         '完成。文件夹：\n%s',
+        'Alte Sicherungen in diesem Ordner ansehen und löschen?':
+         '是否查看此文件夹中的旧备份并删除？',
+        'Lücke bei Platz %s%s — „Lücken schließen“ rückt die folgenden Plätze nach vorn.':
+         '位置 %s%s 处有空缺 —— “补齐空位”会把后面的位置前移。',
+        'Platz %s ist nicht belegt — die Liste hat eine Lücke.':
+         '位置 %s 未占用 —— 列表中有空缺。',
+        'Lücken schließen':
+         '补齐空位',
+        'Patch%d → Patch%d':
+         'Patch%d → Patch%d',
+        '%d Patches rücken nach vorn: %s%s\n\nDie Reihenfolge bleibt, nur die Platznummern ändern sich. Die Zuordnung wird vorher gesichert. Setlist-Dateien, die auf Platznummern zeigen, stimmen danach nicht mehr. Fortfahren?':
+         '%d 个音色前移：%s%s\n\n顺序不变，只有位置编号改变。对应关系会事先保存。引用位置编号的 Setlist 文件之后将不再匹配。继续吗？',
+        'Aufgerückt: %d Patches':
+         '已前移 %d 个音色',
+        'Sollen vorhandene Setlist-Dateien auf die neuen Platznummern umgeschrieben werden?':
+         '是否要把现有的 Setlist 文件改写为新的位置编号？',
+        'Ordner mit Setlist-Dateien':
+         '含 Setlist 文件的文件夹',
+        'Setlists angepaßt: %d Datei(en)':
+         'Setlist 已调整：%d 个文件',
+        'Fehler: Platz %d ist belegt (%s).':
+         '错误：位置 %d 已被占用（%s）。',
         'Beenden':
          '退出',
         'Dem Python fehlen die Zertifikate. Zwei Wege: im Python-Ordner „Install Certificates.command“ ausführen — oder „pip install certifi“ — oder die Datei von der Release-Seite von Hand laden.':
@@ -6663,8 +7239,29 @@ def sicher_ablegen(basis, patch_pfade, grund, wurzel=None):
 
 
 def zuruecknehmen_kandidaten(ordner, nummer):
-    """Sicherungen, die für diesen Platz eine Aufnahme enthalten,
-    die jüngste zuerst. Namen wie Sicherung_2026-11-10_11-46-24_vor_fade."""
+    """Sicherungen, die für diesen Platz eine Aufnahme enthalten, jüngste zuerst.
+
+    Zwei Bauformen kommen vor:
+      Sicherung_2026-11-15_17-53-02_vor_normieren/Patch02/…      (einzelne Patches)
+      JamManSicherung_2026-11-19_03-29/JamManSoloXT/Patch02/…    (ganze Karte)
+
+    Anlaß (19.11.2026): Nur die erste Form wurde gesucht. Nach dem Umkehren
+    bot „Zurücknehmen" deshalb eine vier Tage alte Sicherung an — die von heute
+    lag als Vollsicherung daneben und war unsichtbar. Sortiert wird jetzt nach
+    der Änderungszeit des Patch-Ordners, nicht nach dem Namen: „Sicherung_…"
+    und „JamManSicherung_…" sortieren sonst nicht chronologisch.
+    """
+    # Wird der Ordner EINER Sicherung übergeben (…/Sicherung_…_vor_fade),
+    # liegt der Patch direkt darin. Anlaß (19.11.2026): „Zurücknehmen" aus
+    # einer bestimmten Sicherung scheiterte, weil hier Unterordner erwartet
+    # wurden.
+    for form in ("Patch%02d" % nummer, "Patch%d" % nummer):
+        for k in (os.path.join(ordner, form),
+                  os.path.join(ordner, UNTERORDNER, form)):
+            if os.path.isdir(k) and (os.path.exists(os.path.join(k, "PhraseA", "phrase.wav"))
+                                     or os.path.exists(os.path.join(k, "patch.xml"))):
+                return [k]
+
     treffer = []
     try:
         namen = sorted(os.listdir(ordner), reverse=True)
@@ -6675,12 +7272,34 @@ def zuruecknehmen_kandidaten(ordner, nummer):
         # wurde - kein Ziel zum Wiederherstellen.
         if name.endswith("vor_zuruecknehmen"):
             continue
+        # Sammelsicherungen sind Archive, keine Undo-Punkte: in ihnen sind die
+        # Plätze neu durchnumeriert, ein „Patch02" dort ist nicht der Platz 2
+        # der Karte (19.11.2026).
+        if name.endswith("_rettung"):
+            continue
         for form in ("Patch%02d" % nummer, "Patch%d" % nummer):
-            k = os.path.join(ordner, name, form)
-            if os.path.isdir(k) and os.path.exists(os.path.join(k, "PhraseA", "phrase.wav")):
-                treffer.append(k)
-                break
-    return treffer
+            for k in (os.path.join(ordner, name, form),
+                      os.path.join(ordner, name, UNTERORDNER, form)):
+                if not os.path.isdir(k):
+                    continue
+                # Auch Sicherungen, die nur patch.xml und phrase.xml enthalten
+                # (Name, Stoppart, Wiedergabe/Rückwärts) sind Undo-Punkte —
+                # bisher fielen sie heraus, weil die Aufnahme fehlte. Anlaß
+                # (19.11.2026): Nach dem Umkehren bot „Zurücknehmen" deshalb
+                # eine alte Sicherung an.
+                if (os.path.exists(os.path.join(k, "PhraseA", "phrase.wav"))
+                        or os.path.exists(os.path.join(k, "patch.xml"))):
+                    try:
+                        wann = os.path.getmtime(k)
+                    except OSError:
+                        wann = 0
+                    treffer.append((wann, k))
+                    break
+            else:
+                continue
+            break
+    treffer.sort(key=lambda x: x[0], reverse=True)
+    return [k for _, k in treffer]
 
 
 def befehl_alle_normieren(basis, schreiben, ziel_rms_db=-18.0, grenze_db=-1.0,
@@ -6709,6 +7328,35 @@ def befehl_alle_normieren(basis, schreiben, ziel_rms_db=-18.0, grenze_db=-1.0,
         print()
         print(T("  Trockenlauf — nichts geändert. Mit --schreiben ausführen."))
         return
+
+    # Erst messen, dann sichern: Patches, die schon auf Ziel liegen, werden
+    # weder gesichert noch neu geschrieben (19.11.2026). Vorher wurde jeder
+    # WAV neu geschrieben und die ganze Karte gesichert, auch wenn sich nichts
+    # änderte — bei 35 Patches sind das 1,3 GB Sicherung für nichts.
+    zu_tun = []
+    schon_gut = 0
+    for nummer, name, pfad in alle:
+        w = phrase_wav(pfad)
+        if not w:
+            continue
+        spitze, rms = pegel_info(w)
+        if rms is None or rms <= -998:
+            continue
+        faktor = 10 ** ((ziel_rms_db - rms) / 20.0)
+        grenze = 32767.0 * (10 ** (grenze_db / 20.0))
+        if 32768.0 * (10 ** (spitze / 20.0)) * faktor > grenze:
+            faktor = grenze / (32768.0 * (10 ** (spitze / 20.0)))
+        if abs(20 * math.log10(faktor)) < 0.05:
+            schon_gut += 1
+            continue
+        zu_tun.append((nummer, name, pfad))
+    if schon_gut:
+        print(T("  Schon auf Ziel: %d von %d Patches — unverändert gelassen.")
+              % (schon_gut, len(alle)))
+    if not zu_tun:
+        print(T("  Nichts zu tun: alle Patches liegen bereits auf der Ziel-Lautheit."))
+        return 0, schon_gut
+    alle = zu_tun
 
     ziel = sicher_ablegen(basis, [pf for _, _, pf in alle], "vor_normieren", wurzel)
     print(T("  Sicherung: %s") % ziel)
@@ -6745,8 +7393,16 @@ def befehl_alle_normieren(basis, schreiben, ziel_rms_db=-18.0, grenze_db=-1.0,
     saeubere_karte(basis)
     schreibe_pegelprotokoll(basis, protokoll_eintraege, "alle_normieren", wurzel)
     print()
+    zusatz = ""
+    if schon_gut == 1:
+        zusatz = T("  Ein Patch war schon auf Ziel und blieb unverändert.")
+    elif schon_gut:
+        zusatz = T("  %d Patches waren schon auf Ziel und blieben unverändert.") % schon_gut
     print(T("  Fertig: %d Patches normiert, %d davon in der Spitze gedeckelt.")
           % (geaendert, gedeckelt))
+    if zusatz:
+        print(zusatz)
+    return geaendert, schon_gut
 
 
 def befehl_zuruecknehmen_alle(basis, aus, schreiben, wurzel=None):
@@ -6780,6 +7436,43 @@ def befehl_zuruecknehmen_alle(basis, aus, schreiben, wurzel=None):
                         dirs_exist_ok=True)
     saeubere_karte(basis)
     print(T("  Zurückgeholt. Der Zustand davor liegt in: %s") % ziel)
+
+
+def ist_einstellungssicherung(pfad):
+    """Enthält diese Sicherung nur Einstellungen (keine Aufnahme)?"""
+    return (os.path.isdir(pfad)
+            and not os.path.exists(os.path.join(pfad, "PhraseA", "phrase.wav"))
+            and os.path.exists(os.path.join(pfad, "patch.xml")))
+
+
+def befehl_zuruecknehmen_einstellungen(basis, nummer, schreiben, quelle, wurzel=None):
+    """Name, Stoppart, Rhythmus und Wiedergabe aus einer Sicherung zurückholen.
+
+    Die Aufnahme bleibt dabei unberührt — sie war in dieser Sicherung nicht
+    enthalten. Damit läßt sich zum Beispiel ein Rückwärts-Lauf zurücknehmen
+    (19.11.2026).
+    """
+    alle = dict((n, pf) for n, _, pf in patches(basis))
+    if nummer not in alle:
+        raise SystemExit(T("Fehler: Patch%d gibt es nicht.") % nummer)
+    ziel = alle[nummer]
+    print(T("  Sicherung: %s") % quelle)
+    if not schreiben:
+        print(T("  Trockenlauf — nichts geändert."))
+        return quelle
+    sicher_ablegen_settings = sicherung_der_einstellungen(
+        basis, ziel, "vor_zuruecknehmen", wurzel)
+    print(T("  Jetziger Stand gesichert: %s") % sicher_ablegen_settings)
+    import shutil as _shutil
+    for name in ("patch.xml", os.path.join("PhraseA", "phrase.xml")):
+        quelle_datei = os.path.join(quelle, name)
+        if os.path.exists(quelle_datei):
+            ziel_datei = os.path.join(ziel, name)
+            os.makedirs(os.path.dirname(ziel_datei), exist_ok=True)
+            _shutil.copy2(quelle_datei, ziel_datei)
+    print(T("  Einstellungen von Patch%d zurückgeholt.")
+          % nummer)
+    return quelle
 
 
 def befehl_zuruecknehmen(basis, nummer, schreiben, wurzel=None, aus=None):
@@ -6820,6 +7513,63 @@ def befehl_zuruecknehmen(basis, nummer, schreiben, wurzel=None, aus=None):
             shutil.copy2(q, z)
     saeubere_karte(basis)
     print(T("  Zurückgeholt. Der Zustand davor liegt in: %s") % ziel)
+
+
+def luecken_in(basis):
+    """Fehlende Platznummern zwischen 1 und dem letzten belegten Platz.
+
+    Anlaß (19.11.2026): Nach dem Löschen eines Platzes klafft eine Lücke, und
+    die Suche nach „10" findet nichts, weil der Ordnername Patch011 heißt.
+    Die Liste selbst wird NICHT umbenannt — das geschieht nur auf Knopfdruck
+    (plaetze_aufruecken_lokal), weil sich damit alle späteren Platznummern
+    ändern und gesicherte Setlists nicht mehr stimmen.
+    """
+    nummern = [n for n, _, _ in patches(basis)]
+    if not nummern:
+        return []
+    return [n for n in range(1, max(nummern) + 1) if n not in nummern]
+
+
+def stellenzahl(basis):
+    """Wie viele Ziffern die Ordnernamen haben (Patch011 → 3, Patch11 → 2)."""
+    for _, name, _ in patches(basis):
+        return len(name[5:])
+    return 2
+
+
+def aufruecken_zuege(basis):
+    """Welche Plätze wohin rücken: [(alt, neu)] in aufsteigender Reihenfolge."""
+    nummern = sorted(n for n, _, _ in patches(basis))
+    return [(alt, i) for i, alt in enumerate(nummern, 1) if i != alt]
+
+
+def plaetze_aufruecken_lokal(basis, zuege=None, wurzel=None):
+    """Belegte Plätze lückenlos nach vorn ziehen — auf der Karte im Leser.
+
+    Die Stellenzahl der Ordnernamen bleibt erhalten (Patch011 → Patch010,
+    nicht Patch10): das Pedal und JamManager XT arbeiten mit den vorhandenen
+    Namen, und ein Wechsel des Schemas hat am 26.10.2026 die Karte unlesbar
+    gemacht. Vorher wird die Zuordnung als Textdatei gesichert.
+
+    Rückgabe: die ausgeführten Züge [(alt, neu)].
+    """
+    if zuege is None:
+        zuege = aufruecken_zuege(basis)
+    if not zuege:
+        return []
+    breite = stellenzahl(basis)
+    sicherung_der_namen(basis, "vor_aufruecken", wurzel)
+    for alt, neu in zuege:
+        alt_pfad = os.path.join(basis, "Patch%0*d" % (breite, alt))
+        neu_pfad = os.path.join(basis, "Patch%0*d" % (breite, neu))
+        if os.path.exists(neu_pfad) and neu != alt:
+            raise SystemExit(T("Fehler: Platz %d ist belegt (%s).") % (neu, neu_pfad))
+        os.rename(alt_pfad, neu_pfad)
+    try:
+        saeubere_karte(basis)
+    except Exception:
+        pass
+    return zuege
 
 
 def befehl_platzieren(basis, von, auf, schreiben, wurzel=None):
@@ -8399,9 +9149,16 @@ def _sicherungs_laeufe(ziel):
     laeufe = []
     if not ziel or not os.path.isdir(ziel):
         return laeufe
+    # Nur was nach einer Sicherung aussieht. Anlaß (19.11.2026): Landete eine
+    # Sicherung versehentlich im Benutzerverzeichnis, zeigte der Aufräumdialog
+    # dort "Applications", "Documents" und so weiter — und hätte sie auf
+    # Wunsch gelöscht.
+    erkennbar = ("JamManSicherung_", "Sicherung_", "Hole_", "vor-ueberschreiben")
     for name in sorted(os.listdir(ziel)):
         pfad = os.path.join(ziel, name)
         if not os.path.isdir(pfad):
+            continue
+        if not name.startswith(erkennbar):
             continue
         try:
             laeufe.append((pfad, name, os.path.getmtime(pfad), _ordnergroesse(pfad)))
@@ -8411,7 +9168,396 @@ def _sicherungs_laeufe(ziel):
     return laeufe
 
 
-def fenster_aufraeumen(ziel, haupfenster):
+def unersetzliche_patches(laeufe):
+    """Wie viele Patches je Sicherung gibt es NUR in dieser Sicherung?
+
+    Anlaß (19.11.2026): „Gibt es eine Prüfung, welche Sicherung am wichtigsten
+    ist?" Die gibt es nicht — aber diese hier ist ehrlich meßbar: jeder Patch
+    trägt in seiner patch.xml eine Kennung (<ID>). Kommt eine Kennung in genau
+    einer Sicherung vor, ist sie anderswo nicht mehr zu holen.
+
+    Rückgabe: {Name der Sicherung: Anzahl einzigartiger Patches}. Gemessen an
+    53 Sicherungen: 0,1 Sekunden, weil nur die kleinen patch.xml gelesen werden.
+    """
+    import collections
+    import re as _re
+
+    kennungen = {}
+    for pfad, name, wann, groesse in laeufe:
+        gefunden = set()
+        for wurzel, ordner, dateien in os.walk(pfad):
+            if "patch.xml" not in dateien:
+                continue
+            try:
+                with open(os.path.join(wurzel, "patch.xml"), encoding="utf-8",
+                          errors="replace") as f:
+                    text = f.read(4000)
+            except OSError:
+                continue
+            treffer = _re.search(r"<ID>([^<]+)</ID>", text)
+            if treffer:
+                gefunden.add(treffer.group(1).strip())
+        kennungen[name] = gefunden
+
+    zaehler = collections.Counter()
+    for menge in kennungen.values():
+        zaehler.update(menge)
+    return dict((name, sum(1 for k in menge if zaehler[k] == 1))
+                for name, menge in kennungen.items())
+
+
+def sammelsicherung(ziel, laeufe, melden=None):
+    """Patches, die es nur in einer Sicherung gibt, in EINE Sicherung retten.
+
+    Anlaß (19.11.2026): 53 Sicherungen mit 20,9 GB, davon 13 mit Patches, die
+    es sonst nirgends gibt (797 MB). Statt alles zusammenzulegen — das wären
+    Gigabyte — werden nur die unersetzlichen Patches in einen neuen Ordner
+    kopiert. Danach sind die alten Sicherungen entbehrlich.
+
+    Rückgabe: (Pfad der neuen Sicherung, Anzahl geretteter Patches).
+    """
+    import re as _re
+    import shutil
+    sag = melden or (lambda text: None)
+
+    bestand = {}
+    for pfad, name, wann, groesse in laeufe:
+        for wurzel, ordner, dateien in os.walk(pfad):
+            if "patch.xml" not in dateien:
+                continue
+            try:
+                with open(os.path.join(wurzel, "patch.xml"), encoding="utf-8",
+                          errors="replace") as f:
+                    text = f.read(4000)
+            except OSError:
+                continue
+            treffer = _re.search(r"<ID>([^<]+)</ID>", text)
+            if treffer:
+                bestand.setdefault(treffer.group(1).strip(), []).append((pfad, wurzel))
+    einmalig = [quellen[0] for kennung, quellen in bestand.items() if len(quellen) == 1]
+    if not einmalig:
+        return "", 0
+
+    stempel = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    zielordner = freier_name(os.path.join(ziel, "JamManSicherung_%s_rettung" % stempel))
+    inhalt = os.path.join(zielordner, UNTERORDNER)
+    os.makedirs(inhalt, exist_ok=True)
+
+    zuordnung = ["Sammelsicherung vom %s" % datetime.now().strftime("%d.%m.%Y %H:%M"), ""]
+    anzahl = 0
+    for nummer, (quelldatei, patchpfad) in enumerate(einmalig, 1):
+        neu = "Patch%02d" % nummer
+        sag(T("Rette") + " %s -> %s" % (os.path.basename(patchpfad), neu))
+        shutil.copytree(patchpfad, os.path.join(inhalt, neu), dirs_exist_ok=True)
+        zuordnung.append("%s\t%s\t%s" % (neu, os.path.basename(patchpfad),
+                                          os.path.basename(quelldatei)))
+        anzahl += 1
+    try:
+        with open(os.path.join(zielordner, "Rettung.txt"), "w", encoding="utf-8") as f:
+            f.write("\n".join(zuordnung) + "\n")
+    except OSError:
+        pass
+    return zielordner, anzahl
+
+
+def setlistdateien_finden(ordner):
+    """Setlist-Dateien in einem Ordner: [(Pfad, Name, Anzahl Plätze)].
+
+    Eine Setlist ist eine Textdatei mit „PatchNN<TAB>Name" je Zeile. Gezählt
+    wird, wie viele Platz-Zeilen darin stehen — das ist die brauchbarste
+    Auskunft in einer Liste (19.11.2026).
+    """
+    import re as _re
+    muster = _re.compile(r"^Patch\d{1,3}(\s*\t.*)?$", _re.IGNORECASE)
+    treffer = []
+    try:
+        namen = sorted(os.listdir(ordner))
+    except OSError:
+        return treffer
+    for name in namen:
+        if not name.lower().endswith(".txt"):
+            continue
+        pfad = os.path.join(ordner, name)
+        if not os.path.isfile(pfad):
+            continue
+        try:
+            with open(pfad, encoding="utf-8", errors="replace") as f:
+                anzahl = sum(1 for zeile in f if muster.match(zeile.strip()))
+        except OSError:
+            anzahl = 0
+        if anzahl:
+            treffer.append((pfad, name, anzahl))
+    return treffer
+
+
+def fenster_setlists(zuege, haupfenster):
+    """Setlist-Dateien auflisten und die zu ändernden markieren.
+
+    Rückgabe: (Ordner, Anzahl geänderter Dateien) — oder ("", 0).
+    """
+    import tkinter as tk
+    from tkinter import messagebox
+
+    ordner = einstellung_lesen("usb_setlist_pfad") or os.path.expanduser("~")
+    while True:
+        dateien = setlistdateien_finden(ordner)
+        if not dateien:
+            messagebox.showinfo(
+                T("Setlists anpassen"),
+                T("In diesem Ordner liegen keine Setlist-Dateien:\n%s\n\n"
+                  "Bitte einen anderen Ordner wählen.") % ordner)
+            neu = ordner_waehlen(haupfenster, T("Ordner mit Setlist-Dateien"),
+                                 start=ordner)
+            if not neu or os.path.abspath(neu) == os.path.abspath(ordner):
+                return "", 0
+            ordner = neu
+            einstellung_schreiben("usb_setlist_pfad", ordner)
+            continue
+        break
+
+    f = tk.Toplevel(haupfenster)
+    f.title(T("Setlists anpassen"))
+    f.configure(bg=FARBE_HINTERGRUND)
+    f.geometry("620x430+%d+%d" % (haupfenster.winfo_rootx() + 60,
+                                  haupfenster.winfo_rooty() + 60))
+    try:
+        f.attributes("-topmost", True)
+    except Exception:
+        pass
+
+    tk.Label(f, text=T("Setlist-Dateien"), bg=FARBE_HINTERGRUND, fg=FARBE_SCHRIFT,
+             font=schrift(12, fest=True)).pack(pady=(12, 2))
+    tk.Label(f, text=ordner, bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+             font=schrift(9), wraplength=560).pack(pady=(0, 8))
+
+    rahmen = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    rahmen.pack(fill="both", expand=True, padx=16)
+    anzeige = tk.Listbox(rahmen, bg=FARBE_LISTE, fg=FARBE_SCHRIFT,
+                         selectbackground=FARBE_AUSWAHL, selectmode="extended",
+                         exportselection=False, font=schrift(10))
+    anzeige.pack(side="left", fill="both", expand=True)
+    roll = tk.Scrollbar(rahmen, command=anzeige.yview)
+    roll.pack(side="right", fill="y")
+    anzeige.config(yscrollcommand=roll.set)
+    for pfad, name, anzahl in dateien:
+        anzeige.insert("end", "%-40s %3d Plätze" % (name[:40], anzahl))
+    for i in range(len(dateien)):
+        anzeige.selection_set(i)
+
+    tk.Label(f, text=T("Alle sind markiert — einzelne mit Klick abwählen."),
+             bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+             font=schrift(9)).pack(pady=(6, 0))
+
+    zustand = {"ordner": "", "anzahl": 0}
+
+    def anpassen():
+        gewaehlt = [dateien[i][0] for i in anzeige.curselection()]
+        if not gewaehlt:
+            messagebox.showinfo(T("Hinweis"), T("Erst eine Datei markieren."),
+                                parent=f)
+            return
+        geaendert = 0
+        gesamt = 0
+        for datei in gewaehlt:
+            ergebnis = setlists_anpassen_eine(datei, zuege)
+            if ergebnis:
+                geaendert += 1
+                gesamt += ergebnis
+        zustand["ordner"] = ordner
+        zustand["anzahl"] = geaendert
+        messagebox.showinfo(
+            T("Setlists anpassen"),
+            T("%d Datei(en) angepasst, %d Zeile(n) umgeschrieben.")
+            % (geaendert, gesamt), parent=f)
+        f.destroy()
+
+    def anderer_ordner():
+        neu = ordner_waehlen(f, T("Ordner mit Setlist-Dateien"), start=ordner)
+        if neu:
+            einstellung_schreiben("usb_setlist_pfad", neu)
+            zustand["ordner"] = neu
+            f.destroy()
+            zustand["neu"] = True
+
+    knopfreihe = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    knopfreihe.pack(fill="x", padx=16, pady=(10, 12))
+    tk.Button(knopfreihe, text=T("Anpassen"), command=anpassen).pack(side="right")
+    tk.Button(knopfreihe, text=T("Abbrechen"),
+              command=f.destroy).pack(side="right", padx=(0, 8))
+    tk.Button(knopfreihe, text=T("Anderer Ordner …"),
+              command=anderer_ordner).pack(side="left")
+    anzeige.bind("<Return>", lambda e: anpassen())
+    f.bind("<Escape>", lambda e: f.destroy())
+    f.wait_window()
+    if zustand.get("neu"):
+        return fenster_setlists(zuege, haupfenster)
+    return zustand["ordner"], zustand["anzahl"]
+
+
+def setlists_anpassen_eine(pfad, zuege, stempel=None):
+    """Setlist-Datei umschreiben, vorher sichern. Rückgabe: geänderte Zeilen."""
+    import re as _re
+
+    zuordnung = {"Patch%02d" % alt: "Patch%02d" % neu for alt, neu in zuege}
+    muster = _re.compile(r"^(Patch\d{1,3})(\s*\t.*)?$", _re.IGNORECASE)
+    try:
+        with open(pfad, encoding="utf-8") as fp:
+            zeilen = fp.read().splitlines()
+    except OSError:
+        return 0
+    neu_zeilen, anzahl = [], 0
+    for zeile in zeilen:
+        treffer = muster.match(zeile)
+        if treffer:
+            alt = treffer.group(1)
+            schluessel = "Patch%02d" % int(alt[5:])
+            if schluessel in zuordnung:
+                neu_zeilen.append(zuordnung[schluessel] + (treffer.group(2) or ""))
+                anzahl += 1
+                continue
+        neu_zeilen.append(zeile)
+    if not anzahl:
+        return 0
+    stempel = stempel or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    try:
+        import shutil as _shutil
+        _shutil.copy2(pfad, pfad + ".gesichert-" + stempel)
+        with open(pfad, "w", encoding="utf-8") as fp:
+            fp.write("\n".join(neu_zeilen) + "\n")
+    except OSError:
+        return 0
+    return anzahl
+
+
+def pegelprotokolle_auflisten(ordner):
+    """Alle Pegelprotokolle im Sicherungsordner, neueste zuerst.
+
+    Rückgabe: [(Pfad, Anlaß, Zeitpunkt, Anzahl Einträge)]. Der Name enthält
+    Datum und Anlaß: Pegelprotokoll_2026-11-19_04-08-34_alle_normieren.txt
+    """
+    import re as _re
+    import time as _zeit
+    treffer = []
+    try:
+        namen = os.listdir(ordner)
+    except OSError:
+        return treffer
+    muster = _re.compile(r"^Pegelprotokoll_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})_(.+)\.txt$")
+    for name in namen:
+        t = muster.match(name)
+        if not t:
+            continue
+        pfad = os.path.join(ordner, name)
+        try:
+            with open(pfad, encoding="utf-8", errors="replace") as f:
+                anzahl = sum(1 for zeile in f
+                             if zeile.strip() and not zeile.startswith("#") and "\t" in zeile)
+        except OSError:
+            anzahl = 0
+        try:
+            wann = _zeit.mktime(_zeit.strptime("%s %s" % (t.group(1), t.group(2)),
+                                               "%Y-%m-%d %H-%M-%S"))
+        except ValueError:
+            wann = 0
+        treffer.append((pfad, t.group(3).replace("_", " "), wann, anzahl))
+    treffer.sort(key=lambda x: x[2], reverse=True)
+    return treffer
+
+
+def fenster_pegelprotokolle(ordner, haupfenster):
+    """Protokolle auflisten und eines auswählen. Rückgabe: Pfad oder ""."""
+    import tkinter as tk
+    from tkinter import messagebox
+    import time as _zeit
+
+    protokolle = pegelprotokolle_auflisten(ordner)
+    if not protokolle:
+        messagebox.showinfo(T("Pegeländerung zurücknehmen"),
+                            T("Es gibt noch keine Pegelprotokolle."))
+        return ""
+
+    f = tk.Toplevel(haupfenster)
+    f.title(T("Pegeländerung zurücknehmen"))
+    f.configure(bg=FARBE_HINTERGRUND)
+    f.geometry("660x460+%d+%d" % (haupfenster.winfo_rootx() + 60,
+                                  haupfenster.winfo_rooty() + 60))
+    try:
+        f.attributes("-topmost", True)
+    except Exception:
+        pass
+
+    tk.Label(f, text=T("Pegelprotokolle"), bg=FARBE_HINTERGRUND,
+             fg=FARBE_SCHRIFT, font=schrift(12, fest=True)).pack(pady=(12, 2))
+    tk.Label(f, text=T("Welche Änderung soll zurückgenommen werden?"),
+             bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+             font=schrift(10)).pack(pady=(0, 8))
+
+    rahmen = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    rahmen.pack(fill="both", expand=True, padx=16)
+    anzeige = tk.Listbox(rahmen, bg=FARBE_LISTE, fg=FARBE_SCHRIFT,
+                         selectbackground=FARBE_AUSWAHL, exportselection=False,
+                         font=schrift(10))
+    anzeige.pack(side="left", fill="both", expand=True)
+    roll = tk.Scrollbar(rahmen, command=anzeige.yview)
+    roll.pack(side="right", fill="y")
+    anzeige.config(yscrollcommand=roll.set)
+
+    for i, (pfad, anlass, wann, anzahl) in enumerate(protokolle):
+        marke = "  ← neueste" if i == 0 else ""
+        anzeige.insert("end", "%s   %-22s %3d Patches%s" % (
+            _zeit.strftime("%d.%m.%Y %H:%M", _zeit.localtime(wann)),
+            anlass[:22], anzahl, marke))
+    anzeige.selection_set(0)
+
+    # Zeile darunter: welche Patches würde die markierte Zeile treffen?
+    # (Wunsch nach größtem Bedienkomfort, 19.11.2026.)
+    vorschau = tk.StringVar(value="")
+    def vorschau_zeigen(*_):
+        gewaehlt = anzeige.curselection()
+        if not gewaehlt:
+            vorschau.set("")
+            return
+        pfad = protokolle[gewaehlt[0]][0]
+        try:
+            eintraege = lies_pegelprotokoll(pfad)
+        except Exception:
+            eintraege = []
+        namen = [e["ordner"].replace("Patch", "") for e in eintraege]
+        if len(namen) <= 8:
+            text = ", ".join(namen)
+        else:
+            text = ", ".join(namen[:8]) + " …"
+        vorschau.set(T("betrifft Platz: %s") % text if namen else "")
+    anzeige.bind("<<ListboxSelect>>", vorschau_zeigen)
+    vorschau_zeigen()
+    tk.Label(f, textvariable=vorschau, bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+             font=schrift(9), wraplength=600).pack(pady=(6, 0))
+    anzeige.focus_set()
+    f.bind("<Escape>", lambda e: f.destroy())
+
+    wahl = {"pfad": ""}
+
+    def uebernehmen(*_):
+        gewaehlt = anzeige.curselection()
+        if not gewaehlt:
+            messagebox.showinfo(T("Hinweis"),
+                                T("Erst ein Protokoll markieren."), parent=f)
+            return
+        wahl["pfad"] = protokolle[gewaehlt[0]][0]
+        f.destroy()
+
+    knopfreihe = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    knopfreihe.pack(fill="x", padx=16, pady=(8, 12))
+    tk.Button(knopfreihe, text=T("Zurücknehmen"), command=uebernehmen).pack(side="right")
+    tk.Button(knopfreihe, text=T("Abbrechen"),
+              command=f.destroy).pack(side="right", padx=(0, 8))
+    anzeige.bind("<Double-Button-1>", uebernehmen)
+    anzeige.bind("<Return>", uebernehmen)
+    f.wait_window()
+    return wahl["pfad"]
+
+
+def fenster_aufraeumen(ziel, haupfenster, sichern=None):
     """Sicherungen im Zielordner ansehen und alte löschen.
 
     Anlaß (16.11.2026): Mit jedem Hole-Lauf wächst der Zielordner; nach
@@ -8445,6 +9591,29 @@ def fenster_aufraeumen(ziel, haupfenster):
 
     tk.Label(f, text=T("Sicherungen im Zielordner"), bg=FARBE_HINTERGRUND,
              fg=FARBE_SCHRIFT, font=schrift(12, fest=True)).pack(pady=(12, 2))
+
+    # Sichern und Aufräumen an einer Stelle (19.11.2026): Vorher gab es zwei
+    # Knöpfe im Hauptfenster; jetzt führt einer hierher, und das Anlegen einer
+    # neuen Sicherung sitzt direkt daneben.
+    def anderer_ordner():
+        neu = ordner_waehlen(f, T("Ordner mit den Sicherungen"), start=ziel)
+        if not neu or os.path.abspath(neu) == os.path.abspath(ziel):
+            return
+        einstellung_schreiben("sicherung_pfad", neu)
+        f.destroy()
+        fenster_aufraeumen(neu, haupfenster, sichern)
+
+    tk.Button(f, text=T("Anderer Ordner …"), command=anderer_ordner).pack(pady=(0, 8))
+
+    if sichern is not None:
+        def neu_sichern():
+            try:
+                sichern()
+            finally:
+                f.destroy()
+                fenster_aufraeumen(ziel, haupfenster, sichern)
+        tk.Button(f, text=T("Neue Sicherung anlegen (alles sichern)"),
+                  command=neu_sichern).pack(pady=(0, 8))
     tk.Label(f, text=ziel, bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
              font=schrift(9), wraplength=660).pack(pady=(0, 8))
 
@@ -8460,10 +9629,13 @@ def fenster_aufraeumen(ziel, haupfenster):
     anzeige.config(yscrollcommand=roll.set)
 
     import time as _zeit
+    einzigartig = unersetzliche_patches(laeufe)
     for pfad, name, wann, groesse in laeufe:
         zusatz = ""
         if name == "vor-ueberschreiben":
             zusatz = "   " + T("(für Rückgängig nötig)")
+        if einzigartig.get(name):
+            zusatz += "   " + T("⟨%d Patch nur hier⟩") % einzigartig[name]
         anzeige.insert("end", "%s   %s   %6.1f MB%s" %
                        (_zeit.strftime("%d.%m.%Y %H:%M", _zeit.localtime(wann)),
                         name[:28], groesse / 1048576.0, zusatz))
@@ -8474,17 +9646,70 @@ def fenster_aufraeumen(ziel, haupfenster):
     kopf.pack(pady=(6, 2))
 
     def markieren_neueste(n):
+        """Alles markieren AUSSER den neuesten n.
+
+        Anlaß (19.11.2026): Die Knöpfe „Neueste behalten: 1 2 3 5" markierten
+        die neuesten n — und markiert heißt in diesem Dialog „löschen". Wer
+        „3" drückte, hätte also die drei neuesten Sicherungen gelöscht.
+        """
         anzeige.selection_clear(0, "end")
-        for i in range(min(n, anzeige.size())):
+        for i in range(min(n, anzeige.size()), anzeige.size()):
             anzeige.selection_set(i)
 
     zeile = tk.Frame(f, bg=FARBE_HINTERGRUND)
     zeile.pack(fill="x", padx=16, pady=(4, 0))
+    marke_var = tk.StringVar(value="")
+    def zaehlen(*_):
+        indizes = list(anzeige.curselection())
+        menge = sum(laeufe[i][3] for i in indizes) / 1048576.0
+        marke_var.set(T("%d markiert · %.1f MB") % (len(indizes), menge) if indizes
+                      else T("nichts markiert"))
+
+    # Eine Zahl statt vier fester Knöpfe (19.11.2026): „1 2 3 5" war eine
+    # willkürliche Staffel, und 4 fehlte. Jetzt steht dort, wie viele
+    # Sicherungen bleiben sollen — jede Zahl ist möglich.
     tk.Label(zeile, text=T("Neueste behalten:"), bg=FARBE_HINTERGRUND,
              fg=FARBE_SCHRIFT).pack(side="left")
-    for n in (1, 2, 3, 5):
-        tk.Button(zeile, text=str(n), width=3,
-                  command=lambda n=n: markieren_neueste(n)).pack(side="left", padx=2)
+    behalten_var = tk.StringVar(value="3")
+    behalten_feld = tk.Spinbox(zeile, from_=1, to=max(1, len(laeufe)),
+                               width=4, justify="center", textvariable=behalten_var,
+                               bg="#ffffff", fg="#000000", relief="solid",
+                               borderwidth=1, font=schrift(11))
+    behalten_feld.pack(side="left", padx=(4, 6))
+
+    def aeltere_markieren():
+        try:
+            n = int(behalten_var.get())
+        except (TypeError, ValueError):
+            n = 3
+        markieren_neueste(max(0, n))
+        zaehlen()
+
+    tk.Button(zeile, text=T("ältere markieren"),
+              command=aeltere_markieren).pack(side="left")
+
+    # Vorgabe für „was bleibt": die neuesten drei und alles aus den letzten
+    # sieben Tagen. Sie markiert die übrigen — gelöscht wird erst nach der
+    # Rückfrage.
+    def vorgabe():
+        import time as _zeit
+        grenze = _zeit.time() - 7 * 24 * 3600
+        anzeige.selection_clear(0, "end")
+        for i, (pfad, name, wann, groesse) in enumerate(laeufe):
+            if i < 3 or wann >= grenze:
+                continue
+            if einzigartig.get(name):
+                # Hier liegen Patches, die es sonst nirgends gibt — die
+                # Vorgabe läßt sie stehen (19.11.2026).
+                continue
+            anzeige.selection_set(i)
+        zaehlen()
+
+    tk.Button(zeile, text=T("Vorgabe: neueste 3 und letzte 7 Tage behalten"),
+              command=vorgabe).pack(side="left", padx=(12, 2))
+    anzeige.bind("<<ListboxSelect>>", zaehlen)
+    tk.Label(f, textvariable=marke_var, bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+             font=schrift(9)).pack(pady=(4, 0))
 
     def loeschen():
         indizes = list(anzeige.curselection())
@@ -8520,6 +9745,24 @@ def fenster_aufraeumen(ziel, haupfenster):
                                    T("%d Sicherungen konnten nicht gelöscht werden.") % fehler)
         f.destroy()
         fenster_aufraeumen(ziel, haupfenster)
+
+    def retten():
+        ziel_neu, anzahl = sammelsicherung(ziel, laeufe, melden=print)
+        if not anzahl:
+            messagebox.showinfo(T("Sammelsicherung"),
+                                T("Es gibt keine unersetzlichen Patches."))
+            return
+        messagebox.showinfo(
+            T("Sammelsicherung"),
+            T("%d Patches wurden nach %s kopiert. Die Zuordnung steht dort in "
+              "Rettung.txt. Jetzt lassen sich die alten Sicherungen löschen.")
+            % (anzahl, ziel_neu))
+        f.destroy()
+        fenster_aufraeumen(ziel, haupfenster)
+
+    if any(einzigartig.get(name) for _, name, _, _ in laeufe):
+        tk.Button(f, text=T("Nur die unersetzlichen Patches retten"),
+                  command=retten).pack(pady=(10, 2))
 
     tk.Button(f, text=T("Markierte löschen"), command=loeschen).pack(pady=(10, 4))
     tk.Button(f, text=T("Schließen"), command=f.destroy).pack(pady=(0, 12))
@@ -8660,6 +9903,14 @@ def datei_auswahl(haupfenster, titel, muster, start=None, nur_ordner=False,
         gewaehlt = datei_liste.curselection()
         if gewaehlt:
             pfad_var.set(os.path.join(fenster.pfad, datei_liste.get(gewaehlt[0])))
+            return
+        # Ein markierter ORDNER soll ebenfalls sichtbar sein — sonst weiß man
+        # nicht, was „Öffnen" gerade nehmen wird (19.11.2026).
+        gewaehlt = ordner_liste.curselection()
+        if gewaehlt:
+            name = ordner_liste.get(gewaehlt[0]).rstrip("/")
+            if name != "..":
+                pfad_var.set(os.path.join(fenster.pfad, name))
 
     name_eingabe = None
     if vorgabe_name is not None:
@@ -8689,6 +9940,19 @@ def datei_auswahl(haupfenster, titel, muster, start=None, nur_ordner=False,
             fenster.destroy()
             return
         if nur_ordner:
+            # Anlaß (19.11.2026): Wer im Ordnerdialog „JamMan-Sicherung"
+            # markierte und „Öffnen" drückte, bekam das Benutzerverzeichnis —
+            # der Dialog gab immer den offenen Ordner zurück. Jetzt gilt:
+            # markierter Ordner → dieser; nichts markiert → der offene.
+            gewaehlt = ordner_liste.curselection()
+            if gewaehlt:
+                name = ordner_liste.get(gewaehlt[0]).rstrip("/")
+                if name != "..":
+                    ziel = os.path.join(fenster.pfad, name)
+                    if os.path.isdir(ziel):
+                        wahl["pfad"] = ziel
+                        fenster.destroy()
+                        return
             wahl["pfad"] = fenster.pfad
             fenster.destroy()
             return
@@ -8709,6 +9973,7 @@ def datei_auswahl(haupfenster, titel, muster, start=None, nur_ordner=False,
     tk.Button(leiste, text=T("Abbrechen"),
               command=fenster.destroy).pack(side="right", padx=(0, 8))
 
+    ordner_liste.bind("<<ListboxSelect>>", markiere)
     ordner_liste.bind("<Double-Button-1>", hinein)
     ordner_liste.bind("<Return>", hinein)
     datei_liste.bind("<<ListboxSelect>>", markiere)
@@ -10609,6 +11874,14 @@ def gui(karte):
     fenster = tk.Tk()
     fenster.minsize(1000, 720)
     fenster.configure(bg=FARBE_HINTERGRUND)
+    # Größe und Lage merken (19.11.2026): Wer das Fenster auf seinen Bildschirm
+    # zieht, soll das nicht bei jedem Start wieder tun.
+    _geo = einstellung_lesen("fenster_geometrie")
+    if _geo and "x" in _geo:
+        try:
+            fenster.geometry(_geo)
+        except Exception:
+            pass
 
     # Ohne Karte: kein Dialog mehr. Früher fragte eine Meldung „Ordner selbst
     # wählen?" — auf Linux war das der erste Bildschirm, obwohl das Pedal per
@@ -10887,7 +12160,11 @@ def gui(karte):
              font=schrift(11)).pack(side="left")
     SORTIERUNG = [("Ordner", "ordner"), ("Name", "name"),
                   ("Dauer", "dauer"), ("Länge", "laenge")]
-    sort_var = tk.StringVar(value="ordner")
+    # Zuletzt benutzte Sortierung (19.11.2026).
+    _sortierung = einstellung_lesen("sortierung") or "ordner"
+    if _sortierung not in ("ordner", "name", "dauer", "laenge"):
+        _sortierung = "ordner"
+    sort_var = tk.StringVar(value=_sortierung)
     sort_menue = tk.OptionMenu(such_zeile, sort_var,
                                *[b for b, _ in SORTIERUNG])
     sort_menue.config(bg=FARBE_LISTE, fg=FARBE_SCHRIFT, relief="flat",
@@ -10915,7 +12192,13 @@ def gui(karte):
     # stattdessen als markierte Zeile "hier ablegen" eingeblendet.
     ZEILE_H = 24
     such_var.trace_add("write", lambda *a: zeilen_anwenden())
-    sort_var.trace_add("write", lambda *a: zeilen_anwenden())
+    def sortierung_wechseln(*_):
+        zeilen_anwenden()
+        try:
+            einstellung_schreiben("sortierung", sort_var.get())
+        except Exception:
+            pass
+    sort_var.trace_add("write", sortierung_wechseln)
 
     liste = tk.Listbox(rahmen, font=schrift(13),
                        background="#ffffff", foreground="#000000",
@@ -10978,6 +12261,12 @@ def gui(karte):
                    activebackground=FARBE_HINTERGRUND,
                    activeforeground=FARBE_SCHRIFT,
                    selectcolor=FARBE_HINTERGRUND).pack(side="left", padx=(0, 14))
+    # Voreinstellungen und Blättern sind zwei verschiedene Dinge; ein
+    # Trenner und die Überschrift „Blättern" machen das sichtbar (19.11.2026).
+    tk.Frame(zeile_unten, width=1, bg=FARBE_LEISE).pack(side="left", fill="y",
+                                                       padx=10, pady=4)
+    tk.Label(zeile_unten, text=T("Blättern") + ":", bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE, font=schrift(10)).pack(side="left", padx=(0, 6))
     tk.Label(zeile_unten, text=T("Platz"), bg=FARBE_HINTERGRUND,
              fg=FARBE_LEISE).pack(side="left", padx=(10, 2))
     platz_eingabe = tk.Entry(zeile_unten, width=4, justify="center",
@@ -11005,6 +12294,56 @@ def gui(karte):
               command=lambda: seite(-1)).pack(side="left", padx=2)
     tk.Button(zeile_unten, text="▼ 5", width=4,
               command=lambda: seite(1)).pack(side="left", padx=2)
+
+    # Aufräumen auch ohne vorheriges Sichern erreichbar (19.11.2026):
+    # Der Dialog war nur nach „Alles sichern" und im USB-Fenster zu finden.
+    def sicherungen_aufraeumen():
+        """Sicherungsordner: gemerkt, sonst ~/JamMan-Sicherung (wird angelegt).
+
+        Gefragt wird nur, wenn der gemerkte Ordner nicht mehr da ist und sich
+        auch der Standardordner nicht anlegen läßt (19.11.2026).
+        """
+        ziel = einstellung_lesen("sicherung_pfad")
+        if not ziel:
+            ziel = os.path.join(os.path.expanduser("~"), "JamMan-Sicherung")
+            try:
+                os.makedirs(ziel, exist_ok=True)
+            except OSError:
+                pass
+        if not os.path.isdir(ziel):
+            ziel = ordner_waehlen(fenster, T("Ordner mit den Sicherungen"))
+            if not ziel:
+                return
+            einstellung_schreiben("sicherung_pfad", ziel)
+        def jetzt_sichern():
+            if not zustand["basis"]:
+                messagebox.showinfo(T("Hinweis"), T("Erst eine Karte wählen."))
+                return
+            befehl_sichern(zustand["basis"], ziel, True)
+            messagebox.showinfo(T("Sicherung"),
+                                T("Fertig. Ordner:\n%s") % ziel)
+
+        fenster_aufraeumen(ziel, fenster, sichern=jetzt_sichern)
+
+
+    # Tastenkürzel für die häufigsten Wege (19.11.2026). Cmd auf dem Mac,
+    # Strg auf Windows und Linux — beide Namen werden gebunden, das schadet
+    # auf keinem System.
+    def _kuerzel():
+        for taste, befehl in (("o", karte_waehlen),
+                              ("s", sicherungen_aufraeumen),
+                              ("r", neu_laden),
+                              ("f", suchen_dialog),
+                              ("l", lambda: luecken_schliessen())):
+            for mod in ("Command", "Control"):
+                try:
+                    fenster.bind("<%s-%s>" % (mod, taste), lambda e, b=befehl: b())
+                except Exception:
+                    pass
+    # Erst binden, wenn das Fenster läuft: die meisten Ziele (karte_waehlen,
+    # suchen_dialog, luecken_schliessen) werden weiter unten in dieser Funktion
+    # definiert (19.11.2026).
+    fenster.after(50, _kuerzel)
 
     basis_aktuell = basis
     zustand = {"basis": basis, "nummern": [], "spieler": None,
@@ -11056,10 +12395,20 @@ def gui(karte):
             return
         muster = such_var.get().strip().lower()
         art = sort_var.get()
+        # Nenner ist die Zahl der Patches, nicht der Zeilen: Hinweiszeilen
+        # zählten sonst mit („1 von 12" bei 11 Patches, 19.11.2026).
+        _anzahl_patches = sum(1 for z in alle if z.get("nummer") is not None)
         zeilen = [z for z in alle if z.get("nummer") is not None]
         hinweise = [z for z in alle if z.get("nummer") is None]
         if muster:
-            zeilen = [z for z in zeilen if muster in z["text"].lower()]
+            if muster.isdigit():
+                # „10“ soll Platz 10 finden — der Ordnername heißt Patch010
+                # und enthält die Ziffernfolge „10“ nur zufällig (19.11.2026).
+                zeilen = [z for z in zeilen
+                          if muster in z["text"].lower()
+                          or str(z.get("nummer", "")).startswith(muster)]
+            else:
+                zeilen = [z for z in zeilen if muster in z["text"].lower()]
         if art == "Name":
             zeilen.sort(key=lambda z: (z.get("name") or "").lower())
         elif art == "Dauer":
@@ -11070,9 +12419,14 @@ def gui(karte):
         rest = [] if muster else hinweise
         anzeige = zeilen + rest
         if muster:
-            anzeige = anzeige + [{"text": "  " + T("%d von %d Patches passen "
-                                                  "zu „%s“.")
-                                  % (len(zeilen), len(alle), muster)}]
+            if muster.isdigit() and not zeilen:
+                anzeige = anzeige + [{"text": "  " + T("Platz %s ist nicht belegt "
+                                                       "— die Liste hat eine Lücke.")
+                                      % muster}]
+            else:
+                anzeige = anzeige + [{"text": "  " + T("%d von %d Patches passen "
+                                                      "zu „%s“.")
+                                      % (len(zeilen), _anzahl_patches, muster)}]
         liste_setzen(anzeige)
         if muster:
             print("  Suche: %d von %d Patches" % (
@@ -11443,6 +12797,21 @@ def gui(karte):
                                             "Beschreibung ist geholt.") % ohne_ton})
         zustand["alle"] = zeilen
         zeilen_anwenden()
+        # Lücken sichtbar machen (19.11.2026): Die Liste benennt nicht um —
+        # sie sagt nur, wo eine Platznummer fehlt, und wie man sie schließt.
+        try:
+            luecken = luecken_in(zustand["basis"]) if zustand.get("basis") else []
+            if luecken:
+                anzeige_luecken = ", ".join(str(n) for n in luecken[:6])
+                mehr = " …" if len(luecken) > 6 else ""
+                schluessel = ("Lücke bei Platz %s%s — „Lücken schließen“ "
+                              "rückt die folgenden Plätze nach vorn."
+                              if len(luecken) == 1 else
+                              "Lücken bei den Plätzen %s%s — „Lücken schließen“ "
+                              "rückt die folgenden Plätze nach vorn.")
+                status_var.set(T(schluessel) % (anzeige_luecken, mehr))
+        except Exception:
+            pass
         if zustand["nummern"]:
             fenster.title(T("JamMan Card Tool") + " — %s (%d)" % (
                 T("Karte und interner Speicher"), len(zustand["nummern"])))
@@ -11864,7 +13233,8 @@ def gui(karte):
         zustand["abschnitte"] = []
         datei, abschnitte = (None, [])
         if weiter_var.get() or zustand.get("vorgemerkt"):
-            datei, abschnitte = kette_bauen(n, 0.0, zustand.get("vorgemerkt"))
+            with _Zeit("Kette bauen (Weiterspielen)"):
+                datei, abschnitte = kette_bauen(n, 0.0, zustand.get("vorgemerkt"))
         if datei:
             zustand["spieler"] = abspielen_datei(datei)
             zustand["temp"] = datei
@@ -11962,11 +13332,27 @@ def gui(karte):
         if not zustand["basis"]:
             messagebox.showinfo(T("Hinweis"), T("Erst eine Karte wählen."))
             return
-        ziel = ordner_waehlen(fenster, T("Zielordner für die Sicherung"))
+        # Vorgabe: zuletzt benutzter Ordner, sonst ~/JamMan-Sicherung
+        # (19.11.2026: „der Standardordner als Vorgabe wäre gut").
+        vorgabe = einstellung_lesen("sicherung_pfad")
+        if not vorgabe:
+            vorgabe = os.path.join(os.path.expanduser("~"), "JamMan-Sicherung")
+            try:
+                os.makedirs(vorgabe, exist_ok=True)
+            except OSError:
+                vorgabe = os.path.expanduser("~")
+        ziel = ordner_waehlen(fenster, T("Zielordner für die Sicherung"), start=vorgabe)
         if not ziel:
             return
         befehl_sichern(zustand["basis"], ziel, True)
-        messagebox.showinfo(T("Sicherung"), "Fertig. Ordner:\n%s" % ziel)
+        einstellung_schreiben("sicherung_pfad", ziel)
+        messagebox.showinfo(T("Sicherung"), T("Fertig. Ordner:\n%s") % ziel)
+        # Gleich aufräumen anbieten — direkt nach dem Sichern ist der
+        # Augenblick, in dem man alte Stände wegwerfen will.
+        if frage_ja_nein(fenster, T("Sicherungen aufräumen"),
+                         T("Alte Sicherungen in diesem Ordner ansehen und "
+                           "löschen?")):
+            fenster_aufraeumen(ziel, fenster)
 
     def umbenennen():
         """Namen des gewählten Patches ändern."""
@@ -12007,18 +13393,42 @@ def gui(karte):
                 % (n, ordner))
             return
         quelle = kandidaten[0]
-        name = os.path.basename(os.path.dirname(quelle))
-        stand = name.replace("Sicherung_", "").replace("_", " ")
-        if not frage_ja_nein(fenster, "Sicherung zurückholen",
-                "Patch%d wird aus dieser Sicherung wiederhergestellt:\n\n"
-                "  %s\n\n"
-                "Damit lässt sich zum Beispiel ein Fade zurücknehmen.\n"
-                "Der jetzige Stand wird vorher gesichert." % (n, stand)):
+        # Bei einer Vollsicherung liegt der Patch eine Ebene tiefer
+        # (…/JamManSicherung_…/JamManSoloXT/Patch02) — dann ist der Name des
+        # Sicherungsordners eine Ebene höher (19.11.2026).
+        ordner_der_sicherung = os.path.dirname(quelle)
+        if os.path.basename(ordner_der_sicherung) == UNTERORDNER:
+            ordner_der_sicherung = os.path.dirname(ordner_der_sicherung)
+        name = os.path.basename(ordner_der_sicherung)
+        # Reihenfolge beachten: „JamManSicherung_" enthält „Sicherung_",
+        # sonst bliebe „JamMan2026-…" übrig (19.11.2026).
+        stand = name.replace("JamManSicherung_", "").replace("Sicherung_", "")
+        stand = stand.replace("_", " ")
+        nur_einstellungen = ist_einstellungssicherung(quelle)
+        if nur_einstellungen:
+            frage = T("Patch%d: Name, Stoppart, Rhythmus und Wiedergabe kommen "
+                      "aus dieser Sicherung zurück:\n\n  %s\n\n"
+                      "Die Aufnahme bleibt unberührt — sie war in dieser "
+                      "Sicherung nicht enthalten.\n"
+                      "Der jetzige Stand wird vorher gesichert.") % (n, stand)
+        else:
+            frage = T("Patch%d wird aus dieser Sicherung wiederhergestellt:"
+                      "\n\n  %s\n\n"
+                      "Damit lässt sich zum Beispiel ein Fade zurücknehmen.\n"
+                      "Der jetzige Stand wird vorher gesichert.") % (n, stand)
+        if not frage_ja_nein(fenster, "Zurücknehmen", frage):
             return
         try:
-            befehl_zuruecknehmen(zustand["basis"], n, True)
-            neu_laden()
-            status_var.set("Patch%d zurückgeholt" % n)
+            with _Zeit("zurücknehmen, Patch%d" % n):
+                if ist_einstellungssicherung(quelle):
+                    befehl_zuruecknehmen_einstellungen(zustand["basis"], n,
+                                                       True, quelle)
+                else:
+                    befehl_zuruecknehmen(zustand["basis"], n, True)
+            with _Zeit("Liste neu aufbauen (nach zurücknehmen)"):
+                neu_laden()
+            wahl_zuruecksetzen()
+            status_var.set(T("Patch%d zurückgeholt") % n)
         except SystemExit as e:
             messagebox.showerror(T("Fehler"), str(e))
 
@@ -12028,14 +13438,24 @@ def gui(karte):
             messagebox.showinfo(T("Hinweis"), T("Erst eine Karte wählen."))
             return
         ordner = os.path.expanduser(SICHERUNG_WURZEL)
-        datei = datei_waehlen(fenster, T("Pegelprotokoll wählen"), "*.txt",
-                              ordner if os.path.isdir(ordner) else None)
+        # Liste statt Dateidialog (19.11.2026, Wunsch: größter Bedienkomfort):
+        # Datum, Anlaß und Anzahl der Patches stehen in der Zeile.
+        datei = fenster_pegelprotokolle(ordner, fenster)
         if not datei:
             return
-        if not frage_ja_nein(fenster, "Pegel zurückrechnen",
-                "Die Pegeländerungen aus diesem Protokoll werden umgekehrt:\n\n"
-                "%s\n\nVorher wird alles gesichert. Fortfahren?"
-                % os.path.basename(datei)):
+        eintraege = lies_pegelprotokoll(datei)
+        if not eintraege:
+            messagebox.showerror(T("Fehler"),
+                                 T("Im Protokoll stehen keine Einträge."))
+            return
+        if len(eintraege) == 1:
+            was = T("Ein Patch (Platz %s)") % eintraege[0]["ordner"].replace("Patch", "")
+        else:
+            was = T("%d Patches") % len(eintraege)
+        if not frage_ja_nein(fenster, "Pegeländerung zurücknehmen",
+                T("%s aus diesem Protokoll werden umgekehrt:\n\n%s\n\n"
+                  "Nur diese Patches werden vorher gesichert. Fortfahren?")
+                % (was, os.path.basename(datei))):
             return
         try:
             befehl_pegel_umkehren(zustand["basis"], datei, True)
@@ -12090,11 +13510,15 @@ def gui(karte):
         if not zustand["basis"]:
             messagebox.showinfo(T("Hinweis"), T("Erst eine Karte wählen."))
             return
+        # Text berichtigt (19.11.2026): Es wird nicht mehr die ganze Karte
+        # gesichert, sondern nur, was sich ändert. Der alte Satz („die ganze
+        # Karte … ein bis zwei Minuten") hätte die Laufzeit falsch angekündigt.
         if not frage_ja_nein(fenster, "Alle Patches normieren",
                 "Alle Patches werden auf gleiche Lautheit gebracht:\n\n"
                 "  Ziel -18 dB Lautheit, Spitze höchstens -1 dB\n\n"
-                "Vorher wird die ganze Karte gesichert - das dauert bei\n"
-                "900 MB ein bis zwei Minuten. Fortfahren?"):
+                "Patches, die schon passen, bleiben unangetastet. Nur die\n"
+                "übrigen werden vorher gesichert und neu geschrieben.\n\n"
+                "Fortfahren?"):
             return
         def melde(text):
             status_var.set(text)
@@ -12124,6 +13548,54 @@ def gui(karte):
             status_var.set("Patch%d ist jetzt auf Platz %d" % (n, neu))
         except SystemExit as e:
             messagebox.showerror(T("Fehler"), str(e))
+
+    def luecken_schliessen():
+        """Lücken zwischen den belegten Plätzen schließen — nur auf Knopfdruck.
+
+        Anlaß (19.11.2026): Die Liste soll nicht von selbst umbenennen; ein
+        Werkzeug, das beim bloßen Hinsehen 25 Ordner umbenennt, ist gefährlich.
+        Deshalb: Rückfrage, Sicherung der Zuordnung, dann aufrücken.
+        """
+        basis = zustand.get("basis")
+        if not basis:
+            messagebox.showinfo(T("Hinweis"), T("Erst eine Karte wählen."))
+            return
+        luecken = luecken_in(basis)
+        if not luecken:
+            messagebox.showinfo(T("Hinweis"),
+                                T("Es gibt keine Lücken — die Plätze sind schon "
+                                  "lückenlos belegt."))
+            return
+        zuege = aufruecken_zuege(basis)
+        beispiele = ", ".join(T("Patch%d → Patch%d") % (a, b) for a, b in zuege[:4])
+        weitere = "" if len(zuege) <= 4 else " …"
+        if not frage_ja_nein(
+                fenster, T("Lücken schließen"),
+                T("%d Patches rücken nach vorn: %s%s\n\n"
+                  "Die Reihenfolge bleibt, nur die Platznummern ändern sich. "
+                  "Die Zuordnung wird vorher gesichert. Setlist-Dateien, die auf "
+                  "Platznummern zeigen, stimmen danach nicht mehr. Fortfahren?")
+                % (len(zuege), beispiele, weitere)):
+            return
+        try:
+            plaetze_aufruecken_lokal(basis)
+        except SystemExit as fehler:
+            messagebox.showerror(T("Fehler"), str(fehler))
+            return
+        except Exception as fehler:
+            messagebox.showerror(T("Fehler"), str(fehler))
+            return
+        neu_laden()
+        status_var.set(T("Aufgerückt: %d Patches") % len(zuege))
+        if frage_ja_nein(fenster, T("Setlists anpassen"),
+                         T("Sollen vorhandene Setlist-Dateien auf die neuen "
+                           "Platznummern umgeschrieben werden?")):
+            try:
+                _, anzahl = fenster_setlists(zuege, fenster)
+                if anzahl:
+                    status_var.set(T("Setlists angepaßt: %d Datei(en)") % anzahl)
+            except Exception as fehler:
+                messagebox.showerror(T("Fehler"), str(fehler))
 
     def tauschen():
         """Zwei markierte Patches tauschen die Plätze."""
@@ -12310,6 +13782,19 @@ def gui(karte):
         else:
             wiedergabe_wahl = var
 
+    def wahl_zuruecksetzen():
+        """Die drei Felder wieder auf „wie Vorlage" stellen.
+
+        Anlaß (19.11.2026): Nach dem Zurücknehmen blieb im Feld „Wiedergabe"
+        das Zeichen „loop ↺" stehen, obwohl der Patch längst wieder Loop war —
+        die Felder beschreiben eine Absicht, nicht den Zustand des Patches.
+        """
+        for var in (stopp_wahl, rhythmus_wahl, wiedergabe_wahl):
+            try:
+                var.set(T("wie Vorlage"))
+            except Exception:
+                pass
+
     # --- Knöpfe: zwei Reihen, damit nichts abgeschnitten wird ---------------
     def knopfreihe(zeile):
         rahmen2 = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
@@ -12330,12 +13815,17 @@ def gui(karte):
             rahmen3.grid_columnconfigure(spalte, weight=1, uniform="r%d" % nummer)
         return rahmen3
 
-    baue_reihe(1, (("Karte wählen", karte_waehlen),
+    baue_reihe(1, (# Karte: wählen, neu lesen
+                   ("Karte wählen", karte_waehlen),
+                   ("Neu laden", neu_laden),
+                   # Hinein: Datei aufspielen
                    ("Datei aufspielen", aufspielen),
-                   ("Alles sichern", sichern),
-                   ("Pegel zurückrechnen", pegel_zurueck),
-                   ("Suchen \u2026", suchen_dialog),
-                   ("Neu laden", neu_laden)))
+                   # Sicherheit: Verwalten und einen Schritt zurück
+                   ("Sicherungen verwalten …", sicherungen_aufraeumen),
+                   ("Zurücknehmen (letzter Schritt)", zuruecknehmen),
+                   # Werkzeug: Pegel. Die Suche steht im Feld darüber;
+                   # den Dialog gibt es weiter über Cmd/Strg+F (19.11.2026).
+                   ("Pegeländerung zurücknehmen …", pegel_zurueck)))
 
     reihe2 = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
     reihe2.pack(fill="x", padx=14, pady=2)
@@ -12344,7 +13834,7 @@ def gui(karte):
              ("Stopp", stoppen),
              ("Umbenennen", umbenennen),
              ("Platz ändern", platz_aendern),
-             ("Sicherung zurückholen", zuruecknehmen),
+             ("Lücken schließen", luecken_schliessen),
              ("Einstellungen anwenden", einstellungen_anwenden),
              ("Beschreibung …", beschreibung_aendern))):
         knopf = tk.Button(reihe2, text=T(beschriftung), command=befehl)
@@ -12361,12 +13851,18 @@ def gui(karte):
                    ("Tauschen", tauschen),
                    ("Datei teilen", datei_teilen),
                    ("Alle normieren", alle_normieren),
-                   ("Löschen", loeschen),
-                   ("Karte auswerfen", karte_auswerfen)))
+                   # „Löschen" steht am Rand, nicht mehr zwischen zwei
+                   # harmlosen Knöpfen (19.11.2026).
+                   ("Karte auswerfen", karte_auswerfen),
+                   ("Löschen", loeschen)))
 
     braucht_auswahl = ("Anhören", "Umbenennen", "Platz ändern", "Tauschen",
                        "Löschen", "Datei teilen", "▲ nach oben", "▼ nach unten",
-                       "Einstellungen anwenden")
+                       "Einstellungen anwenden", "Beschreibung …",
+                       # 19.11.2026: „Zurücknehmen" und „Beschreibung …" brauchten
+                       # ebenfalls einen gewählten Patch, blieben aber anklickbar
+                       # und antworteten mit „Erst einen Patch wählen".
+                       "Zurücknehmen (letzter Schritt)")
 
     def knopf_zustand():
         hat = bool(liste_auswahl())
@@ -12395,7 +13891,7 @@ def gui(karte):
     tk.Label(wahl2, text="dB", bg=FARBE_HINTERGRUND,
              fg=FARBE_LEISE).pack(side="left", padx=(3, 14))
     normieren_var = tk.BooleanVar(value=False)
-    tk.Checkbutton(wahl2, text=T("auf −1 dB Spitze normieren"),
+    tk.Checkbutton(wahl2, text=T("auf −1 dB Spitze normalisieren"),
                    variable=normieren_var, bg=FARBE_HINTERGRUND,
                    fg=FARBE_LEISE, activebackground=FARBE_HINTERGRUND,
                    activeforeground=FARBE_SCHRIFT,
@@ -12414,7 +13910,7 @@ def gui(karte):
                    activebackground=FARBE_HINTERGRUND,
                    activeforeground=FARBE_SCHRIFT,
                    selectcolor=FARBE_HINTERGRUND).pack(side="left", padx=(8, 0))
-    tk.Checkbutton(wahl2, text=T("Anhebung auf 0 dB begrenzen"),
+    tk.Checkbutton(wahl2, text=T("Anhebung höchstens auf 0 dB"),
                    variable=begrenzen_var, bg=FARBE_HINTERGRUND,
                    fg=FARBE_LEISE, activebackground=FARBE_HINTERGRUND,
                    activeforeground=FARBE_SCHRIFT,
@@ -12425,7 +13921,7 @@ def gui(karte):
 
     tk.Label(fenster, textvariable=status_var, bg=FARBE_HINTERGRUND,
              fg=FARBE_TON).pack(pady=(6, 0))
-    tk.Label(fenster, text=T("Doppelklick spielt · Ziehen ordnet um · ⌘ für zwei Markierungen, dann Tauschen · Esc hält an."),
+    tk.Label(fenster, text=T("Doppelklick spielt · Ziehen ordnet um · ⌘ zwei markieren, dann Tauschen · Esc hält an · ⌘O Karte, ⌘S Sicherungen, ⌘L Lücken"),
              bg=FARBE_HINTERGRUND, fg=FARBE_LEISE).pack(pady=(0, 10))
 
     # --- Ziehen und Ablegen: Reihenfolge ändern -------------------------
@@ -12613,6 +14109,11 @@ def gui(karte):
         """
         if laeuft():
             stoppen()
+        try:
+            einstellung_schreiben("fenster_geometrie", fenster.geometry())
+            einstellung_schreiben("sortierung", sort_var.get())
+        except Exception:
+            pass
         fenster.destroy()
 
     fenster.protocol("WM_DELETE_WINDOW", beim_schliessen)
