@@ -177,7 +177,18 @@ Werk eingeschaltet, dann geht das Fenster von selbst.
 **Windows:** `JamMan-Windows.bat` doppelklicken (ohne Konsolenfenster) oder
 `JamMan-Windows-Konsole.bat`, wenn Meldungen sichtbar bleiben sollen.
 
-**Linux:** `./JamMan-Linux.sh`.
+**Linux:** in den Ordner gehen und starten:
+
+```
+cd jamman-card-tool-3.122        # der Name aus dem entpackten Ordner
+chmod +x JamMan-Linux.sh
+./JamMan-Linux.sh
+```
+
+Kommt „Befehl nicht gefunden" für `chmod`: dann steht das Terminal nicht in
+diesem Ordner — erst `cd`, dann `ls` (dort muß `JamMan-Linux.sh` stehen).
+Kommt „Keine Berechtigung": `chmod +x` vergessen. Ohne Ausführbar-Recht geht es
+auch mit `bash JamMan-Linux.sh`.
 
 ## Firmware von einem Pedal auf das andere
 

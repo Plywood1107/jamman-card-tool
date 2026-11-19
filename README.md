@@ -184,7 +184,18 @@ Profiles → General → "When the session ends: Close" — on by default for th
 **Windows:** `JamMan-Windows.bat` (no console window) or `JamMan-Windows-Konsole.bat` if
 you want messages to stay visible.
 
-**Linux:** `./JamMan-Linux.sh`.
+**Linux:** go into the folder and start it:
+
+```
+cd jamman-card-tool-3.122        # the name of the unpacked folder
+chmod +x JamMan-Linux.sh
+./JamMan-Linux.sh
+```
+
+If `chmod` answers "command not found", the terminal is not in that folder —
+`cd` first, then `ls` (it must list `JamMan-Linux.sh`). If it says "permission
+denied", the `chmod` was missing. Without the execute bit
+`bash JamMan-Linux.sh` also works.
 
 ## Firmware from one pedal to another
 
