@@ -20,3 +20,8 @@ JamMan-Sicherung/
 # Protokoll des Werkzeugs (entsteht beim Absturz)
 jamman-fehler.log
 jamman-start.log
+
+# Gebaute Pakete gehören in die Releases, nicht ins Repository
+# (19.11.2026: sie liegen dort und im Archiv unter
+# sicherungen/archiv-2026-11-19/release-zips/)
+*.zip
