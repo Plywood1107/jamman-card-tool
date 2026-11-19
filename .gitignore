@@ -25,3 +25,6 @@ jamman-start.log
 # (19.11.2026: sie liegen dort und im Archiv unter
 # sicherungen/archiv-2026-11-19/release-zips/)
 *.zip
+
+# Werkzeug des Prüfers (ruff), keine Projektdatei
+.ruff_cache/

@@ -1,0 +1,58 @@
+# Prüfregeln für dieses Werkzeug (angelegt am 19.11.2026)
+#
+# Aufruf:  python3 -m ruff check .jamman/jamman.py .jamman/greenglass.py
+#
+# Ziel ist nicht ein leerer Bericht, sondern ein Bericht, den man lesen kann:
+# Was hier steht, ist entweder behoben oder absichtlich so.
+
+target-version = "py38"
+line-length = 100
+
+[lint]
+select = ["F", "E9", "B", "SIM", "C4", "RUF", "EXE001"]
+
+ignore = [
+  # Absichtlich: ein Klick darf nie ein Fenster mit einem Traceback beenden.
+  # Der Preis ist, daß Fehler still verschwinden — deshalb prüft der Selbsttest
+  # zusätzlich nach Ausnahmen und die Prüfläufe nach Sprechfehlern.
+  "BLE001",
+  "S110",
+  "S112",
+  # Absichtlich: manche Dateien bleiben offen, solange das Fenster lebt
+  # (Wellenform, USB-Strom), und werden erst beim Schließen geschlossen.
+  "SIM115",
+  # Kurzformen wie "%s" statt f-Strings: 190 Stellen, Umstellung ohne Nutzen
+  # und mit Risiko bei Platzhaltern.
+  "UP031",
+  # subprocess ohne check=True: an vielen Stellen wird der Rückgabewert
+  # ausgewertet oder ein Fehlschlag bewußt hingenommen.
+  "PLW1510",
+  # Deutsche Texte enthalten bewusst „ … “ · • — ; ruff hält sie für
+  # verwechselbare Zeichen.
+  "RUF001",
+  "RUF002",
+  "RUF003",
+  # try/except/pass in contextlib.suppress umzubauen bringt nichts außer
+  # 84 geänderten Blöcken — dieselbe Wirkung, mehr Risiko.
+  "SIM105",
+  # raise ohne "from": die Kette soll bleiben, wie sie ist, weil die Meldungen
+  # im Fenster stehen und nicht im Traceback.
+  "B904",
+  # dict((k, v) for …) ist an 15 Stellen gewachsen; inhaltlich gleich, aber
+  # jede Umstellung ist eine Gelegenheit für einen Tippfehler.
+  "C402",
+  # Der Selbsttest baut Rückrufe in einer Schleife über die Sprachen. Sie
+  # laufen im selben Durchlauf, die späte Bindung ist dort gewollt; die
+  # betreffenden Stellen sind im Code kommentiert.
+  "B023",
+  # Verschachtelte if/with-Blöcke: lesbarer als zusammengezogene Fassungen,
+  # besonders bei den langen Datei-Operationen.
+  "SIM102",
+  "SIM108",
+  "SIM117",
+]
+
+[lint.per-file-ignores]
+# Der Selbsttest baut Rückrufe in einer Schleife; sie laufen im selben
+# Durchlauf und sind dort an einer Stelle mit # noqa: B023 gekennzeichnet.
+".jamman/jamman.py" = []

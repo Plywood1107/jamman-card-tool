@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.125 (19.11.2026)"
+FASSUNG = "3.126 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -321,8 +321,8 @@ def fade_ausblenden(pfad, sekunden):
     nicht. Wer eine andere Länge will, muss sie in die Aufnahme legen -
     dann ist sie unabhängig vom Stopp-Verhalten.
     """
-    import wave as _wave
     import array
+    import wave as _wave
     if sekunden <= 0:
         return False
     with _wave.open(pfad, "rb") as w:
@@ -350,9 +350,9 @@ def fade_ausblenden(pfad, sekunden):
 
 def pegel_info(pfad):
     """Spitzen- und Effektivpegel einer WAV-Datei in dBFS."""
-    import wave as _wave
     import array
     import math
+    import wave as _wave
     with _wave.open(pfad, "rb") as w:
         rahmen = w.readframes(w.getnframes())
     a = array.array("h"); a.frombytes(rahmen)
@@ -378,9 +378,9 @@ def pegel_anpassen(pfad, db=None, ziel_spitze_db=None, begrenzen=True,
     alles über 0 dBFS abgeschnitten - das hört man als Kratzen.
     Gibt ein Wörterbuch mit vorher, nachher, geklippt, begrenzt zurück.
     """
-    import wave as _wave
     import array
     import math
+    import wave as _wave
     with _wave.open(pfad, "rb") as w:
         kanaele, breite, rate = w.getnchannels(), w.getsampwidth(), w.getframerate()
         rahmen = w.readframes(w.getnframes())
@@ -521,7 +521,7 @@ def befehl_pegel_umkehren(basis, protokoll, schreiben, wurzel=None):
     alle = dict((n, pf) for n, _, pf in patches(basis))
     betroffen = []
     for e in eintraege:
-        for nummer, pfad in alle.items():
+        for _nummer, pfad in alle.items():
             if os.path.basename(pfad) == e["ordner"]:
                 if os.path.exists(os.path.join(pfad, "PhraseA", "phrase.wav")):
                     betroffen.append(pfad)
@@ -655,7 +655,7 @@ def werkzeug_pfad(name):
         moeglich += [os.path.join(os.environ.get("LOCALAPPDATA", ""),
                                   "Microsoft", "WinGet", "Links", name + ".exe"),
                      "C:\\ffmpeg\\bin\\" + name + ".exe",
-                     os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"),
+                     os.path.join(os.environ.get("PROGRAMFILES", "C:\\Program Files"),
                                   "ffmpeg", "bin", name + ".exe")]
     else:
         moeglich += ["/usr/local/bin/" + name, "/opt/homebrew/bin/" + name,
@@ -1405,7 +1405,7 @@ def saeubere_karte(basis):
     """Entfernt ._* und .DS_Store. macOS legt sie beim Kopieren an;
     der JamMan kann daran scheitern."""
     entfernt = 0
-    for w, d, ds in os.walk(os.path.dirname(basis)):
+    for w, _d, ds in os.walk(os.path.dirname(basis)):
         for x in list(ds):
             if x.startswith("._") or x == ".DS_Store":
                 try:
@@ -1423,7 +1423,7 @@ def befehl_liste(basis):
         print(T("  Keine Patches auf der Karte."))
         return
     print(T("  %-10s %-34s %8s  %s") % (T("Ordner"), T("Name"), T("Dauer"), T("WAV-Format")))
-    for nummer, name, pfad in alle:
+    for _nummer, name, pfad in alle:
         w = phrase_wav(pfad)
         if w:
             dauer, rate, kanaele, bits = wav_info(w)
@@ -1484,7 +1484,7 @@ def karten_stand(basis):
     anzahl = 0
     groesse = 0
     juengste = 0.0
-    for wurzel, ordner, dateien in os.walk(basis):
+    for wurzel, _ordner, dateien in os.walk(basis):
         for datei in dateien:
             if datei.startswith("._") or datei == ".DS_Store":
                 continue
@@ -1541,6 +1541,14 @@ def beim_start_sichern(basis, behalten=3, still=False):
     return ordner
 
 
+# Alle erzeugten Balken, damit ein Prüfer sie einzeln nachsehen kann
+# (19.11.2026: Der Selbsttest zählte einen Balken als „offen", dessen Fenster mit
+# dem Hauptfenster längst zerstört war). Steht auf Modulebene, weil eine Liste
+# als Klassenattribut von allen Instanzen geteilt würde — das war gewollt, ist
+# aber als Klassenattribut leicht zu übersehen (ruff: RUF012).
+_BALKEN = []
+
+
 class Fortschritt:
     """Kleines Fenster mit Balken für lange Kopier- und Löschvorgänge.
 
@@ -1555,10 +1563,6 @@ class Fortschritt:
     HOEHE = 12
 
     offen = 0
-    # Alle erzeugten Balken, damit ein Prüfer sie einzeln nachsehen kann
-    # (19.11.2026: Der Selbsttest zählte einen Balken als „offen", dessen
-    # Fenster mit dem Hauptfenster längst zerstört war).
-    _instanzen = []
 
     def __init__(self, haupfenster, titel):
         import tkinter as tk
@@ -1567,7 +1571,7 @@ class Fortschritt:
         self.titel = titel
         self.haupfenster = haupfenster
         self._tk = tk
-        Fortschritt._instanzen.append(self)
+        _BALKEN.append(self)
 
     def _bauen(self):
         import tkinter as tk
@@ -1638,8 +1642,8 @@ class Fortschritt:
             pass
         self.fenster = None
         try:
-            if self in Fortschritt._instanzen:
-                Fortschritt._instanzen.remove(self)
+            if self in _BALKEN:
+                _BALKEN.remove(self)
         except Exception:
             pass
 
@@ -1716,7 +1720,7 @@ def kopiere_baum(quelle, ziel, melden=None, titel=None):
     Dateien und Bytes.
     """
     dateien = []
-    for wurzel, ordner, namen in os.walk(quelle):
+    for wurzel, _ordner, namen in os.walk(quelle):
         for name in namen:
             pfad = os.path.join(wurzel, name)
             try:
@@ -1775,7 +1779,7 @@ def naechste_nummer(basis):
     """
     from collections import Counter
     alle = patches(basis)
-    benutzt = set(n for n, _, _ in alle)
+    benutzt = {n for n, _, _ in alle}
     breiten = Counter(len(name) - 5 for _, name, _ in alle)
     breite = breiten.most_common(1)[0][0] if breiten else 2
     frei = 1
@@ -1786,7 +1790,7 @@ def naechste_nummer(basis):
 
 def vorlage_finden(basis):
     """Ein vollständiger Patch dient als Vorlage für patch.xml und phrase.xml."""
-    for nummer, name, pfad in patches(basis):
+    for _nummer, _name, pfad in patches(basis):
         if os.path.exists(os.path.join(pfad, "patch.xml")) and \
            os.path.exists(os.path.join(pfad, "PhraseA", "phrase.xml")):
             return pfad
@@ -1803,9 +1807,9 @@ def setze_wert(text, tag, wert):
     """Ersetzt <tag>…</tag>. Fehlt das Feld in der Vorlage, wird es
     eingefügt - sonst bliebe die gewünschte Einstellung wirkungslos."""
     muster = r"<%s>.*?</%s>" % (tag, tag)
-    if re.search(muster, text, flags=re.S):
+    if re.search(muster, text, flags=re.DOTALL):
         return re.sub(muster, "<%s>%s</%s>" % (tag, wert, tag),
-                      text, count=1, flags=re.S), True
+                      text, count=1, flags=re.DOTALL), True
     neu = re.sub(r"</JamManPatch>",
                  "  <%s>%s</%s>\n</JamManPatch>" % (tag, wert, tag),
                  text, count=1)
@@ -2042,11 +2046,11 @@ def befehl_teilen(basis, wav, name, schreiben, teile=None, laenge=None,
     annimmt. Die Teile liegen sample-genau aneinander - kein Ton fehlt,
     keiner doppelt.
     """
-    dauer, rate, kanaele, bits = wav_info(wav)
+    dauer = wav_info(wav)[0]
     if dauer <= 0:
         raise SystemExit(T("Fehler: '%s' ist keine lesbare Audiodatei.") % wav)
     if laenge:
-        anzahl = max(1, int(math.ceil(dauer / float(laenge))))
+        anzahl = max(1, math.ceil(dauer / float(laenge)))
         stueck = float(laenge)
     elif teile:
         anzahl = max(1, int(teile))
@@ -2082,7 +2086,7 @@ def befehl_teilen(basis, wav, name, schreiben, teile=None, laenge=None,
             punkte = [dauer * k / float(anzahl) for k in range(1, anzahl)]
             gruende = ["rechnerisch"] * len(punkte)
             paare = [None] * len(punkte)
-        grenzen = [0.0] + punkte + [dauer]
+        grenzen = [0.0, *punkte, dauer]
         if ohne_pause:
             # Jeder Teil endet dort, wo der Ton aufhört, und beginnt dort,
             # wo er nach der Pause wieder einsetzt. Die Stille fällt weg.
@@ -2226,9 +2230,8 @@ def befehl_aufspielen(basis, wav, name, schreiben, stopp=None, rhythmus=None,
         raise SystemExit(T("Fehler: Die Umwandlung hat keine hörbare Aufnahme\n"
                          "  ergeben (nur Stille). Datei prüfen: %s" )% os.path.basename(wav))
 
-    if fade:
-        if not fade_ausblenden(ziel_wav, fade):
-            print(T("  Hinweis: Fade konnte nicht eingerechnet werden."))
+    if fade and not fade_ausblenden(ziel_wav, fade):
+        print(T("  Hinweis: Fade konnte nicht eingerechnet werden."))
     if normieren or gain:
         ergebnis = (pegel_anpassen(ziel_wav, ziel_spitze_db=-1.0) if normieren
                     else pegel_anpassen(ziel_wav, db=gain, begrenzen=begrenzen))
@@ -2257,8 +2260,8 @@ def befehl_aufspielen(basis, wav, name, schreiben, stopp=None, rhythmus=None,
     text = open(quelle_xml, encoding="utf-8").read()
     text = re.sub(r"<PatchName>.*?</PatchName>",
                   "<PatchName>%s</PatchName>" % name.replace("&", "&amp;").replace("<", "&lt;"),
-                  text, count=1, flags=re.S)
-    text = re.sub(r"<ID>.*?</ID>", "<ID>%s</ID>" % uuid.uuid4(), text, count=1, flags=re.S)
+                  text, count=1, flags=re.DOTALL)
+    text = re.sub(r"<ID>.*?</ID>", "<ID>%s</ID>" % uuid.uuid4(), text, count=1, flags=re.DOTALL)
     if stopp and stopp in STOPP:
         text, vorhanden = setze_wert(text, "StopMode", STOPP[stopp])
         if not vorhanden:
@@ -2406,7 +2409,7 @@ def namensform_pruefen(basis):
     if not alle:
         return [], 2
     breiten = Counter()
-    for nummer, name, _ in alle:
+    for _nummer, name, _ in alle:
         ziffern = re.sub(r"\D", "", name)
         breiten[len(ziffern)] += 1
     breite = breiten.most_common(1)[0][0]
@@ -2583,6 +2586,8 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Die letzte Sicherung stammt aus dem anderen Speicher. Bitte oben umschalten und es noch einmal versuchen.':
+         'The last backup comes from the other storage. Please switch above and try again.',
         'deutscher Text in der Anzeige: %s':
          'German text left in the display: %s',
         'sofort':
@@ -2679,8 +2684,6 @@ TEXTE = {
          'creating backup …',
         'Liste neu lesen …':
          'reading the list …',
-        'fertig':
-         'done',
         '  Keine Eingabe möglich — Ende.':
          '  No input possible — end.',
         'Sicherungen löschen':
@@ -2837,8 +2840,6 @@ TEXTE = {
          'Version %s is installed. Please close the window and start again.',
         'Update beim Start':
          'Update on start',
-        'Neue Fassung %s wird geholt …':
-         'Fetching version %s …',
         'Die Karte ist eingebunden, aber das Dateisystem liefert\nLesefehler:\n\n%s\n\nDas liegt an der Karte oder am Einhängepunkt, nicht am\nWerkzeug.\n\nErste Schritte:\n  - Karte im JamMan einschalten (das Pedal prüft sie)\n  - dmesg | tail -20\n  - aushängen und prüfen: sudo fsck.vfat -n <gerät>\n    bzw. sudo exfatfsck <gerät>':
          'The card is mounted, but the file system reports read errors:\n\n%s\n\nThat is the card or the mount point, not the tool.\n\nFirst steps:\n  - put the card into the JamMan and switch it on (the pedal checks it)\n  - dmesg | tail -20\n  - unmount and check: sudo fsck.vfat -n <device>\n    or sudo exfatfsck <device>',
         'kein Pedal':
@@ -2967,8 +2968,6 @@ TEXTE = {
          'Memory image written: %d entries to %s',
         'Dateien für „speicherabbild“ und „vergleich“':
          'Files for “speicherabbild” and “vergleich”',
-        'Suchen:':
-         'Search:',
         'Sortierung':
          'Sorting',
         '%d von %d Patches passen zu „%s“.':
@@ -3105,8 +3104,6 @@ TEXTE = {
          'the card',
         'Im Ordner liegen keine Patch-Ordner (erwartet: Patch01 … Patch200).':
          'The folder contains no patch folders (expected: Patch01 … Patch200).',
-        'Schreibe':
-         'Writing',
         'Fertig: %d Patches geschrieben, %d übersprungen, %d vorher gesichert':
          'Done: %d patches written, %d skipped, %d backed up first',
         'Fehler beim Schreiben:':
@@ -3125,8 +3122,6 @@ TEXTE = {
          'Copy selection',
         'Nichts markiert — bitte zuerst Text markieren.':
          'Nothing selected — please select some text first.',
-        'In die Zwischenablage kopiert.':
-         'Copied to the clipboard.',
         'Anleitung speichern':
          'Save the instructions',
         'Gespeichert.':
@@ -3307,8 +3302,6 @@ TEXTE = {
          'Footswitch assignment of the pedal',
         'Werte sind Geräteeinstellungen — nur ändern, wenn du weißt, was sie bedeuten.':
          'These are device settings — only change them if you know what they mean.',
-        'Übernehmen':
-         'Apply',
         'JamMan':
          'JamMan',
         'Karte':
@@ -3351,8 +3344,6 @@ TEXTE = {
          'Writing to the pedal …',
         'Schreibe:':
          'Writing:',
-        'Fehler beim Schreiben:':
-         'Error while writing:',
         'Patch aufs Pedal schreiben …':
          'Write patch to the pedal …',
         '(Vorschlag)': '(suggested)',
@@ -3430,7 +3421,6 @@ TEXTE = {
         "Erst einen Patch wählen.": "Select a patch first.",
         "Karte auswerfen? Danach kann sie abgezogen werden.":
             "Eject the card? Then it can be unplugged.",
-        "Keine JamMan-Karte": "No JamMan card",
         "Datei zu lang": "File too long",
         "Beim Pegel bitte eine Zahl in dB eintragen (z. B. -3), oder das Feld leer lassen.":
             "Enter a level in dB (e.g. -3), or leave the field empty.",
@@ -3633,18 +3623,12 @@ TEXTE = {
         "Zuordnung liegt in: %s": "Mapping is in: %s",
         "Betroffene Einträge (erste drei): %s": "Affected entries (first three): %s",
         "Keine Karte gefunden unter %s.": "No card found under %s.",
-        "Ordner": "Folder",
         "  %-28s  (gibt es nicht)": "  %-28s  (does not exist)",
         "  %-28s  (nicht lesbar: %s)": "  %-28s  (not readable: %s)",
         "  %-28s  (leer)": "  %-28s  (empty)",
         "  %-28s  %s mit %s Patches": "  %-28s  %s with %s patches",
         "kein nutzbares Tk": "no usable Tk",
-        "Name": "Name",
-        "Dauer": "Length",
         "WAV-Format": "WAV format",
-        "   ← abweichend": "   ← differs",
-        "   ← über 10 min, Pedal nimmt sie nicht an":
-            "   ← over 10 min, the pedal will not take it",
         "keine WAV": "no WAV",
         "%d Hz / %d Bit / %d K": "%d Hz / %d bit / %d ch",
         "  Hinweis: Pegelprotokoll konnte nicht geschrieben werden.": "    Note: the level protocol could not be written.",
@@ -3878,7 +3862,6 @@ TEXTE = {
         "   ← abweichend": "   ← deviates",
         "   ← über 10 min, Pedal nimmt sie nicht an":
             "   ← over 10 min, the pedal will not accept it",
-        "keine WAV": "no WAV",
         "  Das Fenster wäre leer. Es geht im Textmenü weiter.":
             "  The window would be empty. The text menu still works.",
         "  Für ein Fenster: Python von python.org installieren (bringt Tk 8.6).":
@@ -3924,24 +3907,17 @@ TEXTE = {
         "vormerken": "cue",
         "vorgemerkt %d": "cued %d",
         "Einstellungen:": "Settings:",
-        "wie Vorlage": "as template",
         "Fade am Ende": "Fade at end",
         "Karte wählen": "Choose card",
         "Datei aufspielen": "Import file",
         "Alles sichern": "Back up all",
-        "Pegel zurückrechnen": "Undo level change",
         "Neu laden": "Reload",
         "Anhören": "Play",
         "Stopp": "Stop",
         "Umbenennen": "Rename",
         "Platz ändern": "Change slot",
-        "Sicherung zurückholen": "Restore backup",
-        "Einstellungen anwenden": "Apply settings",
         "▲ nach oben": "▲ move up",
         "▼ nach unten": "▼ move down",
-        "Tauschen": "Swap",
-        "Datei teilen": "Split file",
-        "Alle normieren": "Normalise all",
         "Löschen": "Delete",
         "Karte auswerfen": "Eject card",
         "Pegel": "Level",
@@ -3952,23 +3928,22 @@ TEXTE = {
         "Doppelklick spielt · Ziehen ordnet um · ⌘ für zwei Markierungen, dann Tauschen · Esc hält an.":
             "Double-click plays · drag reorders · ⌘ for two selections, then swap · Esc stops.",
         "vorgemerkt: Platz %d": "cued: slot %d",
-        "Ende der Liste erreicht": "end of list reached",
         "Erst einen Patch in der Liste wählen.": "Select a patch in the list first.",
         "Erst eine Karte wählen.": "Choose a card first.",
         "Bitte eine Platznummer eintragen.": "Please enter a slot number.",
         "Platz %d gibt es auf dieser Karte nicht.": "Slot %d does not exist on this card.",
         "MP3 und M4A brauchen ffmpeg -": "MP3 and M4A need ffmpeg -",
-        "Anleitung": "Instructions",
         "WAV geht auch ohne": "WAV works without it",
         "Schließen": "Close",
         "Text kopieren": "Copy text",
         "Karte nicht lesbar": "Card not readable",
         "Fehler": "Error",
         "Hinweis": "Note",
-        "Anleitung in die Zwischenablage kopiert": "Instructions copied to the clipboard",
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Die letzte Sicherung stammt aus dem anderen Speicher. Bitte oben umschalten und es noch einmal versuchen.':
+         "La dernière sauvegarde vient de l'autre mémoire. Changez de mémoire en haut et réessayez.",
         'deutscher Text in der Anzeige: %s':
          "texte allemand resté dans l'affichage : %s",
         'sofort':
@@ -4065,8 +4040,6 @@ TEXTE = {
          'créer une sauvegarde …',
         'Liste neu lesen …':
          'relire la liste …',
-        'fertig':
-         'terminé',
         '  Keine Eingabe möglich — Ende.':
          '  Aucune entrée possible — fin.',
         'Sicherungen löschen':
@@ -4223,8 +4196,6 @@ TEXTE = {
          'La version %s est installée. Veuillez fermer la fenêtre et redémarrer.',
         'Update beim Start':
          'Mise à jour au démarrage',
-        'Neue Fassung %s wird geholt …':
-         'Récupération de la version %s …',
         'Die Karte ist eingebunden, aber das Dateisystem liefert\nLesefehler:\n\n%s\n\nDas liegt an der Karte oder am Einhängepunkt, nicht am\nWerkzeug.\n\nErste Schritte:\n  - Karte im JamMan einschalten (das Pedal prüft sie)\n  - dmesg | tail -20\n  - aushängen und prüfen: sudo fsck.vfat -n <gerät>\n    bzw. sudo exfatfsck <gerät>':
          "La carte est montée, mais le système de fichiers signale des erreurs de lecture :\n\n%s\n\nCela vient de la carte ou du point de montage, pas de l'outil.\n\nPremiers pas :\n  - mettre la carte dans la JamMan et l'allumer (la pédale la vérifie)\n  - dmesg | tail -20\n  - démonter et vérifier : sudo fsck.vfat -n <périphérique>\n    ou sudo exfatfsck <périphérique>",
         'kein Pedal':
@@ -4353,8 +4324,6 @@ TEXTE = {
          'Image mémoire enregistrée : %d entrées dans %s',
         'Dateien für „speicherabbild“ und „vergleich“':
          'Fichiers pour « speicherabbild » et « vergleich »',
-        'Suchen:':
-         'Rechercher :',
         'Sortierung':
          'Tri',
         '%d von %d Patches passen zu „%s“.':
@@ -4491,12 +4460,8 @@ TEXTE = {
          'la carte',
         'Im Ordner liegen keine Patch-Ordner (erwartet: Patch01 … Patch200).':
          'Le dossier ne contient aucun dossier de patch (attendu : Patch01 … Patch200).',
-        'Schreibe':
-         'Écriture',
         'Fertig: %d Patches geschrieben, %d übersprungen, %d vorher gesichert':
          'Terminé : %d patches écrits, %d ignorés, %d sauvegardés avant',
-        'Fehler beim Schreiben:':
-         "Erreur lors de l'écriture :",
         'Übertragen: %d Dateien · unverändert übersprungen: %d':
          'Transféré : %d fichiers · ignorés inchangés : %d',
         'Zielplatz auf dem Pedal (z. B. 17 oder Patch17):':
@@ -4511,8 +4476,6 @@ TEXTE = {
          'Copier la sélection',
         'Nichts markiert — bitte zuerst Text markieren.':
          "Rien de sélectionné — sélectionnez d'abord du texte.",
-        'In die Zwischenablage kopiert.':
-         'Copié dans le presse-papiers.',
         'Anleitung speichern':
          'Enregistrer les instructions',
         'Gespeichert.':
@@ -4693,8 +4656,6 @@ TEXTE = {
          'Affectation des commandes au pied de la pédale',
         'Werte sind Geräteeinstellungen — nur ändern, wenn du weißt, was sie bedeuten.':
          'Ce sont des réglages de l\'appareil — ne les modifiez que si vous savez ce qu\'ils font.',
-        'Übernehmen':
-         'Appliquer',
         'JamMan':
          'JamMan',
         'Karte':
@@ -5220,7 +5181,6 @@ TEXTE = {
         "▼ nach unten": "▼ descendre",
         "Tauschen": "Échanger",
         "Datei teilen": "Diviser le fichier",
-        "Alle normieren": "Tout normaliser",
         "Löschen": "Supprimer",
         "Karte auswerfen": "Éjecter la carte",
         "Pegel": "Niveau",
@@ -5236,7 +5196,6 @@ TEXTE = {
         "Bitte eine Platznummer eintragen.": "Entrer un numéro d'emplacement.",
         "Platz %d gibt es auf dieser Karte nicht.": "L'emplacement %d n'existe pas sur cette carte.",
         "MP3 und M4A brauchen ffmpeg -": "MP3 et M4A nécessitent ffmpeg -",
-        "Anleitung": "Instructions",
         "WAV geht auch ohne": "WAV fonctionne sans",
         "Schließen": "Fermer",
         "Text kopieren": "Copier le texte",
@@ -5247,6 +5206,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Die letzte Sicherung stammt aus dem anderen Speicher. Bitte oben umschalten und es noch einmal versuchen.':
+         'La última copia de seguridad es del otro almacenamiento. Cambia arriba e inténtalo de nuevo.',
         'deutscher Text in der Anzeige: %s':
          'texto alemán en la pantalla: %s',
         'sofort':
@@ -5343,8 +5304,6 @@ TEXTE = {
          'crear copia …',
         'Liste neu lesen …':
          'releer la lista …',
-        'fertig':
-         'listo',
         '  Keine Eingabe möglich — Ende.':
          '  No es posible introducir datos — fin.',
         'Sicherungen löschen':
@@ -5501,8 +5460,6 @@ TEXTE = {
          'La versión %s está instalada. Cierra la ventana y vuelve a iniciar.',
         'Update beim Start':
          'Actualizar al inicio',
-        'Neue Fassung %s wird geholt …':
-         'Obteniendo la versión %s …',
         'Die Karte ist eingebunden, aber das Dateisystem liefert\nLesefehler:\n\n%s\n\nDas liegt an der Karte oder am Einhängepunkt, nicht am\nWerkzeug.\n\nErste Schritte:\n  - Karte im JamMan einschalten (das Pedal prüft sie)\n  - dmesg | tail -20\n  - aushängen und prüfen: sudo fsck.vfat -n <gerät>\n    bzw. sudo exfatfsck <gerät>':
          'La tarjeta está montada, pero el sistema de archivos informa errores de lectura:\n\n%s\n\nEs la tarjeta o el punto de montaje, no la herramienta.\n\nPrimeros pasos:\n  - poner la tarjeta en el JamMan y encenderlo (el pedal la comprueba)\n  - dmesg | tail -20\n  - desmontar y comprobar: sudo fsck.vfat -n <dispositivo>\n    o sudo exfatfsck <dispositivo>',
         'kein Pedal':
@@ -5631,8 +5588,6 @@ TEXTE = {
          'Imagen de memoria guardada: %d entradas en %s',
         'Dateien für „speicherabbild“ und „vergleich“':
          'Archivos para «speicherabbild» y «vergleich»',
-        'Suchen:':
-         'Buscar:',
         'Sortierung':
          'Orden',
         '%d von %d Patches passen zu „%s“.':
@@ -5769,8 +5724,6 @@ TEXTE = {
          'la tarjeta',
         'Im Ordner liegen keine Patch-Ordner (erwartet: Patch01 … Patch200).':
          'La carpeta no contiene carpetas de patch (se espera: Patch01 … Patch200).',
-        'Schreibe':
-         'Escribiendo',
         'Fertig: %d Patches geschrieben, %d übersprungen, %d vorher gesichert':
          'Listo: %d parches escritos, %d omitidos, %d guardados antes',
         'Fehler beim Schreiben:':
@@ -5789,8 +5742,6 @@ TEXTE = {
          'Copiar la selección',
         'Nichts markiert — bitte zuerst Text markieren.':
          'Nada seleccionado: selecciona primero el texto.',
-        'In die Zwischenablage kopiert.':
-         'Copiado al portapapeles.',
         'Anleitung speichern':
          'Guardar las instrucciones',
         'Gespeichert.':
@@ -5971,8 +5922,6 @@ TEXTE = {
          'Asignación del pulsador del pedal',
         'Werte sind Geräteeinstellungen — nur ändern, wenn du weißt, was sie bedeuten.':
          'Son ajustes del dispositivo: cámbialos solo si sabes qué significan.',
-        'Übernehmen':
-         'Aplicar',
         'JamMan':
          'JamMan',
         'Karte':
@@ -6015,8 +5964,6 @@ TEXTE = {
          'Escribiendo en el pedal …',
         'Schreibe:':
          'Escribiendo:',
-        'Fehler beim Schreiben:':
-         'Error al escribir:',
         'Patch aufs Pedal schreiben …':
          'Escribir patch en el pedal …',
         '(Vorschlag)': '(propuesta)',
@@ -6498,7 +6445,6 @@ TEXTE = {
         "▼ nach unten": "▼ bajar",
         "Tauschen": "Intercambiar",
         "Datei teilen": "Dividir archivo",
-        "Alle normieren": "Normalizar todo",
         "Löschen": "Borrar",
         "Karte auswerfen": "Expulsar tarjeta",
         "Pegel": "Nivel",
@@ -6514,7 +6460,6 @@ TEXTE = {
         "Bitte eine Platznummer eintragen.": "Introduce un número de posición.",
         "Platz %d gibt es auf dieser Karte nicht.": "La posición %d no existe en esta tarjeta.",
         "MP3 und M4A brauchen ffmpeg -": "MP3 y M4A necesitan ffmpeg -",
-        "Anleitung": "Instrucciones",
         "WAV geht auch ohne": "WAV funciona sin él",
         "Schließen": "Cerrar",
         "Text kopieren": "Copiar texto",
@@ -6525,6 +6470,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Die letzte Sicherung stammt aus dem anderen Speicher. Bitte oben umschalten und es noch einmal versuchen.':
+         '上次备份来自另一个存储器。请在上方切换后重试。',
         'deutscher Text in der Anzeige: %s':
          '界面中残留德语文字：%s',
         'sofort':
@@ -6621,8 +6568,6 @@ TEXTE = {
          '正在创建备份 …',
         'Liste neu lesen …':
          '正在重新读取列表 …',
-        'fertig':
-         '完成',
         '  Keine Eingabe möglich — Ende.':
          '  无法输入 —— 结束。',
         'Sicherungen löschen':
@@ -6779,8 +6724,6 @@ TEXTE = {
          '已安装 %s。请关闭窗口并重新启动。',
         'Update beim Start':
          '启动时更新',
-        'Neue Fassung %s wird geholt …':
-         '正在获取 %s …',
         'Die Karte ist eingebunden, aber das Dateisystem liefert\nLesefehler:\n\n%s\n\nDas liegt an der Karte oder am Einhängepunkt, nicht am\nWerkzeug.\n\nErste Schritte:\n  - Karte im JamMan einschalten (das Pedal prüft sie)\n  - dmesg | tail -20\n  - aushängen und prüfen: sudo fsck.vfat -n <gerät>\n    bzw. sudo exfatfsck <gerät>':
          '卡片已挂载，但文件系统报告读取错误：\n\n%s\n\n问题在卡片或挂载点，不在工具。\n\n第一步：\n  - 把卡片插入 JamMan 并开机（踏板会检查卡片）\n  - dmesg | tail -20\n  - 卸载并检查：sudo fsck.vfat -n <设备>\n    或 sudo exfatfsck <设备>',
         'kein Pedal':
@@ -6909,8 +6852,6 @@ TEXTE = {
          '内存映像已保存：%d 项到 %s',
         'Dateien für „speicherabbild“ und „vergleich“':
          '用于“speicherabbild”和“vergleich”的文件',
-        'Suchen:':
-         '搜索：',
         'Sortierung':
          '排序',
         '%d von %d Patches passen zu „%s“.':
@@ -7047,12 +6988,8 @@ TEXTE = {
          '卡片',
         'Im Ordner liegen keine Patch-Ordner (erwartet: Patch01 … Patch200).':
          '该目录中没有音色文件夹（应为 Patch01 … Patch200）。',
-        'Schreibe':
-         '正在写入',
         'Fertig: %d Patches geschrieben, %d übersprungen, %d vorher gesichert':
          '完成：写入 %d 个音色，跳过 %d 个，先备份 %d 个',
-        'Fehler beim Schreiben:':
-         '写入时出错：',
         'Übertragen: %d Dateien · unverändert übersprungen: %d':
          '已传输 %d 个文件 · 跳过未变更的 %d 个',
         'Zielplatz auf dem Pedal (z. B. 17 oder Patch17):':
@@ -7067,8 +7004,6 @@ TEXTE = {
          '复制所选',
         'Nichts markiert — bitte zuerst Text markieren.':
          '未选中任何内容——请先选中文本。',
-        'In die Zwischenablage kopiert.':
-         '已复制到剪贴板。',
         'Anleitung speichern':
          '保存说明',
         'Gespeichert.':
@@ -7249,8 +7184,6 @@ TEXTE = {
          '踏板的脚踏开关分配',
         'Werte sind Geräteeinstellungen — nur ändern, wenn du weißt, was sie bedeuten.':
          '这是设备设置——只在你知道含义时才修改。',
-        'Übernehmen':
-         '应用',
         'JamMan':
          'JamMan',
         'Karte':
@@ -7776,7 +7709,6 @@ TEXTE = {
         "▼ nach unten": "▼ 下移",
         "Tauschen": "交换",
         "Datei teilen": "分割文件",
-        "Alle normieren": "全部标准化",
         "Löschen": "删除",
         "Karte auswerfen": "弹出存储卡",
         "Pegel": "音量",
@@ -7792,7 +7724,6 @@ TEXTE = {
         "Bitte eine Platznummer eintragen.": "请输入位置编号。",
         "Platz %d gibt es auf dieser Karte nicht.": "此卡上没有位置 %d。",
         "MP3 und M4A brauchen ffmpeg -": "MP3 和 M4A 需要 ffmpeg -",
-        "Anleitung": "说明",
         "WAV geht auch ohne": "WAV 无需 ffmpeg",
         "Schließen": "关闭",
         "Text kopieren": "复制文本",
@@ -7931,7 +7862,7 @@ def _im_hintergrund():
 def _groesse_von(pfade):
     gesamt = 0
     for pfad in pfade:
-        for w, d, ds in os.walk(pfad):
+        for w, _d, ds in os.walk(pfad):
             for x in ds:
                 try:
                     gesamt += os.path.getsize(os.path.join(w, x))
@@ -7970,7 +7901,9 @@ def _ablegen_kopieren(ziel, patch_pfade, melden):
     for i, pfad in enumerate(patch_pfade, 1):
         def _teil(anteil, text, _i=i, _p=pfad):
             if melden:
-                gesamt = (i - 1 + anteil) / float(len(patch_pfade) or 1)
+                # _i statt i: i ist die Schleifenvariable und kann sich
+                # verschieben, wenn der Rückruf später kommt (ruff: B023).
+                gesamt = (_i - 1 + anteil) / float(len(patch_pfade) or 1)
                 melden(gesamt, "%s — %s" % (os.path.basename(_p), text))
         kopiere_baum(pfad, os.path.join(ziel, os.path.basename(pfad)), _teil)
     return ziel
@@ -8057,7 +7990,7 @@ def befehl_alle_normieren(basis, schreiben, ziel_rms_db=-18.0, grenze_db=-1.0,
     if not schreiben:
         print()
         print(T("  %-10s %-24s %8s") % ("Ordner", "Name", "Lautheit jetzt"))
-        for nummer, name, pfad in alle:
+        for _nummer, name, pfad in alle:
             w = phrase_wav(pfad)
             if not w:
                 continue
@@ -8103,7 +8036,7 @@ def befehl_alle_normieren(basis, schreiben, ziel_rms_db=-18.0, grenze_db=-1.0,
     gedeckelt = 0
     zaehler = 0
     protokoll_eintraege = []
-    for nummer, name, pfad in alle:
+    for _nummer, name, pfad in alle:
         zaehler += 1
         w = phrase_wav(pfad)
         if not w:
@@ -8417,7 +8350,7 @@ def sicherung_der_namen(basis, grund, wurzel=None):
     with f:
         f.write("Reihenfolge vor der Änderung (%s)\n" % datetime.now().isoformat(timespec="seconds"))
         f.write("Ordner\tName\tKennung\n")
-        for nummer, ordnername, pfad in patches(basis):
+        for _nummer, ordnername, pfad in patches(basis):
             kennung = ""
             try:
                 txt = open(os.path.join(pfad, "patch.xml"), encoding="utf-8",
@@ -8592,7 +8525,7 @@ def bericht_fenster(haupfenster, text):
     anzeige.insert("1.0", text)
     anzeige.see("end")
 
-    leiste = tk.Frame(f, bg=FARBE_HINTERGUND if False else FARBE_HINTERGRUND)
+    leiste = tk.Frame(f, bg=FARBE_HINTERGRUND)
     leiste.pack(fill="x", padx=14, pady=10)
 
     def kopieren():
@@ -8824,8 +8757,8 @@ def funktionstest(sprachen=None, still=False):
     Rückgabe: 0 = in Ordnung, 1 = Befunde. Ausgaben zusätzlich in
     jamman-fehler.log, damit ein Nutzer sie mitschicken kann.
     """
-    import io
     import contextlib
+    import io
     import tempfile
     global SICHERUNG_WURZEL
 
@@ -9029,7 +8962,7 @@ def funktionstest(sprachen=None, still=False):
                     time.sleep(0.05)
                 # Balken, deren Fenster nicht mehr existiert, sind keine
                 # Befunde: sie gingen mit dem Hauptfenster zu.
-                for balken in list(Fortschritt._instanzen):
+                for balken in list(_BALKEN):
                     try:
                         lebt = (balken.fenster is not None
                                 and balken.fenster.winfo_exists())
@@ -9103,7 +9036,7 @@ def traceback_parameter(teile):
     Python 3.9, siehe 19.11.2026).
     """
     import traceback
-    liste = list(teile) + [None, None, None]
+    liste = [*list(teile), None, None, None]
     art, wert, spur = liste[0], liste[1], liste[2]
     try:
         if isinstance(art, type) and issubclass(art, BaseException):
@@ -9206,7 +9139,7 @@ def selbsttest(pfad=None):
             except OSError as e:
                 print(T("    nicht lesbar: %s") % e)
         else:
-            for nummer, name, pfad in alle[:3]:
+            for _nummer, name, pfad in alle[:3]:
                 print(T("    %-10s %s") % (name, patch_name(pfad)))
             print(T("  erste Zeile im Fenster:"))
             print(T("    %r") % ("  %-10s %-36s %8s" % (
@@ -9727,12 +9660,7 @@ def _raeume_auf(wurzel, geschrieben):
     for aktuell, ordner, dateien in os.walk(wurzel, topdown=False):
         if os.path.abspath(aktuell) == os.path.abspath(wurzel):
             continue
-        if not ordner and not dateien:
-            try:
-                os.rmdir(aktuell)
-            except OSError:
-                pass
-        elif not os.listdir(aktuell):
+        if (not ordner and not dateien) or not os.listdir(aktuell):
             try:
                 os.rmdir(aktuell)
             except OSError:
@@ -10326,7 +10254,6 @@ def _als_zip(g, basis, platzliste, ziel_datei, meldung=None, stopp=None):
 
     Der Inhalt entspricht dem Ordner, den „Alle holen“ anlegt: <Gerät>/PatchNN/…
     """
-    import zipfile
     # Erst als .part schreiben und am Ende umbenennen (19.11.2026): Wird der
     # Vorgang abgebrochen, bleibt sonst eine halbe ZIP-Datei liegen, die wie
     # eine fertige Sicherung aussieht.
@@ -10455,10 +10382,7 @@ def usb_fenster(haupfenster, oeffne_karte=None):
       - der gefundene Anschluß wird gemerkt, damit beim nächsten Mal nicht
         wieder alle Anschlüsse durchprobiert werden (das kostete Sekunden).
     """
-    import queue
-    import threading
-    import tkinter as tk
-    from tkinter import filedialog, messagebox, simpledialog
+    from tkinter import messagebox
 
     offen = _USB_FENSTER.get("fenster")
     if offen is not None:
@@ -10543,7 +10467,6 @@ def _frage_ja(fenster, titel, text):
     eingefroren, obwohl es nur auf ein Ja oder Nein wartete. Vor der Frage
     wird der Vordergrund kurz abgegeben, danach wieder gesetzt.
     """
-    from tkinter import messagebox
     vorne = False
     try:
         vorne = bool(fenster.attributes("-topmost"))
@@ -10568,7 +10491,6 @@ def _sicherungs_laeufe(ziel):
     Rückgabe: [(Pfad, Name, Änderungszeit, Größe in Bytes)] — nur direkte
     Unterordner, nie der Zielordner selbst.
     """
-    import time as _zeit
     laeufe = []
     if not ziel or not os.path.isdir(ziel):
         return laeufe
@@ -10606,9 +10528,9 @@ def unersetzliche_patches(laeufe):
     import re as _re
 
     kennungen = {}
-    for pfad, name, wann, groesse in laeufe:
+    for pfad, name, _wann, _groesse in laeufe:
         gefunden = set()
-        for wurzel, ordner, dateien in os.walk(pfad):
+        for wurzel, _ordner, dateien in os.walk(pfad):
             if "patch.xml" not in dateien:
                 continue
             try:
@@ -10644,8 +10566,8 @@ def sammelsicherung(ziel, laeufe, melden=None):
     sag = melden or (lambda text: None)
 
     bestand = {}
-    for pfad, name, wann, groesse in laeufe:
-        for wurzel, ordner, dateien in os.walk(pfad):
+    for pfad, _name, _wann, _groesse in laeufe:
+        for wurzel, _ordner, dateien in os.walk(pfad):
             if "patch.xml" not in dateien:
                 continue
             try:
@@ -10765,7 +10687,7 @@ def fenster_setlists(zuege, haupfenster):
     roll = tk.Scrollbar(rahmen, command=anzeige.yview)
     roll.pack(side="right", fill="y")
     anzeige.config(yscrollcommand=roll.set)
-    for pfad, name, anzahl in dateien:
+    for _pfad, name, anzahl in dateien:
         anzeige.insert("end", "%-40s %3d Plätze" % (name[:40], anzahl))
     for i in range(len(dateien)):
         anzeige.selection_set(i)
@@ -10892,9 +10814,9 @@ def pegelprotokolle_auflisten(ordner):
 
 def fenster_pegelprotokolle(ordner, haupfenster):
     """Protokolle auflisten und eines auswählen. Rückgabe: Pfad oder ""."""
+    import time as _zeit
     import tkinter as tk
     from tkinter import messagebox
-    import time as _zeit
 
     protokolle = pegelprotokolle_auflisten(ordner)
     if not protokolle:
@@ -10928,7 +10850,7 @@ def fenster_pegelprotokolle(ordner, haupfenster):
     roll.pack(side="right", fill="y")
     anzeige.config(yscrollcommand=roll.set)
 
-    for i, (pfad, anlass, wann, anzahl) in enumerate(protokolle):
+    for i, (_pfad, anlass, wann, anzahl) in enumerate(protokolle):
         marke = "  ← neueste" if i == 0 else ""
         anzeige.insert("end", "%s   %-22s %3d Patches%s" % (
             _zeit.strftime("%d.%m.%Y %H:%M", _zeit.localtime(wann)),
@@ -11056,7 +10978,7 @@ def fenster_aufraeumen(ziel, haupfenster, sichern=None):
 
     import time as _zeit
     einzigartig = unersetzliche_patches(laeufe)
-    for pfad, name, wann, groesse in laeufe:
+    for _pfad, name, wann, groesse in laeufe:
         zusatz = ""
         if name == "vor-ueberschreiben":
             zusatz = "   " + T("(für Rückgängig nötig)")
@@ -11121,7 +11043,7 @@ def fenster_aufraeumen(ziel, haupfenster, sichern=None):
         import time as _zeit
         grenze = _zeit.time() - 7 * 24 * 3600
         anzeige.selection_clear(0, "end")
-        for i, (pfad, name, wann, groesse) in enumerate(laeufe):
+        for i, (_pfad, name, wann, _groesse) in enumerate(laeufe):
             if i < 3 or wann >= grenze:
                 continue
             if einzigartig.get(name):
@@ -11144,13 +11066,12 @@ def fenster_aufraeumen(ziel, haupfenster, sichern=None):
             return
         weg = [laeufe[i] for i in indizes]
         menge = sum(g for _, _, _, g in weg) / 1048576.0
-        if any(name == "vor-ueberschreiben" for _, name, _, _ in weg):
-            if not _frage_ja(f,
-                    T("Sicherungen aufräumen"),
-                    T("Darunter ist die Sicherung für Rückgängig. Danach läßt "
-                      "sich der letzte Schreibvorgang nicht mehr zurücknehmen. "
-                      "Trotzdem löschen?")):
-                return
+        if any(name == "vor-ueberschreiben" for _, name, _, _ in weg) and not _frage_ja(f,
+                T("Sicherungen aufräumen"),
+                T("Darunter ist die Sicherung für Rückgängig. Danach läßt "
+                  "sich der letzte Schreibvorgang nicht mehr zurücknehmen. "
+                  "Trotzdem löschen?")):
+            return
         if not _frage_ja(f,
                 T("Sicherungen aufräumen"),
                 T("%d Sicherungen mit %.1f MB werden endgültig gelöscht. Fortsetzen?")
@@ -11721,7 +11642,6 @@ def _anleitung_fenster(haupfenster, text, titel=None):
     USB-Fensters — abgeschnitten, und Befehle ließen sich nicht kopieren.
     """
     import tkinter as tk
-    from tkinter import filedialog
 
     titel = titel or T("Anleitung")
     fenster = tk.Toplevel(haupfenster)
@@ -11896,7 +11816,6 @@ def _platz_pruefen(fenster, platz):
     es sah aus, als sei der Knopf kaputt.
     """
     import re as _re
-    from tkinter import messagebox
     if not platz:
         _hinweis(fenster, T("Es wurde kein Zielplatz eingegeben."))
         return None
@@ -11992,7 +11911,7 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
     import queue
     import threading
     import tkinter as tk
-    from tkinter import filedialog, messagebox
+    from tkinter import messagebox
 
     f = tk.Toplevel(haupfenster)
     f.title(T("Pedal über USB"))
@@ -12038,9 +11957,22 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
                        exportselection=False)
     liste.pack(fill="both", expand=True, padx=14, pady=6)
 
+    def alle_markieren(*_a):
+        """Alles in der Liste markieren (Strg/Cmd+A).
+
+        Vorher stand hier `alle_auswaehlen` — eine Funktion aus einem anderen
+        Bereich. Der Aufruf scheiterte still im `except`, die Tastenkombination
+        tat also nichts (19.11.2026 von `ruff` gefunden: F821).
+        """
+        try:
+            liste.selection_set(0, "end")
+        except Exception:
+            pass
+        return "break"
+
     for _taste in ("<Command-a>", "<Control-a>"):
         try:
-            f.bind_all(_taste, alle_auswaehlen, add="+")
+            f.bind_all(_taste, alle_markieren, add="+")
         except Exception:
             pass
 
@@ -12987,6 +12919,14 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
         if not (sicherung and platz and os.path.isdir(sicherung)):
             messagebox.showinfo(T("Hinweis"), T("Es gibt nichts rückgängig zu machen."))
             return
+        if speicher and speicher != wahl.get():
+            # Die Sicherung stammt aus dem anderen Speicher. Früher wurde sie
+            # stillschweigend dorthin geschrieben, wo gerade die Auswahl stand
+            # (19.11.2026 von ruff gefunden: F841 — gelesen, nie benutzt).
+            messagebox.showinfo(T("Hinweis"), T(
+                "Die letzte Sicherung stammt aus dem anderen Speicher. "
+                "Bitte oben umschalten und es noch einmal versuchen."))
+            return
         if not _frage_ja(f, 
                 T("Rückgängig"),
                 T("%s wird durch die Sicherung ersetzt. Fortsetzen?") % platz):
@@ -13373,7 +13313,8 @@ def gui(karte):
         beim_start_sichern(karte or karte_finden())
 
     import tkinter as tk
-    from tkinter import filedialog, messagebox as _mb, simpledialog
+    from tkinter import messagebox as _mb
+    from tkinter import simpledialog
     messagebox = uebersetzt_mb(_mb)
 
     # Apples Python 3.9 bringt Tk 8.5 mit. Auf macOS 27 zeichnet es die
@@ -13982,13 +13923,9 @@ def gui(karte):
         anzeige = zeilen + rest
         if muster:
             if muster.isdigit() and not zeilen:
-                anzeige = anzeige + [{"text": "  " + T("Platz %s ist nicht belegt "
-                                                       "— die Liste hat eine Lücke.")
-                                      % muster}]
+                anzeige = [*anzeige, {"text": "  " + T("Platz %s ist nicht belegt " "— die Liste hat eine Lücke.") % muster}]
             else:
-                anzeige = anzeige + [{"text": "  " + T("%d von %d Patches passen "
-                                                      "zu „%s“.")
-                                      % (len(zeilen), _anzahl_patches, muster)}]
+                anzeige = [*anzeige, {"text": "  " + T("%d von %d Patches passen " "zu „%s“.") % (len(zeilen), _anzahl_patches, muster)}]
         liste_setzen(anzeige)
         if muster:
             print("  Suche: %d von %d Patches" % (
@@ -14305,9 +14242,8 @@ def gui(karte):
         # bleiben, sonst muss man nach jeder Änderung neu klicken.
         vorher = None
         i = liste_auswahl()
-        if i and zustand["nummern"]:
-            if 0 <= i[0] < len(zustand["nummern"]):
-                vorher = zustand["nummern"][i[0]]
+        if i and zustand["nummern"] and 0 <= i[0] < len(zustand["nummern"]):
+            vorher = zustand["nummern"][i[0]]
         zeilen = []
         zustand["nummern"] = []
         # „Neu laden“ muß auch dann helfen, wenn der gemerkte Ordner
@@ -14495,7 +14431,7 @@ def gui(karte):
         if cue is not None and cue in nummern and cue != start_nummer:
             # Vorgemerkter Patch zuerst, danach die, die NACH IHM kommen.
             j = nummern.index(cue)
-            folge = [cue] + nummern[j+1:]
+            folge = [cue, *nummern[j + 1:]]
         else:
             folge = nummern[i+1:]
         gesamt = wav_info(pfade[0][1])[0]
@@ -15375,7 +15311,6 @@ def gui(karte):
         rahmen2.pack(fill="x", padx=14, pady=2)
         return rahmen2
 
-    knopf_ton = None
     knopf_stopp = None
 
     knopf_refs = {}
@@ -15435,9 +15370,7 @@ def gui(karte):
         knopf_refs[beschriftung] = knopf
         knopf.grid(row=0, column=spalte, sticky="ew", padx=3)
         reihe2.grid_columnconfigure(spalte, weight=1)
-        if beschriftung == "Anhören":
-            knopf_ton = knopf
-        elif beschriftung == "Stopp":
+        if beschriftung == "Stopp":
             knopf_stopp = knopf
 
     baue_reihe(3, (("▲ nach oben", lambda: verschieben(-1)),
@@ -16069,7 +16002,7 @@ if __name__ == "__main__":
             neuer = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                  ".jamman", "jamman.py")
             print(T("  Ordner aufgeräumt — das Werkzeug startet neu …"))
-            _sp.Popen([sys.executable, neuer] + sys.argv[1:], cwd=os.path.dirname(
+            _sp.Popen([sys.executable, neuer, *sys.argv[1:]], cwd=os.path.dirname(
                 os.path.dirname(os.path.abspath(__file__))))
             sys.exit(0)
     except Exception:

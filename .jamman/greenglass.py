@@ -446,7 +446,7 @@ class JamManUSB:
             self._erwarte_erfolg(self.port.anfrage(
                 MSG_CREATE, struct.pack("<?", True) + _gstr(pfad) + struct.pack("<?", False)))
         except RuntimeError:
-            dateien, ordner = self.ordner(os.path.dirname(pfad.rstrip("/")) or "/")
+            _dateien, ordner = self.ordner(os.path.dirname(pfad.rstrip("/")) or "/")
             if os.path.basename(pfad.rstrip("/")) not in ordner:
                 raise
 

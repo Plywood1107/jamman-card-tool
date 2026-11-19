@@ -1,5 +1,27 @@
 # Changelog
 
+## 3.126 — 2026-11-19
+
+**Code cleaning, checked with a linter (`ruff`), without changing behaviour.**
+
+* **Two real defects found and fixed.** `Ctrl/Cmd+A` in the USB window was bound
+  to a function from another scope — the call failed silently and the shortcut
+  did nothing. And "Undo" in the USB window read the storage of the last backup
+  but never used it, so it could restore into the wrong storage; it now asks to
+  switch first.
+* **Duplicated translation entries removed** (54 pairs). Where two entries had
+  different wording, the earlier one was dropped so the text stays exactly as
+  before.
+* **Dead code removed:** an unused conditional with a typo (`FARBE_HINTERGUND`),
+  unused local imports, an unused button reference, unused loop and unpacked
+  variables. The shared list of progress bars moved to module level.
+* **`ruff.toml` added**: the rules that are deliberately not followed carry a
+  written reason (blind `except` for GUI robustness, `%`-formatting, nested
+  `if`/`with`, German typography).
+* **Checked after every step:** German/English/French/Spanish/Chinese window
+  test, translation check, USB check — all without findings. The linter now
+  reports no errors.
+
 ## 3.125 — 2026-11-19
 
 * **German words gone from the other four languages.** The list showed the stop
