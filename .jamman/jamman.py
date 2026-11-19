@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.121 (19.11.2026)"
+FASSUNG = "3.122 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -8558,6 +8558,32 @@ def bericht_fenster(haupfenster, text):
     f.bind("<Escape>", lambda e: f.destroy())
 
 
+def _rechte_pruefen():
+    """Starter ausführbar machen, falls ein Update das Recht verloren hat.
+
+    Anlaß (19.11.2026): Der Entpacker schrieb Dateien neu und setzte dabei kein
+    Ausführbar-Recht — unter Linux ließ sich JamMan-Linux.sh danach nicht mehr
+    starten. Jeder Start prüft das jetzt und repariert es still.
+    """
+    ordner = os.path.dirname(os.path.abspath(__file__))
+    if os.path.basename(ordner) == ".jamman":
+        ordner = os.path.dirname(ordner)
+    kandidaten = ["JamMan-macOS.command", "JamMan-Linux.sh",
+                  "Hilfe-Help-Aide-Ayuda-帮助/JamMan-Textmenue-macOS.command",
+                  "Hilfe-Help-Aide-Ayuda-帮助/Starten-mit-Textmenue.command",
+                  "Hilfe-Help-Aide-Ayuda-帮助/JamMan.command",
+                  "Hilfe-Help-Aide-Ayuda-帮助/JamMan.sh"]
+    for name in kandidaten:
+        pfad = os.path.join(ordner, name)
+        if not os.path.exists(pfad):
+            continue
+        try:
+            if not os.access(pfad, os.X_OK):
+                os.chmod(pfad, 0o755)
+        except OSError:
+            pass
+
+
 def _aufteilung_migrieren():
     """Alte flache Ablage in die aufgeräumte umbauen — beim Start, einmalig.
 
@@ -8635,6 +8661,8 @@ def _aufteilung_migrieren():
             inhalt = inhalt.replace(b"jamman.py", b".jamman/jamman.py")
             with open(pfad, "wb") as f:
                 f.write(inhalt)
+            if pfad.endswith((".sh", ".command")):
+                os.chmod(pfad, 0o755)
         except OSError:
             pass
     # Ist der Hilfe-Ordner leer geblieben (die Übergangsfassung hatte keine
@@ -9396,6 +9424,17 @@ def aktualisieren(melden=None):
                     with archiv.open(name) as quelle_datei:
                         with open(ziel, "wb") as ziel_datei:
                             shutil.copyfileobj(quelle_datei, ziel_datei)
+                    # Rechte aus dem ZIP übernehmen (19.11.2026): Vorher
+                    # entstanden Dateien ohne Ausführbar-Recht — unter Linux
+                    # ließ sich JamMan-Linux.sh danach nicht mehr starten.
+                    try:
+                        modus = (archiv.getinfo(name).external_attr >> 16) & 0o777
+                        if modus:
+                            os.chmod(ziel, modus)
+                        elif name.endswith((".sh", ".command")):
+                            os.chmod(ziel, 0o755)
+                    except OSError:
+                        pass
                 except PermissionError as fehler:
                     # Unter Windows sind Dateien aus einem ZIP oft
                     # schreibgeschützt; Recht lockern und einmal wiederholen.
@@ -15797,6 +15836,10 @@ def _absturz_protokoll(fehler):
 if __name__ == "__main__":
     # Liegt das Paket noch flach (Fassung 3.120 oder älter), wird es beim
     # ersten Start umgebaut und danach neu gestartet (19.11.2026).
+    try:
+        _rechte_pruefen()
+    except Exception:
+        pass
     try:
         if _aufteilung_migrieren():
             import subprocess as _sp
