@@ -1,5 +1,62 @@
 # Changelog
 
+## 3.125 — 2026-11-19
+
+* **German words gone from the other four languages.** The list showed the stop
+  mode and rhythm untranslated ("sofort", "ende", "ohne", "klick") and the line
+  under the waveform was hard-coded German ("Klick in die Spur springt
+  dorthin"). Both now go through the translation table; "sofort" was missing
+  entirely. Found while taking new screenshots for the README.
+* **The self test now looks for German words in foreign languages.** It reads
+  every visible label, button and list row and reports leftovers. Proven
+  against the bug it was written for: with the old code the English run reports
+  "German text left in the display: sofort". For that the test card now carries
+  a stop mode and a rhythm — before, both columns showed "?" and there was
+  nothing to read.
+* **The self test follows `--sprache`.** It used to test the system language
+  whatever was asked for, so an English run still said "window (de)".
+* **No more false finding about progress windows.** The start-up backup runs in
+  the background; when the window closed, the counter stayed at 1. The test now
+  looks at each bar and only reports those whose window still exists.
+* **New window pictures** for the README (German, English, Chinese): current
+  button rows, a selected patch with waveform.
+
+## 3.124 — 2026-11-19
+
+* **Report by e-mail.** The self test report window offers "Per E-Mail senden":
+  it opens the mail program with subject and report filled in. The sender still
+  presses send — nothing leaves the machine by itself. Added because the issue
+  route needs a GitHub account, and because GitHub does not notify you about
+  your own actions.
+
+## 3.123 — 2026-11-19
+
+* **No button is cut off any more, checked in all five languages.** Equal-width
+  grid columns squeezed long labels; long labels now wrap onto two lines and the
+  button font follows the screen width. "Blättern" moved to its own row.
+* **A flat update no longer makes a tidy folder flat again:** program files go
+  into `.jamman/`, text files into the help folder.
+* **"vormerken" was mistranslated** — French said "préparer", now "réserver".
+
+## 3.122 — 2026-11-19
+
+* **The starters stay executable.** An update rewrote them without their
+  execute permission, so `JamMan-Linux.sh` did nothing after a double click. The
+  updater now takes the mode from the ZIP entry, and every start repairs it.
+
+## 3.121 — 2026-11-19
+
+* **The folder tidies itself.** A flat installation (3.120) rearranges on the
+  next start: program into `.jamman/`, extras into the help folder, starters
+  rewritten, then it restarts. Nothing is deleted, only moved.
+
+## 3.120 — 2026-11-19
+
+* **Bridge release for versions up to 3.117.** Those cannot install a package
+  whose program sits in `.jamman/`: their updater wants a flat `jamman.py` and
+  skips paths beginning with a dot. 3.120 is flat on purpose, so one click in
+  3.117 installs it again.
+
 ## 3.119 — 2026-11-19
 
 * **The self test report can be sent with one click — but only by you.**

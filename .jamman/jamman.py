@@ -2583,6 +2583,8 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'deutscher Text in der Anzeige: %s':
+         'German text left in the display: %s',
         'sofort':
          'immediately',
         '%s   •   %s   •   Klick in die Spur springt dorthin':
@@ -3967,6 +3969,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'deutscher Text in der Anzeige: %s':
+         "texte allemand resté dans l'affichage : %s",
         'sofort':
          'immédiatement',
         '%s   •   %s   •   Klick in die Spur springt dorthin':
@@ -5243,6 +5247,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'deutscher Text in der Anzeige: %s':
+         'texto alemán en la pantalla: %s',
         'sofort':
          'inmediatamente',
         '%s   •   %s   •   Klick in die Spur springt dorthin':
@@ -6519,6 +6525,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'deutscher Text in der Anzeige: %s':
+         '界面中残留德语文字：%s',
         'sofort':
          '立即',
         '%s   •   %s   •   Klick in die Spur springt dorthin':
@@ -8784,6 +8792,23 @@ def _aufteilung_migrieren():
     return umgebaut
 
 
+def deutsche_reste(text):
+    """Deutsche Wörter in einer Anzeige finden (für nichtdeutsche Sprachen).
+
+    Anlaß (19.11.2026): Im englischen Fenster standen „sofort", „ende",
+    „ohne", „klick" und der Hinweis „Klick in die Spur springt dorthin".
+    `texte_pruefen.py` konnte das nicht sehen — die Wörter kamen nicht aus
+    einem T("…"), sondern aus einer Variablen, die schon deutsch war.
+    """
+    treffer = []
+    for wort in ("sofort", "ohne", "klick", "Lücke", "Sicherung",
+                 "Zurücknehmen", "Löschen", "Anhören", "Stoppart",
+                 "Wiedergabe", "Rhythmus", "Spur", "Datei", "Platz ändern"):
+        if wort in text:
+            treffer.append(wort)
+    return treffer
+
+
 def funktionstest(sprachen=None, still=False):
     """Prüft das Werkzeug auf DIESEM Rechner — ohne Pedal, ohne Netzzugang.
 
@@ -8805,7 +8830,10 @@ def funktionstest(sprachen=None, still=False):
     global SICHERUNG_WURZEL
 
     if sprachen is None:
-        eigene = sprache_aus_system()
+        # Die mit --sprache gesetzte Sprache gilt auch für den Fenstertest —
+        # vorher prüfte er immer die Systemsprache (19.11.2026 aufgefallen,
+        # als der englische Lauf „Fenster (de)" meldete).
+        eigene = SPRACHE or sprache_aus_system()
         sprachen = [eigene if eigene in ("de", "en", "fr", "es", "zh") else "de"]
     befunde = []
     print(T("  Funktionstest des JamMan Card Tool"))
@@ -8823,7 +8851,14 @@ def funktionstest(sprachen=None, still=False):
         os.makedirs(pfad)
         with open(os.path.join(basis, "Patch%02d" % n, "patch.xml"), "w",
                   encoding="utf-8") as f:
-            f.write("<JamManPatch><PatchName>Testpatch %d</PatchName></JamManPatch>" % n)
+            # Stoppart und Rhythmus mitgeben, damit die Liste Wörter zeigt:
+            # ohne sie stand dort „?" und die Sprachprüfung im Fenstertest
+            # hatte nichts zu lesen (19.11.2026).
+            f.write("<JamManPatch><PatchName>Testpatch %d</PatchName>"
+                    "<StopMode>%s</StopMode><RhythmType>%s</RhythmType>"
+                    "</JamManPatch>"
+                    % (n, ["FadeOut", "StopInstantly", "StopAtEndOfLoop"][n % 3],
+                       "Silence" if n % 2 else "StudioKickAndHighHat"))
         with open(os.path.join(pfad, "phrase.xml"), "w", encoding="utf-8") as f:
             f.write("<phrase><IsLoop>1</IsLoop><IsReversed>0</IsReversed></phrase>")
         import struct
@@ -8933,6 +8968,32 @@ def funktionstest(sprachen=None, still=False):
                             self.update()
                     except Exception:
                         pass
+
+                # Sprache prüfen: steht in einer anderen Sprache noch
+                # deutscher Text im Fenster? (19.11.2026 ergänzt)
+                if sprache != "de":
+                    reste = []
+                    def texte_sammeln(w):
+                        try:
+                            art = w.winfo_class()
+                        except Exception:
+                            return
+                        try:
+                            if art == "Listbox":
+                                for eintrag in w.get(0, "end"):
+                                    reste.extend(deutsche_reste(str(eintrag)))
+                            elif art in ("Label", "Button", "Checkbutton",
+                                         "Radiobutton", "Menubutton"):
+                                reste.extend(deutsche_reste(str(w.cget("text"))))
+                        except Exception:
+                            pass
+                        for kind in w.winfo_children():
+                            texte_sammeln(kind)
+                    texte_sammeln(self)
+                    if reste:
+                        fehler_liste.append(
+                            T("deutscher Text in der Anzeige: %s")
+                            % ", ".join(sorted(set(reste))[:6]))
 
                 elemente = []
                 sammeln(self, elemente)
