@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.131.3 (19.11.2026)"
+FASSUNG = "3.131.4 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2586,6 +2586,8 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'beim Start automatisch nach Updates sehen':
+         'check for updates automatically on start',
         'nach jedem Update automatisch prüfen':
          'check automatically after each update',
         'Aktualisierung':
@@ -3952,6 +3954,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'beim Start automatisch nach Updates sehen':
+         'chercher les mises à jour automatiquement au démarrage',
         'nach jedem Update automatisch prüfen':
          'vérifier automatiquement après chaque mise à jour',
         'Aktualisierung':
@@ -5226,6 +5230,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'beim Start automatisch nach Updates sehen':
+         'buscar actualizaciones automáticamente al iniciar',
         'nach jedem Update automatisch prüfen':
          'comprobar automáticamente tras cada actualización',
         'Aktualisierung':
@@ -6500,6 +6506,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'beim Start automatisch nach Updates sehen':
+         '启动时自动检查更新',
         'nach jedem Update automatisch prüfen':
          '每次更新后自动检查',
         'Aktualisierung':
@@ -13517,11 +13525,18 @@ def gui(karte):
         einfriert; der Hauptlauf fragt alle 300 ms nach (tkinter darf nur
         aus dem Hauptlauf angesprochen werden).
         """
-        if not frage_ja_nein(
-                fenster, T("Aktualisieren"),
-                T("Die neueste Fassung wird von GitHub geladen und ersetzt die "
-                  "Programmdateien. Ihre Einstellungen und Ihre Karte bleiben "
-                  "unberührt. Fortfahren?")):
+        weiter, autom = frage_ja_nein_mit_haken(
+            fenster, T("Aktualisieren"),
+            T("Die neueste Fassung wird von GitHub geladen und ersetzt die "
+              "Programmdateien. Ihre Einstellungen und Ihre Karte bleiben "
+              "unberührt. Fortfahren?"),
+            T("beim Start automatisch nach Updates sehen"),
+            einstellung_lesen("update_auto") != "nein")
+        try:
+            einstellung_schreiben("update_auto", "ja" if autom else "nein")
+        except Exception:
+            pass
+        if not weiter:
             return
         stand = {"fertig": False, "ok": False, "text": ""}
 
@@ -13916,40 +13931,13 @@ def gui(karte):
         except Exception:
             pass
 
-    # Zweite Zeile für die beiden Aktualisierungs-Häkchen (19.11.2026):
-    # In einer Zeile mit den anderen wurde „Selbsttest nach Update" rechts
-    # aus dem Fenster geschoben und war unsichtbar.
-    zeile_update = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
-    zeile_update.pack(fill="x")
-    tk.Label(zeile_update, text=T("Aktualisierung") + ":", bg=FARBE_HINTERGRUND,
-             fg=FARBE_LEISE, font=schrift(10)).pack(side="left", padx=(14, 6))
-    tk.Checkbutton(zeile_update, text=T("Update beim Start"),
-                   variable=update_auto_var, command=update_auto_umschalten,
-                   bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
-                   activebackground=FARBE_HINTERGRUND,
-                   activeforeground=FARBE_SCHRIFT,
-                   selectcolor=FARBE_HINTERGRUND).pack(side="left", padx=(0, 14))
-
-    # Selbsttest nach einem Update (19.11.2026): Eine neue Fassung kann etwas
-    # kaputt machen, was erst beim Klicken auffällt. Wer das Häkchen setzt,
-    # bekommt nach der nächsten Aktualisierung einmal den Selbsttest — im
-    # Hintergrund, mit demselben Bericht wie der Knopf im Kopf.
+    # Die Häkchen für „Update beim Start" und „Selbsttest nach Update" stehen
+    # jetzt in den Dialogen der beiden Knöpfe (19.11.2026) — die eigene Zeile
+    # „Aktualisierung" entfällt dadurch. Die Variablen bleiben, weil die
+    # Dialoge sie lesen und schreiben.
     test_after_var = tk.BooleanVar(
         value=einstellung_lesen("selbsttest_nach_update") == "ja")
 
-    def test_after_umschalten():
-        try:
-            einstellung_schreiben("selbsttest_nach_update",
-                                  "ja" if test_after_var.get() else "nein")
-        except Exception:
-            pass
-
-    tk.Checkbutton(zeile_update, text=T("Selbsttest nach Update"),
-                   variable=test_after_var, command=test_after_umschalten,
-                   bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
-                   activebackground=FARBE_HINTERGRUND,
-                   activeforeground=FARBE_SCHRIFT,
-                   selectcolor=FARBE_HINTERGRUND).pack(side="left", padx=(0, 14))
     # Blättern bekommt eine eigene Zeile (19.11.2026): In einer Zeile mit den
     # drei Voreinstellungen wurden die Knöpfe auf schmalen Bildschirmen
     # abgeschnitten („▲ 5" französisch, „vormerken").

@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.131.4 — 2026-11-19
+
+* **The settings row "Aktualisierung" is gone.** Both switches now sit where
+  they are used: "Update beim Start" in the dialog behind "Aktualisieren", and
+  "Selbsttest nach Update" in the dialog behind "Selbsttest …". Fewer controls in
+  the window, same options — the dialog reads and writes the same settings.
+* Window layout: one row less; the self test now counts 33 buttons instead of 35.
+
 ## 3.131.3 — 2026-11-19
 
 * **The option now sits where it is looked for: in the self test dialog.** The
