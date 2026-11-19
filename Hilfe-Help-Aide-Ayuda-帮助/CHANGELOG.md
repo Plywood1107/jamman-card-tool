@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.132 — 2026-11-19
+
+* **Same code as 3.131, new number — so that 3.131 can update itself.** The
+  self-test-after-update option was added to 3.131 after its first release. Since
+  the updater compares version numbers, an installation of the first 3.131 would
+  never see the change. 3.132 carries the same code, so one click on "Update"
+  brings it in.
+* **Self test after an update** (the actual feature): a check box in the settings
+  row; after the next successful update the tool runs the self test once in the
+  background on the following start and shows the usual report.
+* **The window re-measures 200 ms after opening**, because on Linux some check
+  boxes are mapped later — French "Mise à jour au démarrage" was clipped.
+
 ## 3.131 — 2026-11-19
 
 * **Self test after an update, if you want it.** New check box in the settings
