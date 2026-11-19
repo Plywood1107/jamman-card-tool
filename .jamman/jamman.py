@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.118 (19.11.2026)"
+FASSUNG = "3.119 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2550,6 +2550,14 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Als Issue vorbereiten':
+         'Prepare as issue',
+        'Issue im Browser vorbereitet — abschicken mußt du selbst.':
+         'Issue prepared in the browser — you have to submit it yourself.',
+        'Browser ließ sich nicht öffnen.':
+         'The browser did not open.',
+        'Nichts wird gesendet, solange du nicht selbst auf GitHub auf Absenden drückst.':
+         'Nothing is sent unless you press Submit on GitHub yourself.',
         'Selbsttest':
          'Self test',
         'Selbsttest …':
@@ -3908,6 +3916,14 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Als Issue vorbereiten':
+         'Préparer comme ticket',
+        'Issue im Browser vorbereitet — abschicken mußt du selbst.':
+         "Ticket préparé dans le navigateur — à vous de l'envoyer.",
+        'Browser ließ sich nicht öffnen.':
+         "Le navigateur ne s'est pas ouvert.",
+        'Nichts wird gesendet, solange du nicht selbst auf GitHub auf Absenden drückst.':
+         "Rien n'est envoyé tant que vous ne cliquez pas vous-même sur Envoyer sur GitHub.",
         'Selbsttest':
          'Test de fonctionnement',
         'Selbsttest …':
@@ -5158,6 +5174,14 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Als Issue vorbereiten':
+         'Preparar como incidencia',
+        'Issue im Browser vorbereitet — abschicken mußt du selbst.':
+         'Incidencia preparada en el navegador — envíala tú mismo.',
+        'Browser ließ sich nicht öffnen.':
+         'No se pudo abrir el navegador.',
+        'Nichts wird gesendet, solange du nicht selbst auf GitHub auf Absenden drückst.':
+         'No se envía nada mientras no pulses tú mismo Enviar en GitHub.',
         'Selbsttest':
          'Autocomprobación',
         'Selbsttest …':
@@ -6408,6 +6432,14 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Als Issue vorbereiten':
+         '准备为 Issue',
+        'Issue im Browser vorbereitet — abschicken mußt du selbst.':
+         '已在浏览器中准备好 Issue —— 需要你自己提交。',
+        'Browser ließ sich nicht öffnen.':
+         '无法打开浏览器。',
+        'Nichts wird gesendet, solange du nicht selbst auf GitHub auf Absenden drückst.':
+         '除非你自己在 GitHub 上点击提交，否则不会发送任何内容。',
         'Selbsttest':
          '功能测试',
         'Selbsttest …':
@@ -8459,10 +8491,38 @@ def bericht_fenster(haupfenster, text):
             meldung = T("Kopieren ging nicht.")
         status.config(text=meldung)
 
+    def als_issue():
+        """Bericht als GitHub-Issue vorbereiten — abschicken muß der Nutzer.
+
+        Anlaß (19.11.2026): Es soll nichts von allein an den Autor gehen.
+        Der Bericht enthält Systemdaten und Dateipfade; wer ihn schicken will,
+        tut das selbst. Dieser Knopf füllt nur das Formular vor.
+        """
+        import urllib.parse
+        import webbrowser
+        titel = "Selbsttest: %s" % FASSUNG
+        rumpf = (T("Bericht des Selbsttests") + "\n\n```\n" + text[-5000:]
+                 + "\n```\n")
+        ziel = ("https://github.com/Suilui1/jamman-card-tool/issues/new"
+                "?title=%s&body=%s" % (urllib.parse.quote(titel),
+                                       urllib.parse.quote(rumpf)))
+        try:
+            webbrowser.open(ziel)
+            status.config(text=T("Issue im Browser vorbereitet — abschicken "
+                                 "mußt du selbst."))
+        except Exception:
+            status.config(text=T("Browser ließ sich nicht öffnen."))
+
     status = tk.Label(leiste, text="", bg=FARBE_HINTERGRUND, fg=FARBE_LEISE)
     status.pack(side="left")
     tk.Button(leiste, text=T("Schließen"), command=f.destroy).pack(side="right")
     tk.Button(leiste, text=T("Kopieren"), command=kopieren).pack(side="right", padx=(0, 8))
+    tk.Button(leiste, text=T("Als Issue vorbereiten"),
+              command=als_issue).pack(side="right", padx=(0, 8))
+    tk.Label(f, text=T("Nichts wird gesendet, solange du nicht selbst auf "
+                       "GitHub auf Absenden drückst."),
+             bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+             font=schrift(9)).pack(pady=(0, 8))
     f.bind("<Escape>", lambda e: f.destroy())
 
 

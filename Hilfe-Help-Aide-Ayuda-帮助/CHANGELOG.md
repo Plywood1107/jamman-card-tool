@@ -1,7 +1,22 @@
 # Changelog
 
+## 3.119 — 2026-11-19
+
+* **The self test report can be sent with one click — but only by you.**
+  It stays on your machine (`jamman-fehler.log` and the window). The report
+  window offers "Kopieren" and "Als Issue vorbereiten", which opens a GitHub
+  issue with the text filled in; you press Submit. Nothing is sent by itself —
+  the report contains system details and file paths.
+* **A "Selbsttest …" button sits in the top bar** (next to "Aktualisieren").
+  It asks first, runs the check in the background and shows the report.
+
 ## 3.118 — 2026-11-19
 
+* **Nothing is sent to the author by itself.** The self test report stays on the
+  machine (`jamman-fehler.log` plus the window). The report window has
+  "Kopieren" and "Als Issue vorbereiten", which only fills in a GitHub issue in
+  the browser — the user presses Submit. Checked: the window offers
+  Schließen · Kopieren · Als Issue vorbereiten.
 * **The help folder is named in every supported language.**
   `Hilfe-Help-Aide-Ayuda-帮助/` — a user recognises their own word without
   guessing. The package is now built with Python's `zipfile`
