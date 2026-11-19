@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.130 (19.11.2026)"
+FASSUNG = "3.131 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -8924,6 +8924,11 @@ def funktionstest(sprachen=None, still=False):
                 # Nutzer mit dem Auge, nicht der Test. Jetzt mißt er mit.
                 try:
                     if True:
+                        # Kurz warten, damit das Fenster seine Nachmessung
+                        # (nach 200 ms) noch machen kann, bevor gemessen wird.
+                        for _ in range(6):
+                            self.update()
+                            time.sleep(0.05)
                         enge = []
                         def breiten_sammeln(w):
                             art = w.winfo_class()
@@ -15755,28 +15760,40 @@ def gui(karte):
         neu_h = max(fenster.winfo_height(), bedarf_h)
         fenster.geometry("%dx%d" % (neu_b, neu_h))
         breite, hoehe = neu_b, neu_h
-    # Reicht die Breite für die Knöpfe? Wenn nicht, einmal um den fehlenden
-    # Rest wachsen (19.11.2026: auf Linux brauchte Französisch 100 px mehr,
-    # als beim ersten Messen bekannt war).
-    try:
-        fenster.update_idletasks()
-        fehlt = 0
-        def _breite_pruefen(w):
-            nonlocal fehlt
-            if w.winfo_class() in ("Button", "Checkbutton", "Radiobutton",
-                                   "Menubutton"):
-                try:
-                    if w.winfo_ismapped():
-                        fehlt = max(fehlt, w.winfo_reqwidth() - w.winfo_width())
-                except Exception:
-                    pass
-            for kind in w.winfo_children():
-                _breite_pruefen(kind)
-        _breite_pruefen(fenster)
-        if fehlt > 0:
-            breite = min(fenster.winfo_width() + fehlt + 8, bildschirm_b - 40)
-            fenster.geometry("%dx%d" % (breite, hoehe))
+    # Reicht die Breite für die Knöpfe? Wenn nicht, um den fehlenden Rest
+    # wachsen. Das wird ZWEIMAL geprüft: sofort und nach 200 ms — auf Linux
+    # werden manche Häkchen erst nach dem ersten Zeichnen gemappt und waren
+    # bei der ersten Messung noch nicht dabei (19.11.2026 im CI gesehen).
+    def _breite_anpassen(*_a):
+        nonlocal breite, hoehe
+        try:
             fenster.update_idletasks()
+            fehlt = [0]
+
+            def _messen(w):
+                if w.winfo_class() in ("Button", "Checkbutton", "Radiobutton",
+                                       "Menubutton"):
+                    try:
+                        if w.winfo_ismapped():
+                            fehlt[0] = max(fehlt[0],
+                                           w.winfo_reqwidth() - w.winfo_width())
+                    except Exception:
+                        pass
+                for kind in w.winfo_children():
+                    _messen(kind)
+
+            _messen(fenster)
+            if fehlt[0] > 0:
+                breite = min(fenster.winfo_width() + fehlt[0] + 8,
+                             bildschirm_b - 40)
+                fenster.geometry("%dx%d" % (breite, hoehe))
+                fenster.update_idletasks()
+        except Exception:
+            pass
+
+    _breite_anpassen()
+    try:
+        fenster.after(200, _breite_anpassen)
     except Exception:
         pass
     fenster.minsize(min(breite, 1000), min(hoehe, 700))

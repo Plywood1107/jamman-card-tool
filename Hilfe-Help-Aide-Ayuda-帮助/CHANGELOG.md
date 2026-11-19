@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.131 — 2026-11-19
+
+* **The window re-measures a second time, 200 ms after opening.** On Linux some
+  check boxes are mapped after the first layout pass, so the first measurement
+  missed them: French "Mise à jour au démarrage" was clipped. Now the window
+  measures right away and again shortly after; the self test waits for that
+  before it judges.
+* Reported by the check from 3.128/3.130 on GitHub's Linux runner — a defect that
+  does not appear on macOS.
+
 ## 3.130 — 2026-11-19
 
 * **Only real clipping is reported now.** 3.128/3.129 also complained when the
