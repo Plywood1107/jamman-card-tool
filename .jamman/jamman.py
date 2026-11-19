@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.124 (19.11.2026)"
+FASSUNG = "3.125 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -1555,6 +1555,10 @@ class Fortschritt:
     HOEHE = 12
 
     offen = 0
+    # Alle erzeugten Balken, damit ein Prüfer sie einzeln nachsehen kann
+    # (19.11.2026: Der Selbsttest zählte einen Balken als „offen", dessen
+    # Fenster mit dem Hauptfenster längst zerstört war).
+    _instanzen = []
 
     def __init__(self, haupfenster, titel):
         import tkinter as tk
@@ -1563,6 +1567,7 @@ class Fortschritt:
         self.titel = titel
         self.haupfenster = haupfenster
         self._tk = tk
+        Fortschritt._instanzen.append(self)
 
     def _bauen(self):
         import tkinter as tk
@@ -1632,6 +1637,11 @@ class Fortschritt:
         except Exception:
             pass
         self.fenster = None
+        try:
+            if self in Fortschritt._instanzen:
+                Fortschritt._instanzen.remove(self)
+        except Exception:
+            pass
 
 
 def fuehre_im_hintergrund(haupfenster, titel, arbeit, starttext=None):
@@ -2573,6 +2583,10 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'sofort':
+         'immediately',
+        '%s   •   %s   •   Klick in die Spur springt dorthin':
+         '%s   •   %s   •   click on the track to jump there',
         'Per E-Mail senden':
          'Send by e-mail',
         'Mail im Mailprogramm vorbereitet — abschicken mußt du selbst.':
@@ -3953,6 +3967,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'sofort':
+         'immédiatement',
+        '%s   •   %s   •   Klick in die Spur springt dorthin':
+         '%s   •   %s   •   cliquez sur la piste pour y aller',
         'Per E-Mail senden':
          'Envoyer par e-mail',
         'Mail im Mailprogramm vorbereitet — abschicken mußt du selbst.':
@@ -5225,6 +5243,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'sofort':
+         'inmediatamente',
+        '%s   •   %s   •   Klick in die Spur springt dorthin':
+         '%s   •   %s   •   haz clic en la pista para saltar allí',
         'Per E-Mail senden':
          'Enviar por correo',
         'Mail im Mailprogramm vorbereitet — abschicken mußt du selbst.':
@@ -6497,6 +6519,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'sofort':
+         '立即',
+        '%s   •   %s   •   Klick in die Spur springt dorthin':
+         '%s   •   %s   •   点击音轨即可跳转',
         'Per E-Mail senden':
          '通过电子邮件发送',
         'Mail im Mailprogramm vorbereitet — abschicken mußt du selbst.':
@@ -8929,6 +8955,27 @@ def funktionstest(sprachen=None, still=False):
                     except Exception as fehler:
                         fehler_liste.append("%s: %s" % (beschriftung, fehler))
                     self.update()
+                # Erst warten, bis laufende Balken fertig sind: Die Sicherung
+                # beim Start läuft im Hintergrund und war beim Zählen noch
+                # offen — der Selbsttest meldete einen Befund, der keiner war
+                # (19.11.2026 im eigenen Lauf gesehen).
+                _grenze = time.monotonic() + 15
+                while Fortschritt.offen and time.monotonic() < _grenze:
+                    try:
+                        self.update()
+                    except Exception:
+                        break
+                    time.sleep(0.05)
+                # Balken, deren Fenster nicht mehr existiert, sind keine
+                # Befunde: sie gingen mit dem Hauptfenster zu.
+                for balken in list(Fortschritt._instanzen):
+                    try:
+                        lebt = (balken.fenster is not None
+                                and balken.fenster.winfo_exists())
+                    except Exception:
+                        lebt = False
+                    if not lebt:
+                        balken.schliessen()
                 if Fortschritt.offen:
                     fehler_liste.append(T("%d Balkenfenster blieben offen")
                                         % Fortschritt.offen)
@@ -14238,9 +14285,11 @@ def gui(karte):
             # nirgends (18.11.2026): „↺" hinter der Wiedergabe, BPM als Spalte.
             wiedergabe = loop + (" ↺" if rueck else "")
             tempo = ("%d BPM" % round(bpm)) if bpm else "—"
-            zeilen.append({"text": "  %-10s %-28s %8s  %-8s %-9s %-6s %s%s" % (
+            # Spaltenbreiten nach dem längsten Wort: „immediately" ist länger
+            # als „sofort" (19.11.2026 im englischen Fenster gesehen).
+            zeilen.append({"text": "  %-10s %-28s %8s  %-12s %-9s %-7s %s%s" % (
                 name, patch_name(pfad)[:28], sekunden(dauer) if w else "—",
-                stop, wiedergabe, tempo, rhy, marke),
+                T(stop), wiedergabe, tempo, T(rhy), marke),
                 "nummer": nummer, "name": patch_name(pfad),
                 "dauer": dauer, "bpm": bpm, "rueck": rueck,
                 "hat_ton": bool(w)})
@@ -14356,7 +14405,7 @@ def gui(karte):
         werte, dauer, _ = wellenform(wav, 900)
         zustand["welle"] = werte
         zustand["dauer"] = dauer
-        zeit_var.set("%s   •   %s   •   Klick in die Spur springt dorthin"
+        zeit_var.set(T("%s   •   %s   •   Klick in die Spur springt dorthin")
                      % (patch_name(alle[nummer]), sekunden(dauer)))
         zeichne_welle()
 
