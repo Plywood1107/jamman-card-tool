@@ -150,6 +150,12 @@ worked. If `groups` does not list `dialout`, the session is still the old one.
 Windows 10 shows the pedal as "USB Serial Device (COMx)" — confirmed on
 17 Nov 2026. Reading and writing from Windows is not yet tested.
 
+**Updating from 3.117 or older:** the built-in update cannot install the new
+layout (it looks for a flat `jamman.py` and skips every path starting with a dot
+when extracting). Download once by hand:
+https://github.com/Suilui1/jamman-card-tool/releases/latest — unpack it, put the
+old folder aside. From 3.118 on the tool updates itself again.
+
 ## Starting it
 
 The package keeps only a few things in plain sight: the three starters (one per

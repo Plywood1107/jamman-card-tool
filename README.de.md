@@ -139,6 +139,13 @@ nicht sieht, ist noch in der alten Sitzung.
 Windows 10 erkennt das Pedal als „USB-Seriell-Gerät (COMx)" — am 17.11.2026
 bestätigt. Gelesen und geschrieben wurde unter Windows noch nicht geprüft.
 
+**Aktualisieren aus Fassungen bis 3.117:** Die eingebaute Aktualisierung
+findet die neue Aufteilung nicht (sie sucht eine flache `jamman.py` und
+überspringt beim Entpacken jeden Pfad mit einem Punkt). Einmal von Hand laden:
+https://github.com/Suilui1/jamman-card-tool/releases/latest — entpacken, den
+alten Ordner beiseite legen. Ab 3.118 aktualisiert sich das Werkzeug wieder
+selbst.
+
 ## Starten
 
 Im Paket liegen nur wenige Dinge offen: die drei Starter (je Betriebssystem

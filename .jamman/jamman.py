@@ -2550,6 +2550,10 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Diese Fassung liegt in einer anderen Ordneraufteilung. Bitte einmal von Hand herunterladen:\n%s':
+         'This version uses a different folder layout. Please download it by hand once:\n%s',
+        'Diese Fassung des Werkzeugs kann sich nicht selbst aktualisieren (neue Ordneraufteilung). Bitte einmal von Hand herunterladen:\n%s':
+         'This version of the tool cannot update itself (new folder layout). Please download it by hand once:\n%s',
         'Als Issue vorbereiten':
          'Prepare as issue',
         'Issue im Browser vorbereitet — abschicken mußt du selbst.':
@@ -3916,6 +3920,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Diese Fassung liegt in einer anderen Ordneraufteilung. Bitte einmal von Hand herunterladen:\n%s':
+         'Cette version utilise une autre arborescence. Merci de la télécharger une fois à la main :\n%s',
+        'Diese Fassung des Werkzeugs kann sich nicht selbst aktualisieren (neue Ordneraufteilung). Bitte einmal von Hand herunterladen:\n%s':
+         "Cette version de l'outil ne peut pas se mettre à jour elle-même (nouvelle arborescence). Merci de la télécharger une fois à la main :\n%s",
         'Als Issue vorbereiten':
          'Préparer comme ticket',
         'Issue im Browser vorbereitet — abschicken mußt du selbst.':
@@ -5174,6 +5182,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Diese Fassung liegt in einer anderen Ordneraufteilung. Bitte einmal von Hand herunterladen:\n%s':
+         'Esta versión usa otra estructura de carpetas. Descárgala una vez a mano:\n%s',
+        'Diese Fassung des Werkzeugs kann sich nicht selbst aktualisieren (neue Ordneraufteilung). Bitte einmal von Hand herunterladen:\n%s':
+         'Esta versión de la herramienta no puede actualizarse sola (nueva estructura de carpetas). Descárgala una vez a mano:\n%s',
         'Als Issue vorbereiten':
          'Preparar como incidencia',
         'Issue im Browser vorbereitet — abschicken mußt du selbst.':
@@ -6432,6 +6444,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Diese Fassung liegt in einer anderen Ordneraufteilung. Bitte einmal von Hand herunterladen:\n%s':
+         '此版本使用不同的文件夹结构。请手动下载一次：\n%s',
+        'Diese Fassung des Werkzeugs kann sich nicht selbst aktualisieren (neue Ordneraufteilung). Bitte einmal von Hand herunterladen:\n%s':
+         '此版本的工具无法自行更新（新的文件夹结构）。请手动下载一次：\n%s',
         'Als Issue vorbereiten':
          '准备为 Issue',
         'Issue im Browser vorbereitet — abschicken mußt du selbst.':
@@ -9199,7 +9215,12 @@ def aktualisieren(melden=None):
             elif "jamman.py" in namen:
                 programm_pfad = "jamman.py"
             else:
-                return False, T("In der Datei fehlt jamman.py.")
+                # Anlaß (19.11.2026): Wer 3.117 oder älter hat, bekam beim
+                # Aktualisieren nur „In der Datei fehlt jamman.py." — ohne
+                # Hinweis, was zu tun ist.
+                return False, T(
+                    "Diese Fassung liegt in einer anderen Ordneraufteilung. "
+                    "Bitte einmal von Hand herunterladen:\n%s") % stand["url"]
 
             # Gehört das Paket wirklich zur angekündigten Fassung?
             quelle = archiv.read(programm_pfad).decode("utf-8", "replace")
@@ -9233,6 +9254,10 @@ def aktualisieren(melden=None):
                     except OSError:
                         pass
 
+            # Läuft das Werkzeug noch flach (Fassung bis 3.117) und die neue
+            # Datei liegt in .jamman/, kann der ALTE Entpacker sie nicht
+            # schreiben — dieser hier schon. Deshalb keine Sperre: der Wechsel
+            # der Aufteilung passiert auf diesem Weg von selbst (19.11.2026).
             if ".jamman/jamman.py" in namen:
                 _alte_aufteilung_wegraeumen(ziel_ordner)
 
