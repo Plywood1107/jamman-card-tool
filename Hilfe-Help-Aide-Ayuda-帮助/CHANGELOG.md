@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.131.3 — 2026-11-19
+
+* **The option now sits where it is looked for: in the self test dialog.** The
+  author expected "after each update, check automatically" below the self test
+  question, not in the settings row. The dialog now carries a check box with
+  exactly that wording; it writes the same setting as the row. Both places stay
+  in sync.
+
 ## 3.131.2 — 2026-11-19
 
 * **The new check box was invisible.** "Selbsttest nach Update" was added to the

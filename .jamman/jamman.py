@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.131.2 (19.11.2026)"
+FASSUNG = "3.131.3 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2586,6 +2586,8 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'nach jedem Update automatisch prüfen':
+         'check automatically after each update',
         'Aktualisierung':
          'Update',
         'Selbsttest nach Update':
@@ -3950,6 +3952,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'nach jedem Update automatisch prüfen':
+         'vérifier automatiquement après chaque mise à jour',
         'Aktualisierung':
          'Mise à jour',
         'Selbsttest nach Update':
@@ -5222,6 +5226,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'nach jedem Update automatisch prüfen':
+         'comprobar automáticamente tras cada actualización',
         'Aktualisierung':
          'Actualización',
         'Selbsttest nach Update':
@@ -6494,6 +6500,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'nach jedem Update automatisch prüfen':
+         '每次更新后自动检查',
         'Aktualisierung':
          '更新',
         'Selbsttest nach Update':
@@ -11678,6 +11686,54 @@ def _frage_auswahl(haupfenster, titel, moeglichkeiten):
     return auswahl["index"]
 
 
+def frage_ja_nein_mit_haken(haupfenster, titel, text, haken_text, haken_wert):
+    """Ja/Nein-Frage mit einem Häkchen darunter.
+
+    Anlaß (19.11.2026): Der Nutzer erwartete die Einstellung „Selbsttest nach
+    Update" beim Selbsttest-Knopf, nicht in den Voreinstellungen. Jetzt steht
+    sie an beiden Stellen; dieses Häkchen schreibt dieselbe Einstellung.
+    Rückgabe: (ja, haken_an)
+    """
+    import tkinter as tk
+
+    fenster = tk.Toplevel(haupfenster)
+    fenster.title(titel)
+    fenster.configure(bg=FARBE_HINTERGRUND)
+    fenster.resizable(False, False)
+    var = tk.BooleanVar(value=bool(haken_wert))
+    antwort = {"ja": False}
+
+    tk.Label(fenster, text=text, bg=FARBE_HINTERGRUND, fg=FARBE_SCHRIFT,
+             font=schrift(11), wraplength=520, justify="left").pack(
+        padx=18, pady=(18, 10))
+    tk.Checkbutton(fenster, text=haken_text, variable=var,
+                   bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+                   activebackground=FARBE_HINTERGRUND,
+                   activeforeground=FARBE_SCHRIFT,
+                   selectcolor=FARBE_HINTERGRUND).pack(anchor="w", padx=18,
+                                                       pady=(0, 10))
+
+    def schliessen(ja):
+        antwort["ja"] = ja
+        fenster.destroy()
+
+    leiste = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    leiste.pack(fill="x", padx=18, pady=(0, 16))
+    tk.Button(leiste, text=T("Nein"), width=10,
+              command=lambda: schliessen(False)).pack(side="right")
+    tk.Button(leiste, text=T("Ja"), width=10,
+              command=lambda: schliessen(True)).pack(side="right", padx=(0, 8))
+    fenster.bind("<Return>", lambda e: schliessen(True))
+    fenster.bind("<Escape>", lambda e: schliessen(False))
+    try:
+        fenster.grab_set()
+        fenster.transient(haupfenster)
+        fenster.wait_window()
+    except Exception:
+        pass
+    return antwort["ja"], bool(var.get())
+
+
 def frage_ja_nein(haupfenster, titel, text):
     """Ja/Nein-Frage mit eigenen Knöpfen.
 
@@ -13636,13 +13692,22 @@ def gui(karte):
     # (19.11.2026 — der Nutzer fragte, wo er ihn findet; ein Knopf ist
     # leichter zu finden als ein Aufruf mit Argument).
     def selbsttest_starten():
-        if not frage_ja_nein(
-                fenster, T("Selbsttest"),
-                T("Das Werkzeug prüft sich selbst: es legt eine Testkarte an, "
-                  "drückt jeden Knopf und spielt die Dateibefehle durch.\n\n"
-                  "Dabei gehen kurz Fenster auf und zu. Das Pedal bleibt "
-                  "unberührt, es wird nichts an deinen Karten geändert.\n\n"
-                  "Dauert ein paar Sekunden. Fortfahren?")):
+        weiter, autom = frage_ja_nein_mit_haken(
+            fenster, T("Selbsttest"),
+            T("Das Werkzeug prüft sich selbst: es legt eine Testkarte an, "
+              "drückt jeden Knopf und spielt die Dateibefehle durch.\n\n"
+              "Dabei gehen kurz Fenster auf und zu. Das Pedal bleibt "
+              "unberührt, es wird nichts an deinen Karten geändert.\n\n"
+              "Dauert ein paar Sekunden. Fortfahren?"),
+            T("nach jedem Update automatisch prüfen"), test_after_var.get())
+        try:
+            # dieselbe Einstellung wie in der Zeile „Aktualisierung"
+            test_after_var.set(autom)
+            einstellung_schreiben("selbsttest_nach_update",
+                                  "ja" if autom else "nein")
+        except Exception:
+            pass
+        if not weiter:
             return
         lauf = {"fertig": False, "text": ""}
 
