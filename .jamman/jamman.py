@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.122 (19.11.2026)"
+FASSUNG = "3.123 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -979,6 +979,29 @@ UNTERORDNER = "JamManSoloXT"
 # patch.xml). Belegt am 12.11.2026: ein Nutzer im Bassic-Forum hat den
 # Stereo erreicht, indem er im Skript „SoloXT" durch „Stereo" ersetzte.
 KARTENORDNER = ("JamManSoloXT", "JamManStereo")
+
+
+def knopf_text(text, grenze=22):
+    """Lange Knopftexte auf zwei Zeilen umbrechen.
+
+    Anlaß (19.11.2026): „Pegeländerung zurücknehmen …" war deutsch und
+    französisch abgeschnitten. Statt die Schrift zu verkleinern, bricht der
+    Text an einer sinnvollen Stelle um — die Knopfreihe wird dadurch nicht
+    breiter als der Bildschirm.
+    """
+    if len(text) <= grenze or " " not in text:
+        return text
+    woerter = text.split(" ")
+    hälfte = len(text) // 2
+    bester, abstand = None, 10 ** 6
+    lauf = 0
+    for i, wort in enumerate(woerter[:-1]):
+        lauf += len(wort) + 1
+        if abs(lauf - hälfte) < abstand:
+            bester, abstand = i, abs(lauf - hälfte)
+    if bester is None:
+        return text
+    return " ".join(woerter[:bester + 1]) + "\n" + " ".join(woerter[bester + 1:])
 
 
 def schrift(groesse, fest=False, titel=False):
@@ -5143,7 +5166,7 @@ TEXTE = {
         "beim Start sichern": "sauvegarder au démarrage",
         "Platz": "Emplacement",
         "nächster": "suivant",
-        "vormerken": "préparer",
+        "vormerken": "réserver",
         "vorgemerkt %d": "préparé %d",
         "Einstellungen:": "Réglages :",
         "wie Vorlage": "comme le modèle",
@@ -6409,7 +6432,7 @@ TEXTE = {
         "beim Start sichern": "copiar al iniciar",
         "Platz": "Posición",
         "nächster": "siguiente",
-        "vormerken": "preparar",
+        "vormerken": "reservar",
         "vorgemerkt %d": "preparado %d",
         "Einstellungen:": "Ajustes:",
         "wie Vorlage": "como plantilla",
@@ -9222,6 +9245,27 @@ def neueste_fassung(zeitlimit=15):
     return {"tag": "", "url": "", "groesse": 0, "fehler": fehler}
 
 
+def _ziel_fuer(name, wurzel):
+    """Wohin eine Datei aus dem ZIP gehört — je nach Aufteilung.
+
+    Anlaß (19.11.2026): Eine flache Fassung (etwa die Brücke für 3.117) soll
+    eine bereits aufgeräumte Ablage nicht wieder flach machen. Programinteile
+    wandern dann nach `.jamman/`, Textdateien in den Hilfe-Ordner, die Starter
+    und die Anleitungen bleiben, wo sie sind.
+    """
+    if os.path.basename(os.path.dirname(os.path.abspath(__file__))) != ".jamman":
+        return name
+    if name in ("jamman.py", "greenglass.py"):
+        return ".jamman/" + name
+    if name.replace("\\", "/").startswith("JamMan-"):
+        # Die aufgeräumte Ablage hat eigene Starter, die auf .jamman/ zeigen.
+        return ".jamman/start-unbenutzt/" + os.path.basename(name)
+    if name in ("CHANGELOG.md", "DONATE.txt", "SPENDEN.txt",
+                "FFMPEG-INSTALLATION.txt"):
+        return "Hilfe-Help-Aide-Ayuda-帮助/" + name
+    return name
+
+
 def _ist_versteckt(name):
     """Soll diese Datei aus dem Paket NICHT entpackt werden?
 
@@ -9418,7 +9462,7 @@ def aktualisieren(melden=None):
                 # schreibgeschützt (Rückmeldung 18.11.2026: Errno 13).
                 if _ist_versteckt(name):
                     continue
-                ziel = os.path.join(ziel_ordner, name)
+                ziel = os.path.join(ziel_ordner, _ziel_fuer(name, ziel_ordner))
                 try:
                     os.makedirs(os.path.dirname(ziel), exist_ok=True)
                     with archiv.open(name) as quelle_datei:
@@ -13618,15 +13662,16 @@ def gui(karte):
                    activebackground=FARBE_HINTERGRUND,
                    activeforeground=FARBE_SCHRIFT,
                    selectcolor=FARBE_HINTERGRUND).pack(side="left", padx=(0, 14))
-    # Voreinstellungen und Blättern sind zwei verschiedene Dinge; ein
-    # Trenner und die Überschrift „Blättern" machen das sichtbar (19.11.2026).
-    tk.Frame(zeile_unten, width=1, bg=FARBE_LEISE).pack(side="left", fill="y",
-                                                       padx=10, pady=4)
-    tk.Label(zeile_unten, text=T("Blättern") + ":", bg=FARBE_HINTERGRUND,
-             fg=FARBE_LEISE, font=schrift(10)).pack(side="left", padx=(0, 6))
-    tk.Label(zeile_unten, text=T("Platz"), bg=FARBE_HINTERGRUND,
+    # Blättern bekommt eine eigene Zeile (19.11.2026): In einer Zeile mit den
+    # drei Voreinstellungen wurden die Knöpfe auf schmalen Bildschirmen
+    # abgeschnitten („▲ 5" französisch, „vormerken").
+    zeile_blaettern = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    zeile_blaettern.pack(fill="x")
+    tk.Label(zeile_blaettern, text=T("Blättern") + ":", bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE, font=schrift(10)).pack(side="left", padx=(14, 6))
+    tk.Label(zeile_blaettern, text=T("Platz"), bg=FARBE_HINTERGRUND,
              fg=FARBE_LEISE).pack(side="left", padx=(10, 2))
-    platz_eingabe = tk.Entry(zeile_unten, width=4, justify="center",
+    platz_eingabe = tk.Entry(zeile_blaettern, width=4, justify="center",
                              bg="#ffffff", fg="#000000",
                              insertbackground="#000000",
                              relief="solid", borderwidth=1)
@@ -13635,21 +13680,23 @@ def gui(karte):
     platz_eingabe.bind("<Escape>", lambda e: (platz_eingabe.delete(0, "end"),
                                               zustand.__setitem__("tippen", ""),
                                               status_var.set("")))
-    tk.Button(zeile_unten, text=T("nächster"), width=9,
+    tk.Button(zeile_blaettern, text=T("nächster"), width=9,
               command=lambda: gehe_zu()).pack(side="left", padx=2)
     # Windows zeichnet Knöpfe nativ und ignoriert highlightbackground.
     # Deshalb sitzt der Knopf in einem eigenen Rahmen, dessen Farbe den
     # vorgemerkten Zustand zeigt - das geht auf allen Systemen.
-    rahmen_vormerken = tk.Frame(zeile_unten, bg=FARBE_HINTERGRUND)
+    rahmen_vormerken = tk.Frame(zeile_blaettern, bg=FARBE_HINTERGRUND)
     rahmen_vormerken.pack(side="left", padx=2)
     knopf_vormerken = tk.Button(rahmen_vormerken, text=T("vormerken"), width=10,
                                 command=lambda: vormerken())
     knopf_vormerken.pack(padx=2, pady=2)
     ursprung_rahmen = (knopf_vormerken.cget("highlightthickness"),
                        knopf_vormerken.cget("highlightbackground"))
-    tk.Button(zeile_unten, text="▲ 5", width=4,
+    # Ohne feste Breite: sonst wurden die Zeichen auf schmalen Bildschirmen
+    # abgeschnitten (19.11.2026).
+    tk.Button(zeile_blaettern, text="▲ 5",
               command=lambda: seite(-1)).pack(side="left", padx=2)
-    tk.Button(zeile_unten, text="▼ 5", width=4,
+    tk.Button(zeile_blaettern, text="▼ 5",
               command=lambda: seite(1)).pack(side="left", padx=2)
 
     # Aufräumen auch ohne vorheriges Sichern erreichbar (19.11.2026):
@@ -15180,11 +15227,29 @@ def gui(karte):
     def baue_reihe(nummer, eintraege):
         rahmen3 = knopfreihe(nummer)
         for spalte, (beschriftung, befehl) in enumerate(eintraege):
-            knopf = tk.Button(rahmen3, text=T(beschriftung), command=befehl)
+            knopf = tk.Button(rahmen3, text=knopf_text(T(beschriftung),
+                                                       grenze=22 if knopf_groesse > 9 else 17),
+                              command=befehl, font=schrift(knopf_groesse))
             knopf_refs[beschriftung] = knopf
             knopf.grid(row=0, column=spalte, sticky="ew", padx=3)
-            rahmen3.grid_columnconfigure(spalte, weight=1, uniform="r%d" % nummer)
+            # Ohne `uniform`: die Spalte bekommt mindestens die Breite ihrer
+            # Beschriftung und erst danach den zusätzlichen Platz. Mit
+            # gleichbreiten Spalten wurden lange Texte abgeschnitten.
+            rahmen3.grid_columnconfigure(spalte, weight=1)
         return rahmen3
+
+    # Knopfschrift richtet sich nach der Bildschirmbreite (19.11.2026):
+    # Auf einem 1280er Bildschirm wurden lange französische Beschriftungen
+    # sonst abgeschnitten.
+    knopf_groesse = 11
+    try:
+        _breite = fenster.winfo_screenwidth()
+        if _breite < 1300:
+            knopf_groesse = 9
+        elif _breite < 1600:
+            knopf_groesse = 10
+    except Exception:
+        pass
 
     baue_reihe(1, (# Karte: wählen, neu lesen
                    ("Karte wählen", karte_waehlen),
@@ -15208,10 +15273,12 @@ def gui(karte):
              ("Lücken schließen", luecken_schliessen),
              ("Einstellungen anwenden", einstellungen_anwenden),
              ("Beschreibung …", beschreibung_aendern))):
-        knopf = tk.Button(reihe2, text=T(beschriftung), command=befehl)
+        knopf = tk.Button(reihe2, text=knopf_text(T(beschriftung),
+                                                  grenze=22 if knopf_groesse > 9 else 17),
+                          command=befehl, font=schrift(knopf_groesse))
         knopf_refs[beschriftung] = knopf
         knopf.grid(row=0, column=spalte, sticky="ew", padx=3)
-        reihe2.grid_columnconfigure(spalte, weight=1, uniform="r2")
+        reihe2.grid_columnconfigure(spalte, weight=1)
         if beschriftung == "Anhören":
             knopf_ton = knopf
         elif beschriftung == "Stopp":
