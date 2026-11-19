@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.131.1 (19.11.2026)"
+FASSUNG = "3.131.2 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2586,6 +2586,8 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Aktualisierung':
+         'Update',
         'Selbsttest nach Update':
          'Self test after update',
         'Fenster zu schmal für seinen Inhalt: %d von %d Pixel — bitte breiter ziehen':
@@ -3948,6 +3950,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Aktualisierung':
+         'Mise à jour',
         'Selbsttest nach Update':
          'Test après mise à jour',
         'Fenster zu schmal für seinen Inhalt: %d von %d Pixel — bitte breiter ziehen':
@@ -5218,6 +5222,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Aktualisierung':
+         'Actualización',
         'Selbsttest nach Update':
          'Prueba tras actualizar',
         'Fenster zu schmal für seinen Inhalt: %d von %d Pixel — bitte breiter ziehen':
@@ -6488,6 +6494,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Aktualisierung':
+         '更新',
         'Selbsttest nach Update':
          '更新后自检',
         'Fenster zu schmal für seinen Inhalt: %d von %d Pixel — bitte breiter ziehen':
@@ -8955,6 +8963,31 @@ def funktionstest(sprachen=None, still=False):
                             for kind in w.winfo_children():
                                 breiten_sammeln(kind)
                         breiten_sammeln(self)
+                        # Unsichtbare Bedienelemente: Wer in einer Zeile zu
+                        # weit rechts liegt, wird vom Fenster abgeschnitten und
+                        # ist dann gar nicht gezeichnet (19.11.2026: das neue
+                        # Häkchen „Selbsttest nach Update" war unsichtbar).
+                        unsichtbar = []
+
+                        def sichtbarkeit(w, im_dialog=False):
+                            art = w.winfo_class()
+                            if art in ("Toplevel", "Tk"):
+                                im_dialog = True
+                            if art in ("Button", "Checkbutton", "Radiobutton",
+                                       "Menubutton"):
+                                try:
+                                    text = str(w.cget("text")).strip()
+                                    if (text and not im_dialog
+                                            and not w.winfo_ismapped()):
+                                        unsichtbar.append(text.splitlines()[0][:28])
+                                except Exception:
+                                    pass
+                            for kind in w.winfo_children():
+                                sichtbarkeit(kind, im_dialog)
+
+                        sichtbarkeit(self)
+                        if unsichtbar:
+                            enge.extend(unsichtbar)
                         if enge:
                             fehler_liste.append(
                                 T("abgeschnittene Beschriftung: %s")
@@ -13818,7 +13851,14 @@ def gui(karte):
         except Exception:
             pass
 
-    tk.Checkbutton(zeile_unten, text=T("Update beim Start"),
+    # Zweite Zeile für die beiden Aktualisierungs-Häkchen (19.11.2026):
+    # In einer Zeile mit den anderen wurde „Selbsttest nach Update" rechts
+    # aus dem Fenster geschoben und war unsichtbar.
+    zeile_update = tk.Frame(fenster, bg=FARBE_HINTERGRUND)
+    zeile_update.pack(fill="x")
+    tk.Label(zeile_update, text=T("Aktualisierung") + ":", bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE, font=schrift(10)).pack(side="left", padx=(14, 6))
+    tk.Checkbutton(zeile_update, text=T("Update beim Start"),
                    variable=update_auto_var, command=update_auto_umschalten,
                    bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
                    activebackground=FARBE_HINTERGRUND,
@@ -13839,7 +13879,7 @@ def gui(karte):
         except Exception:
             pass
 
-    tk.Checkbutton(zeile_unten, text=T("Selbsttest nach Update"),
+    tk.Checkbutton(zeile_update, text=T("Selbsttest nach Update"),
                    variable=test_after_var, command=test_after_umschalten,
                    bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
                    activebackground=FARBE_HINTERGRUND,

@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.131.2 — 2026-11-19
+
+* **The new check box was invisible.** "Selbsttest nach Update" was added to the
+  same row as the other three settings; with four labels that row no longer fits
+  and the box was pushed out of the window — created, packed, but never drawn.
+  The two update settings now have their own row ("Aktualisierung: Update beim
+  Start · Selbsttest nach Update"). Checked with a screenshot, not assumed.
+* **The self test now reports controls that never become visible.** It counts
+  buttons and check boxes that exist but are not mapped — the class of defect
+  that hid the box above.
+
 ## 3.131.1 — 2026-11-19
 
 * **An update that 3.131 can actually see.** The self-test-after-update option
