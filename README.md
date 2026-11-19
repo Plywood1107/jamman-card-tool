@@ -31,7 +31,22 @@ No ffmpeg, no Homebrew, no build step.
 
 ---
 
-![Window](docs/fenster-englisch.png)
+![Window](.jamman/docs/fenster-englisch.png)
+
+**Test it yourself:** if a button does nothing or a window stays open, you can
+check the tool on your own machine. It creates a test card in the temp folder,
+presses every button and runs the file commands — no pedal, no internet:
+
+```
+JamMan-macOS.command funktionstest         # macOS
+JamMan-Windows.bat funktionstest           # Windows
+./JamMan-Linux.sh funktionstest            # Linux
+```
+
+`--alle-sprachen` runs it in all five languages. The result is "keine
+Befunde" (nothing found) or a list; the findings also go to
+`jamman-fehler.log` so they can be sent in.
+
 
 ## New versions
 
@@ -137,7 +152,17 @@ Windows 10 shows the pedal as "USB Serial Device (COMx)" — confirmed on
 
 ## Starting it
 
-**macOS:** double-click `JamMan.command`. macOS opens a Terminal for
+The package keeps only a few things in plain sight: the three starters (one per
+system), this guide, the licence and two folders.
+
+`Hilfe-Help-Aide-Ayuda-帮助/` carries its name in every language the tool
+speaks — a reader of Chinese or Spanish recognises it without guessing. It holds
+the extra starters (console window, text menu), the old short file names as
+forwarders and the text files.
+
+`.jamman/` is hidden on purpose: that is the program itself. There is no need to
+look inside.
+**macOS:** double-click `JamMan-macOS.command`. macOS opens a Terminal for
 `.command` files, and **the window closes together with the tool** when you
 quit. The first time macOS asks whether the script may control Terminal —
 allow it once, and that is the end of it.
@@ -150,10 +175,10 @@ permission prompt); that is what the setting is for: iTerm → Settings →
 Profiles → General → "When the session ends: Close" — on by default for the
 "Default" profile, so the window closes on its own.
 
-**Windows:** `JamMan.bat` (no console window) or `JamMan-mit-Konsole.bat` if
+**Windows:** `JamMan-Windows.bat` (no console window) or `JamMan-Windows-Konsole.bat` if
 you want messages to stay visible.
 
-**Linux:** `./JamMan.sh`.
+**Linux:** `./JamMan-Linux.sh`.
 
 ## Firmware from one pedal to another
 
@@ -205,18 +230,18 @@ way back is the backup on the computer. On 18 Nov 2026 a Solo XT was moved from
 FirmwareVersion 5376 to 5632 (display showed "1.06") — it worked, but it
 remains surgery on system files.
 
-## macOS: “JamMan.command” was not opened
+## macOS: “JamMan-macOS.command” was not opened
 
 When the ZIP is downloaded, macOS marks every extracted program (quarantine).
 The first start then shows:
 
-> “JamMan.command” was not opened — Apple could not verify that
-> “JamMan.command” is free of malware.
+> “JamMan-macOS.command” was not opened — Apple could not verify that
+> “JamMan-macOS.command” is free of malware.
 
 That is not a fault of the tool but the default for anything not registered
 with Apple. Two ways:
 
-**Allow it once:** right-click (or Ctrl-click) `JamMan.command` in the Finder →
+**Allow it once:** right-click (or Ctrl-click) `JamMan-macOS.command` in the Finder →
 **Open** → **Open** again in the dialog. After that a double click works.
 
 **Or remove the mark** (Terminal, adjust the path):
@@ -263,9 +288,9 @@ Or use "Code" → "Download ZIP" on the project page.
 
 | System | Python | Start |
 |---|---|---|
-| macOS | `xcode-select --install`, or Python from [python.org](https://www.python.org/downloads/) | `JamMan.command` |
-| Windows | Python from [python.org](https://www.python.org/downloads/) ("Add python.exe to PATH") | `JamMan.bat` |
-| Linux | `sudo apt install python3-tk` | `./JamMan.sh` |
+| macOS | `xcode-select --install`, or Python from [python.org](https://www.python.org/downloads/) | `JamMan-macOS.command` |
+| Windows | Python from [python.org](https://www.python.org/downloads/) ("Add python.exe to PATH") | `JamMan-Windows.bat` |
+| Linux | `sudo apt install python3-tk` | `./JamMan-Linux.sh` |
 
 **Updating:** the button "Update" in the window fetches the latest version from GitHub, verifies it and replaces the program files. The old files go to `sicherung-vor-<old version>/` first; the settings in `~/.jamman-werkzeug.cnf` are not touched. From the command line: `jamman.py aktualisieren`.
 
@@ -434,7 +459,7 @@ read back on the pedal. For the **Stereo** there is one report so far — from
 the user on Kubuntu. Nobody has reported a Stereo card on Windows yet.
 
 On some Intel Macs Apple's bundled Python 3.9 ships with Tk 8.5.9, which
-aborts when opening a window. `JamMan.command` detects this and falls
+aborts when opening a window. `JamMan-macOS.command` detects this and falls
 back to the text menu; installing Python from python.org (Tk 8.6) brings
 the window back.
 

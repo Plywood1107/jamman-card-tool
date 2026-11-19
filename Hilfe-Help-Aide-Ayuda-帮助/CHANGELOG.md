@@ -1,5 +1,111 @@
 # Changelog
 
+## 3.118 — 2026-11-19
+
+* **The help folder is named in every supported language.**
+  `Hilfe-Help-Aide-Ayuda-帮助/` — a user recognises their own word without
+  guessing. The package is now built with Python's `zipfile`
+  (`werkzeuge/baue_jamman_zip.py`) instead of `zip -r`, because Info-ZIP writes
+  names without the UTF-8 flag and the Chinese part arrived as garbage on
+  Windows. Checked: the entry carries the flag, unpacks with the correct name,
+  and the self test runs from the unpacked package.
+* **Every user can test the tool themselves.** New command
+  `jamman.py funktionstest` (also via the starter: `JamMan-macOS.command
+  funktionstest`, `JamMan-Windows.bat funktionstest`, `./JamMan-Linux.sh
+  funktionstest`, with `--alle-sprachen` for all five languages). It creates a
+  test card in the temp folder, runs list/backup/change/normalise on it, then
+  builds the real window, selects a patch, presses every button and closes
+  dialogs — no pedal, no internet. Findings name the button
+  (`Umbenennen: RuntimeError: …`), go to `jamman-fehler.log` and set exit code 1.
+  Counter-checked: a deliberately broken copy in /tmp is reported, the real
+  build is silent in all five languages.
+* **An abort is an abort, not an error.** After closing during a ZIP backup the
+  window said "Fehler beim Sichern:" — it now says "Abgebrochen — keine Datei
+  geschrieben." and rebuilds the USB connection, because a interrupted transfer
+  often leaves it half-open (that was the second failure). The `.part` file is
+  removed by the ZIP writer itself: checked — abort leaves neither the target
+  nor the `.part`, a complete run renames the `.part`.
+* **The USB window shows progress too.** "Sichere als ZIP …" writes per patch
+  and reports `Sichere: Patch07` with the matching share; fetching shows
+  `%d von %d Patches gelesen`. The bar is the same window, driven by the
+  message queue that was already there.
+* **Closing that window while it works now asks.** Before, the window went away
+  and the ZIP kept being written unseen; a half file stayed behind. Now it asks
+  "Es läuft noch eine Arbeit. Abbrechen und das Fenster schließen?", sets the
+  abort flag, waits up to five seconds and removes the unfinished file. The ZIP
+  is written as `.part` and renamed only when complete — checked: final file
+  present, no `.part` left.
+* **No bar for work that takes a blink.** A settings-only change is done in
+  milliseconds; the window appeared, flashed and vanished. It is now shown only
+  if the work is still running after 0.35 s (measured: 23 ms work → no window,
+  947 ms work → one window, closed afterwards).
+* **The undo dialog is shorter.** It said "Die Aufnahme bleibt unberührt — sie
+  war in dieser Sicherung nicht enthalten." The fact matters (only settings come
+  back, the recording is untouched), the explanation did not: now "Die Aufnahme
+  bleibt, wie sie ist. Der jetzige Stand wird vorher gesichert."
+* **The bar moves the whole time now.** It only jumped right before closing,
+  because the settings change reported just two steps. It now reports each
+  phase (`Sicherung anlegen …` 0.10, `Einstellungen schreiben …` 0.40,
+  `Aufnahme bearbeiten …` 0.55, `fertig` 0.95) and, while a phase runs, creeps
+  forward slowly — capped just below the next mark, so it never pretends to be
+  finished. Measured: 0.20 → 0.32 in twelve ticks, then 0.95 on the real report.
+* **Three progress windows stacked up — found and fixed.** The bar's build
+  method never stored its window, so every `setzen` opened a *new* window; three
+  messages meant three windows, and only the last one was ever closed. Seen
+  19.11.2026 on "Einstellungen anwenden". Now one window is built once and
+  closed once (checked: no window left, counter back to 0). Bars can also no
+  longer be opened from inside a worker thread.
+* **The heavy work no longer freezes the window.** Backing up, rescuing,
+  deleting and applying settings run in a worker thread now; only the bar is
+  drawn in the main thread, fed through a queue. Measured with a stand-in that
+  sleeps 0.75 s: 19 window events were handled while it ran, so macOS shows no
+  beachball. The old bar also opened empty for a moment — it now starts with
+  `einen Moment …`.
+* **A bar for "Einstellungen anwenden" too.** Applying stop mode, playback,
+  rhythm, fade or level rewrites the recording; the window now shows
+  `Sicherung anlegen …` → `Liste neu lesen …` → `fertig`. Only one bar can be
+  open at a time, so the automatic backup bar does not stack on top of it.
+* **The program folder is hidden.** It is called `.jamman` now, so the Finder
+  and any Linux file manager keep it out of sight; what remains visible is three
+  starters, two READMEs, the licence and `hilfen/`. Windows shows the name with
+  a leading dot, which reads as "system, hands off". The self-update knows the
+  folder and does not treat it as a dotfile to be skipped.
+* **The folder is tidy now.** At the top there are three starters (one per
+  system), the two READMEs, the licence and two folders: `programm/` with the
+  tool itself (`jamman.py`, `greenglass.py`, the screenshots) and `hilfen/` with
+  the console starter, the text-menu starter, the old short names as forwarders
+  and the text files (CHANGELOG, donations, ffmpeg help). The console `.bat` no
+  longer sits next to the obvious starter.
+* **The self-update knows both layouts.** It unpacks into the package root when
+  the program lives in `programm/`, checks the version inside
+  `programm/jamman.py`, and moves leftovers of the flat layout into the hidden
+  folder `.alt-aufteilung-<date>` — nothing is deleted.
+
+* **A progress bar for file work.** Backing up a whole card, rescuing the
+  irreplaceable patches, normalising and deleting old backups now show a small
+  window with a bar and a line like `12 von 340 Dateien · 210 MB`. The work
+  still runs in the main thread, so nothing can wedge; the bar is redrawn at
+  every step. Patches above 30 MB get a bar even without being asked — that
+  covers the backup every change takes before it writes.
+* **The starter files name their system.** `JamMan-macOS.command`,
+  `JamMan-Windows.bat`, `JamMan-Windows-Konsole.bat`, `JamMan-Linux.sh`,
+  `JamMan-Textmenue-macOS.command`. The old short names stay as three-line
+  forwarders, so existing shortcuts and forum posts keep working. A single
+  launcher for all three systems is impossible: Windows only runs `.bat` on
+  double-click, macOS only `.command`, Linux needs the execute bit.
+* **The starters pass arguments through.** `./JamMan-macOS.command --version`
+  printed the version and then started the text menu — the launcher forced
+  `gui` and dropped the argument. With arguments it now runs them as given.
+* **Two failures on Python 3.9 (Apple's `/usr/bin/python3`).** The crash report
+  itself crashed, because `traceback.format_exception(exc)` needs three
+  arguments there — the real error stayed invisible. And when the text menu got
+  no input (double click, closed stdin) it ended in a traceback instead of a
+  sentence. Both fixed and checked: `JamMan-Linux.sh --version` prints the
+  version and stops.
+* Copying is done file by file (`shutil.copy2`, so times and permissions stay)
+  for the sake of the count; measured: 16 files in 4 steps, card copy of
+  8 patches complete, normalising 5 patches reports 0.2 → 1.0.
+
 ## 3.117 — 2026-11-19
 
 * **Gaps are visible, and can be closed on demand.** After deleting a slot the

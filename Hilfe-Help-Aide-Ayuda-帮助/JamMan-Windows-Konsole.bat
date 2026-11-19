@@ -9,13 +9,13 @@ echo %DATE% %TIME% Start mit Konsole >> jamman-start.log
 
 where py >nul 2>&1
 if not errorlevel 1 (
-    py -3 jamman.py gui
+    py -3 .jamman\jamman.py gui
     goto :ende
 )
 
 where python >nul 2>&1
 if not errorlevel 1 (
-    python jamman.py gui
+    python .jamman\jamman.py gui
     goto :ende
 )
 

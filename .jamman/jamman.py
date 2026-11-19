@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.117 (19.11.2026)"
+FASSUNG = "3.118 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -1518,7 +1518,204 @@ def beim_start_sichern(basis, behalten=3, still=False):
     return ordner
 
 
-def befehl_sichern(basis, ziel, schreiben):
+class Fortschritt:
+    """Kleines Fenster mit Balken für lange Kopier- und Löschvorgänge.
+
+    Anlaß (19.11.2026, Wunsch des Nutzers): Beim Sichern einer vollen Karte
+    oder beim Retten von 797 MB stand das Werkzeug still, ohne zu sagen, wie
+    weit es ist. Der Balken zeigt Anteil und Dateizahl; die Arbeit läuft
+    weiterhin im Hauptfaden, damit nichts verklemmt — der Balken wird bei
+    jedem Schritt neu gezeichnet.
+    """
+
+    BREITE = 380
+    HOEHE = 12
+
+    offen = 0
+
+    def __init__(self, haupfenster, titel):
+        import tkinter as tk
+        self.fenster = None
+        self.anteil = None
+        self.titel = titel
+        self.haupfenster = haupfenster
+        self._tk = tk
+
+    def _bauen(self):
+        import tkinter as tk
+        if self.fenster is not None:
+            return
+        f = tk.Toplevel(self.haupfenster)
+        # Ohne diese Zeile blieb self.fenster leer, und JEDER setzen-Aufruf
+        # baute ein neues Fenster — bei drei Meldungen standen drei Balken
+        # übereinander und keiner ging zu (19.11.2026 gesehen).
+        self.fenster = f
+        f.title(self.titel)
+        f.configure(bg=FARBE_HINTERGRUND)
+        f.resizable(False, False)
+        try:
+            f.attributes("-topmost", True)
+        except Exception:
+            pass
+        self.text = tk.StringVar(value=T("einen Moment …"))
+        tk.Label(f, textvariable=self.text, bg=FARBE_HINTERGRUND,
+                 fg=FARBE_SCHRIFT, font=schrift(11), anchor="w",
+                 width=46).pack(padx=16, pady=(14, 6))
+        self.leinwand = tk.Canvas(f, width=self.BREITE, height=self.HOEHE,
+                                  bg=FARBE_LISTE, highlightthickness=0)
+        self.leinwand.pack(padx=16, pady=(0, 14))
+        self.balken = self.leinwand.create_rectangle(
+            0, 0, 0, self.HOEHE, fill=FARBE_AUSWAHL, width=0)
+        Fortschritt.offen += 1
+        f.update()
+
+    def kriechen(self, ziel):
+        """Balken langsam in Richtung ziel bewegen (ohne Meldung).
+
+        Anlaß (19.11.2026): Zwischen zwei echten Meldungen stand der Balken
+        still, und es sah aus, als passiere nichts. Solange gearbeitet wird,
+        wandert er sichtbar weiter — bis höchstens kurz vor das Ziel, damit er
+        keine Fertigstellung vortäuscht.
+        """
+        try:
+            if self.fenster is None or self.anteil is None:
+                return
+            grenze = max(0.0, min(0.95, ziel - 0.02))
+            if self.anteil < grenze:
+                self.anteil = min(grenze, self.anteil + 0.01)
+                self.leinwand.coords(self.balken, 0, 0,
+                                     self.BREITE * self.anteil, self.HOEHE)
+                self.fenster.update()
+        except Exception:
+            pass
+
+    def setzen(self, anteil, text=""):
+        try:
+            self._bauen()
+            self.anteil = max(0.0, min(1.0, float(anteil)))
+            self.leinwand.coords(self.balken, 0, 0,
+                                 self.BREITE * self.anteil, self.HOEHE)
+            if text:
+                self.text.set(text)
+            self.fenster.update()
+        except Exception:
+            pass
+
+    def schliessen(self):
+        try:
+            if self.fenster is not None:
+                self.fenster.destroy()
+                Fortschritt.offen = max(0, Fortschritt.offen - 1)
+        except Exception:
+            pass
+        self.fenster = None
+
+
+def fuehre_im_hintergrund(haupfenster, titel, arbeit, starttext=None):
+    """Schwere Dateiarbeit in einem Arbeitsfaden, Balken im Hauptfaden.
+
+    Anlaß (19.11.2026): Beim Anwenden von Einstellungen stand das Fenster still
+    (Beachball), weil Lesen und Schreiben der Aufnahme im Hauptfaden liefen.
+    Der Arbeitsfaden rührt Tk nicht an — er legt nur Zahlen und Texte in eine
+    Warteschlange, die der Hauptfaden abholt und in den Balken schreibt.
+    """
+    import queue
+    import threading
+    import time as _zeit
+
+    # Balken erst zeigen, wenn es dauert (19.11.2026): Bei einem reinen
+    # Einstellungswechsel ist die Arbeit in Millisekunden fertig — ein Fenster,
+    # das kurz aufblitzt und wieder verschwindet, verwirrt mehr als es hilft.
+    VERZOEGERUNG = 0.35
+    balken = None
+    beginn = _zeit.time()
+    schlange = queue.Queue()
+    ergebnis = {}
+
+    def lauf():
+        _HINTERGRUND.aktiv = True
+        try:
+            ergebnis["wert"] = arbeit(lambda a, t: schlange.put((a, t)))
+        except BaseException as fehler:      # auch SystemExit weiterreichen
+            ergebnis["fehler"] = fehler
+        finally:
+            _HINTERGRUND.aktiv = False
+            schlange.put(("ende", ""))
+
+    faden = threading.Thread(target=lauf, daemon=True)
+    faden.start()
+    try:
+        while True:
+            try:
+                anteil, text = schlange.get_nowait()
+            except queue.Empty:
+                anteil, text = None, None
+            if anteil == "ende":
+                break
+            if balken is None and _zeit.time() - beginn > VERZOEGERUNG:
+                # Es dauert länger als einen Augenblick — jetzt zeigen.
+                balken = Fortschritt(haupfenster, titel)
+                balken.setzen(0.0, starttext or T("einen Moment …"))
+            if anteil is not None and balken is not None:
+                balken.ziel = anteil
+                balken.setzen(anteil, text)
+            elif balken is not None:
+                balken.kriechen(getattr(balken, "ziel", 1.0))
+            try:
+                haupfenster.update()
+            except Exception:
+                break
+            _zeit.sleep(0.02)
+        faden.join()
+    finally:
+        if balken is not None:
+            balken.schliessen()
+    if "fehler" in ergebnis:
+        raise ergebnis["fehler"]
+    return ergebnis.get("wert")
+
+
+def kopiere_baum(quelle, ziel, melden=None, titel=None):
+    """Ordner mit Unterordnern kopieren und dabei den Fortschritt melden.
+
+    Datei für Datei mit shutil.copy2 (Zeiten und Rechte bleiben), damit
+    „12 von 340 Dateien" überhaupt möglich ist. Rückgabe: Anzahl kopierter
+    Dateien und Bytes.
+    """
+    dateien = []
+    for wurzel, ordner, namen in os.walk(quelle):
+        for name in namen:
+            pfad = os.path.join(wurzel, name)
+            try:
+                dateien.append((pfad, os.path.relpath(pfad, quelle),
+                                os.path.getsize(pfad)))
+            except OSError:
+                continue
+    gesamt = sum(g for _, _, g in dateien) or 1
+    erledigt_bytes = 0
+    erledigt = 0
+    for pfad, rel, groesse in dateien:
+        ziel_pfad = os.path.join(ziel, rel)
+        try:
+            os.makedirs(os.path.dirname(ziel_pfad), exist_ok=True)
+            shutil.copy2(pfad, ziel_pfad)
+        except OSError:
+            continue
+        erledigt += 1
+        erledigt_bytes += groesse
+        if melden and (erledigt % 5 == 0 or erledigt == len(dateien)):
+            melden(erledigt_bytes / float(gesamt),
+                   T("%d von %d Dateien · %.0f MB")
+                   % (erledigt, len(dateien), erledigt_bytes / 1048576.0))
+    if not dateien:
+        try:
+            os.makedirs(ziel, exist_ok=True)
+        except OSError:
+            pass
+    return erledigt, erledigt_bytes
+
+
+def befehl_sichern(basis, ziel, schreiben, melden=None):
     ziel = os.path.abspath(os.path.expanduser(ziel))
     stempel = datetime.now().strftime("%Y-%m-%d_%H-%M")
     zielordner = os.path.join(ziel, "JamManSicherung_" + stempel)
@@ -1528,10 +1725,10 @@ def befehl_sichern(basis, ziel, schreiben):
         print(T("  Trockenlauf — nichts kopiert. Mit --schreiben ausführen."))
         return
     os.makedirs(zielordner, exist_ok=True)
-    shutil.copytree(basis, os.path.join(zielordner, UNTERORDNER), dirs_exist_ok=True)
+    _, groesse = kopiere_baum(basis, os.path.join(zielordner, UNTERORDNER), melden)
     anzahl = len(patches(basis))
-    groesse = sum(os.path.getsize(os.path.join(w, x))
-                  for w, d, ds in os.walk(zielordner) for x in ds)
+    if melden:
+        melden(1.0, T("fertig"))
     print(T("  Gesichert: %d Patches, %.0f MB.") % (anzahl, groesse / 1024 / 1024))
 
 
@@ -2070,7 +2267,7 @@ def sicherung_der_einstellungen(basis, pfad, grund, wurzel=None):
 
 def befehl_aendern(basis, nummer, schreiben, stopp=None, rhythmus=None,
                    wiedergabe=None, name=None, wurzel=None, fade=None,
-                   gain=None, normieren=False, begrenzen=True):
+                   gain=None, normieren=False, begrenzen=True, melden=None):
     """Einstellungen eines vorhandenen Patches ändern."""
     alle = dict((n, pf) for n, _, pf in patches(basis))
     if nummer not in alle:
@@ -2096,10 +2293,14 @@ def befehl_aendern(basis, nummer, schreiben, stopp=None, rhythmus=None,
         print(T("  Trockenlauf — nichts geändert. Mit --schreiben ausführen."))
         return
 
+    if melden:
+        melden(0.05, T("Sicherung anlegen …"))
     if fade or gain or normieren:
         ziel = sicher_ablegen(basis, [pfad], "vor_pegel", wurzel)
     else:
         ziel = sicherung_der_einstellungen(basis, pfad, "vor_aendern", wurzel)
+    if melden:
+        melden(0.35, T("Einstellungen schreiben …"))
     px = os.path.join(pfad, "patch.xml")
     ph = os.path.join(pfad, "PhraseA", "phrase.xml")
     text = open(px, encoding="utf-8").read()
@@ -2121,6 +2322,8 @@ def befehl_aendern(basis, nummer, schreiben, stopp=None, rhythmus=None,
         open(ph, "w", encoding="utf-8").write(ptext)
 
     if fade or gain or normieren:
+        if melden:
+            melden(0.50, T("Aufnahme bearbeiten …"))
         wav = os.path.join(pfad, "PhraseA", "phrase.wav")
         if not os.path.exists(wav):
             raise SystemExit(T("Fehler: Patch%d hat keine phrase.wav.") % nummer)
@@ -2137,6 +2340,8 @@ def befehl_aendern(basis, nummer, schreiben, stopp=None, rhythmus=None,
             print_pegel(ergebnis)
 
     saeubere_karte(basis)
+    if melden:
+        melden(1.0, T("fertig"))
     print(T("  Geändert. Sicherung: %s") % ziel)
 
 
@@ -2317,6 +2522,8 @@ BEFEHLE = {
     "gui": ("Open the window", "Fenster öffnen"),
     "menu": ("Text menu", "Textmenü"),
     "selbsttest": ("Report what the tool sees", "Bericht, was das Werkzeug sieht"),
+    "funktionstest": ("Check the tool on this computer (buttons, file commands)",
+                      "Werkzeug auf diesem Rechner prüfen (Knöpfe, Dateibefehle)"),
 }
 
 
@@ -2343,6 +2550,92 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Selbsttest':
+         'Self test',
+        'Selbsttest …':
+         'Self test …',
+        'Bericht des Selbsttests':
+         'Self test report',
+        'Kopieren':
+         'Copy',
+        'Kopieren ging nicht.':
+         'Copying did not work.',
+        'In die Zwischenablage kopiert.':
+         'Copied to the clipboard.',
+        'Das Werkzeug prüft sich selbst: es legt eine Testkarte an, drückt jeden Knopf und spielt die Dateibefehle durch.\n\nDabei gehen kurz Fenster auf und zu. Das Pedal bleibt unberührt, es wird nichts an deinen Karten geändert.\n\nDauert ein paar Sekunden. Fortfahren?':
+         'The tool checks itself: it creates a test card, presses every button and runs the file commands.\n\nWindows open and close briefly. The pedal is not touched, nothing on your cards is changed.\n\nTakes a few seconds. Continue?',
+        '  [Hinweis] Kein Fenster geprüft (%s): dieses Python hat Tk 8.5 — es lief das Textmenü.':
+         '  [note] no window checked (%s): this Python has Tk 8.5 — the text menu ran.',
+        '  Funktionstest des JamMan Card Tool':
+         '  JamMan Card Tool self test',
+        '  System:  %s':
+         '  System:  %s',
+        '  Python:  %s':
+         '  Python:  %s',
+        '  Fassung: %s':
+         '  Version: %s',
+        '  Testkarte: %s':
+         '  Test card: %s',
+        '  [ok]   Befehl %s':
+         '  [ok]   command %s',
+        '  [ok]   Befehl %s meldet: %s':
+         '  [ok]   command %s reports: %s',
+        '  [FEHL] Befehl %s: %s':
+         '  [FAIL] command %s: %s',
+        '  [Hinweis] Ohne Tk kein Fenstertest: %s':
+         '  [note] without Tk there is no window test: %s',
+        '  %d Befund(e) — bitte mitschicken (stehen auch in %s).':
+         '  %d finding(s) — please send them along (they are also in %s).',
+        '  Ergebnis: keine Befunde.':
+         '  Result: nothing found.',
+        '  [FEHL] Fenster (%s): %s':
+         '  [FAIL] window (%s): %s',
+        '  [ok]   Fenster (%s): %d Knöpfe, keine Ausnahme':
+         '  [ok]   window (%s): %d buttons, no exception',
+        '%d Balkenfenster blieben offen':
+         '%d progress windows stayed open',
+        'Fenster':
+         'Window',
+        'Abgebrochen — keine Datei geschrieben.':
+         'Cancelled — no file written.',
+        'Es läuft noch eine Arbeit. Abbrechen und das Fenster schließen?\n\nDie unfertige Datei wird gelöscht.':
+         'A task is still running. Cancel it and close the window?\n\nThe unfinished file will be deleted.',
+        '%d von %d Patches gelesen':
+         '%d of %d patches read',
+        'Patch%d: Name, Stoppart, Rhythmus und Wiedergabe aus dieser Sicherung zurückholen?\n\n  %s\n\nDie Aufnahme bleibt, wie sie ist. Der jetzige Stand wird vorher gesichert.':
+         'Patch %d: bring name, stop mode, rhythm and playback back from this backup?\n\n  %s\n\nThe recording stays as it is. The current state is saved first.',
+        'Patch%d aus dieser Sicherung wiederherstellen?\n\n  %s\n\nDamit lässt sich zum Beispiel ein Fade zurücknehmen. Der jetzige Stand wird vorher gesichert.':
+         'Restore patch %d from this backup?\n\n  %s\n\nThis can undo a fade, for example. The current state is saved first.',
+        'Einstellungen schreiben …':
+         'writing settings …',
+        'Aufnahme bearbeiten …':
+         'editing the recording …',
+        'fertig':
+         'done',
+        'einen Moment …':
+         'one moment …',
+        'Sicherung anlegen …':
+         'creating backup …',
+        'Liste neu lesen …':
+         'reading the list …',
+        'fertig':
+         'done',
+        '  Keine Eingabe möglich — Ende.':
+         '  No input possible — end.',
+        'Sicherungen löschen':
+         'Deleting backups',
+        '%d von %d gelöscht':
+         '%d of %d deleted',
+        '%d von %d gelöscht: %s':
+         '%d of %d deleted: %s',
+        'Alle normieren':
+         'Normalise all',
+        '%d von %d Patches: %s':
+         '%d of %d patches: %s',
+        'Sicherung anlegen':
+         'Creating backup',
+        '%d von %d Dateien · %.0f MB':
+         '%d of %d files · %.0f MB',
         'Doppelklick spielt · Ziehen ordnet um · ⌘ zwei markieren, dann Tauschen · Esc hält an · ⌘O Karte, ⌘S Sicherungen, ⌘L Lücken':
          'Double click plays · drag reorders · ⌘ marks two, then Swap · Esc stops · ⌘O card, ⌘S backups, ⌘L gaps',
         'Setlist-Dateien':
@@ -3615,6 +3908,92 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Selbsttest':
+         'Test de fonctionnement',
+        'Selbsttest …':
+         'Test de fonctionnement …',
+        'Bericht des Selbsttests':
+         'Rapport du test',
+        'Kopieren':
+         'Copier',
+        'Kopieren ging nicht.':
+         'La copie a échoué.',
+        'In die Zwischenablage kopiert.':
+         'Copié dans le presse-papiers.',
+        'Das Werkzeug prüft sich selbst: es legt eine Testkarte an, drückt jeden Knopf und spielt die Dateibefehle durch.\n\nDabei gehen kurz Fenster auf und zu. Das Pedal bleibt unberührt, es wird nichts an deinen Karten geändert.\n\nDauert ein paar Sekunden. Fortfahren?':
+         "L'outil se teste lui-même : il crée une carte de test, appuie sur chaque bouton et exécute les commandes de fichiers.\n\nDes fenêtres s'ouvrent et se ferment brièvement. Le pédalier n'est pas touché, rien n'est modifié sur vos cartes.\n\nQuelques secondes. Continuer ?",
+        '  [Hinweis] Kein Fenster geprüft (%s): dieses Python hat Tk 8.5 — es lief das Textmenü.':
+         '  [note] aucune fenêtre vérifiée (%s) : ce Python a Tk 8.5 — le menu texte a été utilisé.',
+        '  Funktionstest des JamMan Card Tool':
+         '  Test de fonctionnement du JamMan Card Tool',
+        '  System:  %s':
+         '  Système : %s',
+        '  Python:  %s':
+         '  Python : %s',
+        '  Fassung: %s':
+         '  Version : %s',
+        '  Testkarte: %s':
+         '  Carte de test : %s',
+        '  [ok]   Befehl %s':
+         '  [ok]   commande %s',
+        '  [ok]   Befehl %s meldet: %s':
+         '  [ok]   commande %s signale : %s',
+        '  [FEHL] Befehl %s: %s':
+         '  [ÉCHEC] commande %s : %s',
+        '  [Hinweis] Ohne Tk kein Fenstertest: %s':
+         '  [note] sans Tk, pas de test de fenêtre : %s',
+        '  %d Befund(e) — bitte mitschicken (stehen auch in %s).':
+         '  %d constat(s) — merci de les envoyer (ils sont aussi dans %s).',
+        '  Ergebnis: keine Befunde.':
+         '  Résultat : aucun constat.',
+        '  [FEHL] Fenster (%s): %s':
+         '  [ÉCHEC] fenêtre (%s) : %s',
+        '  [ok]   Fenster (%s): %d Knöpfe, keine Ausnahme':
+         '  [ok]   fenêtre (%s) : %d boutons, aucune exception',
+        '%d Balkenfenster blieben offen':
+         '%d fenêtres de progression restées ouvertes',
+        'Fenster':
+         'Fenêtre',
+        'Abgebrochen — keine Datei geschrieben.':
+         'Annulé — aucun fichier écrit.',
+        'Es läuft noch eine Arbeit. Abbrechen und das Fenster schließen?\n\nDie unfertige Datei wird gelöscht.':
+         "Une tâche est encore en cours. L'annuler et fermer la fenêtre ?\n\nLe fichier inachevé sera supprimé.",
+        '%d von %d Patches gelesen':
+         '%d sur %d patchs lus',
+        'Patch%d: Name, Stoppart, Rhythmus und Wiedergabe aus dieser Sicherung zurückholen?\n\n  %s\n\nDie Aufnahme bleibt, wie sie ist. Der jetzige Stand wird vorher gesichert.':
+         "Patch %d : restaurer nom, mode d'arrêt, rythme et lecture depuis cette sauvegarde ?\n\n  %s\n\nL'enregistrement reste tel quel. L'état actuel est sauvegardé avant.",
+        'Patch%d aus dieser Sicherung wiederherstellen?\n\n  %s\n\nDamit lässt sich zum Beispiel ein Fade zurücknehmen. Der jetzige Stand wird vorher gesichert.':
+         "Restaurer le patch %d depuis cette sauvegarde ?\n\n  %s\n\nCela permet par exemple d'annuler un fondu. L'état actuel est sauvegardé avant.",
+        'Einstellungen schreiben …':
+         'écrire les réglages …',
+        'Aufnahme bearbeiten …':
+         "traiter l'enregistrement …",
+        'fertig':
+         'terminé',
+        'einen Moment …':
+         'un instant …',
+        'Sicherung anlegen …':
+         'créer une sauvegarde …',
+        'Liste neu lesen …':
+         'relire la liste …',
+        'fertig':
+         'terminé',
+        '  Keine Eingabe möglich — Ende.':
+         '  Aucune entrée possible — fin.',
+        'Sicherungen löschen':
+         'Supprimer les sauvegardes',
+        '%d von %d gelöscht':
+         '%d sur %d supprimés',
+        '%d von %d gelöscht: %s':
+         '%d sur %d supprimés : %s',
+        'Alle normieren':
+         'Tout normaliser',
+        '%d von %d Patches: %s':
+         '%d sur %d patchs : %s',
+        'Sicherung anlegen':
+         'Créer une sauvegarde',
+        '%d von %d Dateien · %.0f MB':
+         '%d sur %d fichiers · %.0f Mo',
         'Doppelklick spielt · Ziehen ordnet um · ⌘ zwei markieren, dann Tauschen · Esc hält an · ⌘O Karte, ⌘S Sicherungen, ⌘L Lücken':
          'Double-clic lit · glisser réordonne · ⌘ marque deux, puis Échanger · Échap arrête · ⌘O carte, ⌘S sauvegardes, ⌘L lacunes',
         'Setlist-Dateien':
@@ -4779,6 +5158,92 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Selbsttest':
+         'Autocomprobación',
+        'Selbsttest …':
+         'Autocomprobación …',
+        'Bericht des Selbsttests':
+         'Informe de la prueba',
+        'Kopieren':
+         'Copiar',
+        'Kopieren ging nicht.':
+         'No se pudo copiar.',
+        'In die Zwischenablage kopiert.':
+         'Copiado al portapapeles.',
+        'Das Werkzeug prüft sich selbst: es legt eine Testkarte an, drückt jeden Knopf und spielt die Dateibefehle durch.\n\nDabei gehen kurz Fenster auf und zu. Das Pedal bleibt unberührt, es wird nichts an deinen Karten geändert.\n\nDauert ein paar Sekunden. Fortfahren?':
+         'La herramienta se prueba a sí misma: crea una tarjeta de prueba, pulsa cada botón y ejecuta los comandos de archivo.\n\nSe abren y cierran ventanas brevemente. El pedal no se toca, no se cambia nada en tus tarjetas.\n\nTarda unos segundos. ¿Continuar?',
+        '  [Hinweis] Kein Fenster geprüft (%s): dieses Python hat Tk 8.5 — es lief das Textmenü.':
+         '  [nota] no se comprobó ventana (%s): este Python tiene Tk 8.5 — se usó el menú de texto.',
+        '  Funktionstest des JamMan Card Tool':
+         '  Prueba de funcionamiento del JamMan Card Tool',
+        '  System:  %s':
+         '  Sistema: %s',
+        '  Python:  %s':
+         '  Python: %s',
+        '  Fassung: %s':
+         '  Versión: %s',
+        '  Testkarte: %s':
+         '  Tarjeta de prueba: %s',
+        '  [ok]   Befehl %s':
+         '  [ok]   comando %s',
+        '  [ok]   Befehl %s meldet: %s':
+         '  [ok]   comando %s informa: %s',
+        '  [FEHL] Befehl %s: %s':
+         '  [FALLO] comando %s: %s',
+        '  [Hinweis] Ohne Tk kein Fenstertest: %s':
+         '  [nota] sin Tk no hay prueba de ventana: %s',
+        '  %d Befund(e) — bitte mitschicken (stehen auch in %s).':
+         '  %d hallazgo(s) — por favor envíalos (también están en %s).',
+        '  Ergebnis: keine Befunde.':
+         '  Resultado: sin hallazgos.',
+        '  [FEHL] Fenster (%s): %s':
+         '  [FALLO] ventana (%s): %s',
+        '  [ok]   Fenster (%s): %d Knöpfe, keine Ausnahme':
+         '  [ok]   ventana (%s): %d botones, sin excepción',
+        '%d Balkenfenster blieben offen':
+         '%d ventanas de progreso quedaron abiertas',
+        'Fenster':
+         'Ventana',
+        'Abgebrochen — keine Datei geschrieben.':
+         'Cancelado — no se escribió ningún archivo.',
+        'Es läuft noch eine Arbeit. Abbrechen und das Fenster schließen?\n\nDie unfertige Datei wird gelöscht.':
+         'Todavía hay una tarea en marcha. ¿Cancelarla y cerrar la ventana?\n\nEl archivo inacabado se borrará.',
+        '%d von %d Patches gelesen':
+         '%d de %d parches leídos',
+        'Patch%d: Name, Stoppart, Rhythmus und Wiedergabe aus dieser Sicherung zurückholen?\n\n  %s\n\nDie Aufnahme bleibt, wie sie ist. Der jetzige Stand wird vorher gesichert.':
+         'Parche %d: ¿recuperar nombre, modo de parada, ritmo y reproducción de esta copia?\n\n  %s\n\nLa grabación queda como está. El estado actual se guarda antes.',
+        'Patch%d aus dieser Sicherung wiederherstellen?\n\n  %s\n\nDamit lässt sich zum Beispiel ein Fade zurücknehmen. Der jetzige Stand wird vorher gesichert.':
+         '¿Restaurar el parche %d desde esta copia?\n\n  %s\n\nAsí se puede deshacer un fundido, por ejemplo. El estado actual se guarda antes.',
+        'Einstellungen schreiben …':
+         'escribir ajustes …',
+        'Aufnahme bearbeiten …':
+         'procesar la grabación …',
+        'fertig':
+         'listo',
+        'einen Moment …':
+         'un momento …',
+        'Sicherung anlegen …':
+         'crear copia …',
+        'Liste neu lesen …':
+         'releer la lista …',
+        'fertig':
+         'listo',
+        '  Keine Eingabe möglich — Ende.':
+         '  No es posible introducir datos — fin.',
+        'Sicherungen löschen':
+         'Borrar copias',
+        '%d von %d gelöscht':
+         '%d de %d borrados',
+        '%d von %d gelöscht: %s':
+         '%d de %d borrados: %s',
+        'Alle normieren':
+         'Normalizar todo',
+        '%d von %d Patches: %s':
+         '%d de %d parches: %s',
+        'Sicherung anlegen':
+         'Crear copia',
+        '%d von %d Dateien · %.0f MB':
+         '%d de %d archivos · %.0f MB',
         'Doppelklick spielt · Ziehen ordnet um · ⌘ zwei markieren, dann Tauschen · Esc hält an · ⌘O Karte, ⌘S Sicherungen, ⌘L Lücken':
          'Doble clic reproduce · arrastrar reordena · ⌘ marca dos, luego Intercambiar · Esc detiene · ⌘O tarjeta, ⌘S copias, ⌘L huecos',
         'Setlist-Dateien':
@@ -5943,6 +6408,92 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Selbsttest':
+         '功能测试',
+        'Selbsttest …':
+         '功能测试 …',
+        'Bericht des Selbsttests':
+         '功能测试报告',
+        'Kopieren':
+         '复制',
+        'Kopieren ging nicht.':
+         '复制失败。',
+        'In die Zwischenablage kopiert.':
+         '已复制到剪贴板。',
+        'Das Werkzeug prüft sich selbst: es legt eine Testkarte an, drückt jeden Knopf und spielt die Dateibefehle durch.\n\nDabei gehen kurz Fenster auf und zu. Das Pedal bleibt unberührt, es wird nichts an deinen Karten geändert.\n\nDauert ein paar Sekunden. Fortfahren?':
+         '程序会自我检测：创建测试卡、按下每个按钮并执行文件命令。\n\n期间会短暂打开和关闭窗口。踏板不受影响，你的存储卡不会有任何改动。\n\n需要几秒钟。继续吗？',
+        '  [Hinweis] Kein Fenster geprüft (%s): dieses Python hat Tk 8.5 — es lief das Textmenü.':
+         '  [提示] 未检查窗口（%s）：此 Python 的 Tk 为 8.5 —— 已运行文本菜单。',
+        '  Funktionstest des JamMan Card Tool':
+         '  JamMan Card Tool 功能测试',
+        '  System:  %s':
+         '  系统：%s',
+        '  Python:  %s':
+         '  Python：%s',
+        '  Fassung: %s':
+         '  版本：%s',
+        '  Testkarte: %s':
+         '  测试卡：%s',
+        '  [ok]   Befehl %s':
+         '  [ok]   命令 %s',
+        '  [ok]   Befehl %s meldet: %s':
+         '  [ok]   命令 %s 提示：%s',
+        '  [FEHL] Befehl %s: %s':
+         '  [失败] 命令 %s：%s',
+        '  [Hinweis] Ohne Tk kein Fenstertest: %s':
+         '  [提示] 没有 Tk 无法测试窗口：%s',
+        '  %d Befund(e) — bitte mitschicken (stehen auch in %s).':
+         '  发现 %d 个问题 —— 请一并发送（也记录在 %s 中）。',
+        '  Ergebnis: keine Befunde.':
+         '  结果：未发现问题。',
+        '  [FEHL] Fenster (%s): %s':
+         '  [失败] 窗口（%s）：%s',
+        '  [ok]   Fenster (%s): %d Knöpfe, keine Ausnahme':
+         '  [ok]   窗口（%s）：%d 个按钮，无异常',
+        '%d Balkenfenster blieben offen':
+         '有 %d 个进度窗口未关闭',
+        'Fenster':
+         '窗口',
+        'Abgebrochen — keine Datei geschrieben.':
+         '已取消 —— 未写入任何文件。',
+        'Es läuft noch eine Arbeit. Abbrechen und das Fenster schließen?\n\nDie unfertige Datei wird gelöscht.':
+         '还有任务在运行。要取消并关闭窗口吗？\n\n未完成的文件将被删除。',
+        '%d von %d Patches gelesen':
+         '已读取 %d / %d 个音色',
+        'Patch%d: Name, Stoppart, Rhythmus und Wiedergabe aus dieser Sicherung zurückholen?\n\n  %s\n\nDie Aufnahme bleibt, wie sie ist. Der jetzige Stand wird vorher gesichert.':
+         '%d 号音色：从该备份恢复名称、停止方式、节奏和播放方式？\n\n  %s\n\n录音保持不变。当前状态会事先备份。',
+        'Patch%d aus dieser Sicherung wiederherstellen?\n\n  %s\n\nDamit lässt sich zum Beispiel ein Fade zurücknehmen. Der jetzige Stand wird vorher gesichert.':
+         '从该备份恢复 %d 号音色？\n\n  %s\n\n例如可以撤销淡出。当前状态会事先备份。',
+        'Einstellungen schreiben …':
+         '正在写入设置 …',
+        'Aufnahme bearbeiten …':
+         '正在处理录音 …',
+        'fertig':
+         '完成',
+        'einen Moment …':
+         '稍等 …',
+        'Sicherung anlegen …':
+         '正在创建备份 …',
+        'Liste neu lesen …':
+         '正在重新读取列表 …',
+        'fertig':
+         '完成',
+        '  Keine Eingabe möglich — Ende.':
+         '  无法输入 —— 结束。',
+        'Sicherungen löschen':
+         '删除备份',
+        '%d von %d gelöscht':
+         '已删除 %d / %d',
+        '%d von %d gelöscht: %s':
+         '已删除 %d / %d：%s',
+        'Alle normieren':
+         '全部标准化',
+        '%d von %d Patches: %s':
+         '%d / %d 个音色：%s',
+        'Sicherung anlegen':
+         '创建备份',
+        '%d von %d Dateien · %.0f MB':
+         '%d / %d 个文件 · %.0f MB',
         'Doppelklick spielt · Ziehen ordnet um · ⌘ zwei markieren, dann Tauschen · Esc hält an · ⌘O Karte, ⌘S Sicherungen, ⌘L Lücken':
          '双击播放 · 拖动排序 · ⌘ 选两个后交换 · Esc 停止 · ⌘O 存储卡，⌘S 备份，⌘L 空位',
         'Setlist-Dateien':
@@ -7221,7 +7772,30 @@ def freier_name(pfad):
     return "%s-%d" % (pfad, i)
 
 
-def sicher_ablegen(basis, patch_pfade, grund, wurzel=None):
+GUI_FENSTER = None
+# Anlaß (19.11.2026): Aus einem Arbeitsfaden heraus entstanden weitere
+# Balkenfenster, die nie wieder zugingen. Tk gehört in den Hauptfaden —
+# deshalb merkt sich das Werkzeug, ob gerade ein Faden arbeitet.
+_HINTERGRUND = threading.local()
+
+
+def _im_hintergrund():
+    return getattr(_HINTERGRUND, "aktiv", False)
+
+
+def _groesse_von(pfade):
+    gesamt = 0
+    for pfad in pfade:
+        for w, d, ds in os.walk(pfad):
+            for x in ds:
+                try:
+                    gesamt += os.path.getsize(os.path.join(w, x))
+                except OSError:
+                    pass
+    return gesamt
+
+
+def sicher_ablegen(basis, patch_pfade, grund, wurzel=None, melden=None):
     """Kopiert Patches vorher weg. Gibt den Zielordner zurück."""
     ordner = os.path.expanduser(wurzel or SICHERUNG_WURZEL)
     ziel = freier_name(os.path.join(
@@ -7232,9 +7806,28 @@ def sicher_ablegen(basis, patch_pfade, grund, wurzel=None):
     except PermissionError:
         raise SystemExit(T("Fehler: in '%s' darf nicht geschrieben werden.\n"
                          "  Nimm einen anderen Ordner:  --sicherung <pfad>") % ordner)
-    for pfad in patch_pfade:
-        shutil.copytree(pfad, os.path.join(ziel, os.path.basename(pfad)),
-                        dirs_exist_ok=True)
+    # Ohne ausdrückliche Meldung: bei mehr als 30 MB einen eigenen Balken
+    # zeigen (19.11.2026, Wunsch: Fortschritt bei allen Datei-Vorgängen).
+    eigenes = None
+    if (melden is None and GUI_FENSTER is not None and Fortschritt.offen == 0
+            and not _im_hintergrund()
+            and _groesse_von(patch_pfade) > 30 * 1048576):
+        eigenes = Fortschritt(GUI_FENSTER, T("Sicherung anlegen"))
+        melden = eigenes.setzen
+    try:
+        return _ablegen_kopieren(ziel, patch_pfade, melden)
+    finally:
+        if eigenes is not None:
+            eigenes.schliessen()
+
+
+def _ablegen_kopieren(ziel, patch_pfade, melden):
+    for i, pfad in enumerate(patch_pfade, 1):
+        def _teil(anteil, text, _i=i, _p=pfad):
+            if melden:
+                gesamt = (i - 1 + anteil) / float(len(patch_pfade) or 1)
+                melden(gesamt, "%s — %s" % (os.path.basename(_p), text))
+        kopiere_baum(pfad, os.path.join(ziel, os.path.basename(pfad)), _teil)
     return ziel
 
 
@@ -7363,8 +7956,10 @@ def befehl_alle_normieren(basis, schreiben, ziel_rms_db=-18.0, grenze_db=-1.0,
     print()
     geaendert = 0
     gedeckelt = 0
+    zaehler = 0
     protokoll_eintraege = []
     for nummer, name, pfad in alle:
+        zaehler += 1
         w = phrase_wav(pfad)
         if not w:
             continue
@@ -7385,8 +7980,13 @@ def befehl_alle_normieren(basis, schreiben, ziel_rms_db=-18.0, grenze_db=-1.0,
         if ergebnis["begrenzt"]:
             gedeckelt += 1
         if fortschritt:
-            fortschritt("normiert: %s (%d/%d)" % (patch_name(pfad)[:24],
-                                                 geaendert, len(alle)))
+            try:
+                fortschritt(zaehler / float(len(alle) or 1),
+                            "normiert: %s (%d/%d)" % (patch_name(pfad)[:24],
+                                                     zaehler, len(alle)))
+            except TypeError:
+                fortschritt("normiert: %s (%d/%d)" % (patch_name(pfad)[:24],
+                                                     geaendert, len(alle)))
         print(T("  %-10s %-24s %+6.1f → %+6.1f dB  (Spitze %+.1f dB)%s")
               % (name, patch_name(pfad)[:24], vorher[1], nachher[1],
                  nachher[0], "  [gedeckelt]" if ergebnis["begrenzt"] else ""))
@@ -7759,7 +8359,15 @@ def menu(karte):
         print(T("  7  Alles sichern"))
         print(T("  8  Karte auswerfen"))
         print(T("  0  Beenden"))
-        wahl = input(T("  Auswahl: ")).strip()
+        try:
+            wahl = input(T("  Auswahl: ")).strip()
+        except EOFError:
+            # Kein Terminal (z. B. Doppelklick, oder die Eingabe wurde
+            # geschlossen): freundlich beenden statt Absturzbericht
+            # (19.11.2026).
+            print()
+            print(T("  Keine Eingabe möglich — Ende."))
+            return
 
         try:
             if wahl == "0":
@@ -7816,6 +8424,295 @@ FARBE_LEISE = "#a0a0a0"
 FARBE_LISTE = "#161616"
 FARBE_AUSWAHL = "#2f6fb3"
 FARBE_TON = "#5fd08a"
+
+
+def bericht_fenster(haupfenster, text):
+    """Zeigt den Bericht des Selbsttests in einem Fenster mit Kopierknopf."""
+    import tkinter as tk
+    f = tk.Toplevel(haupfenster)
+    f.title(T("Selbsttest"))
+    f.configure(bg=FARBE_HINTERGRUND)
+    f.geometry("760x520+%d+%d" % (haupfenster.winfo_rootx() + 40,
+                                  haupfenster.winfo_rooty() + 40))
+    tk.Label(f, text=T("Bericht des Selbsttests"), bg=FARBE_HINTERGRUND,
+             fg=FARBE_SCHRIFT, font=schrift(12, fest=True)).pack(pady=(12, 6))
+    rahmen = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    rahmen.pack(fill="both", expand=True, padx=14)
+    anzeige = tk.Text(rahmen, bg=FARBE_LISTE, fg=FARBE_SCHRIFT, relief="flat",
+                      font=schrift(10), wrap="word")
+    anzeige.pack(side="left", fill="both", expand=True)
+    roll = tk.Scrollbar(rahmen, command=anzeige.yview)
+    roll.pack(side="right", fill="y")
+    anzeige.config(yscrollcommand=roll.set)
+    anzeige.insert("1.0", text)
+    anzeige.see("end")
+
+    leiste = tk.Frame(f, bg=FARBE_HINTERGUND if False else FARBE_HINTERGRUND)
+    leiste.pack(fill="x", padx=14, pady=10)
+
+    def kopieren():
+        try:
+            f.clipboard_clear()
+            f.clipboard_append(text)
+            meldung = T("In die Zwischenablage kopiert.")
+        except Exception:
+            meldung = T("Kopieren ging nicht.")
+        status.config(text=meldung)
+
+    status = tk.Label(leiste, text="", bg=FARBE_HINTERGRUND, fg=FARBE_LEISE)
+    status.pack(side="left")
+    tk.Button(leiste, text=T("Schließen"), command=f.destroy).pack(side="right")
+    tk.Button(leiste, text=T("Kopieren"), command=kopieren).pack(side="right", padx=(0, 8))
+    f.bind("<Escape>", lambda e: f.destroy())
+
+
+def funktionstest(sprachen=None, still=False):
+    """Prüft das Werkzeug auf DIESEM Rechner — ohne Pedal, ohne Netzzugang.
+
+    Anlaß (19.11.2026): Ein Knopf, der nichts tut, ein Fenster, das offen
+    bleibt, eine Ausnahme im Rückruf — solche Fehler findet man mit einem
+    Klick. Dieser Test macht die Klicks selbst: er baut das Fenster, wählt
+    einen Patch, drückt jeden Knopf, schließt aufgegangene Dialoge und spielt
+    die Dateibefehle auf einer Testkarte durch. Aufruf:
+
+        jamman.py funktionstest              (in der eigenen Sprache)
+        jamman.py funktionstest --alle-sprachen
+
+    Rückgabe: 0 = in Ordnung, 1 = Befunde. Ausgaben zusätzlich in
+    jamman-fehler.log, damit ein Nutzer sie mitschicken kann.
+    """
+    import io
+    import contextlib
+    import tempfile
+    global SICHERUNG_WURZEL
+
+    if sprachen is None:
+        eigene = sprache_aus_system()
+        sprachen = [eigene if eigene in ("de", "en", "fr", "es", "zh") else "de"]
+    befunde = []
+    print(T("  Funktionstest des JamMan Card Tool"))
+    print(T("  System:  %s") % sys.platform)
+    print(T("  Python:  %s") % sys.executable)
+    print(T("  Fassung: %s") % FASSUNG)
+    print()
+
+    # 1. Testkarte anlegen
+    temp = tempfile.mkdtemp(prefix="jamman-test-")
+    basis = os.path.join(temp, "JamManSoloXT")
+    os.makedirs(basis)
+    for n in range(1, 5):
+        pfad = os.path.join(basis, "Patch%02d" % n, "PhraseA")
+        os.makedirs(pfad)
+        with open(os.path.join(basis, "Patch%02d" % n, "patch.xml"), "w",
+                  encoding="utf-8") as f:
+            f.write("<JamManPatch><PatchName>Testpatch %d</PatchName></JamManPatch>" % n)
+        with open(os.path.join(pfad, "phrase.xml"), "w", encoding="utf-8") as f:
+            f.write("<phrase><IsLoop>1</IsLoop><IsReversed>0</IsReversed></phrase>")
+        import struct
+        import wave
+        with wave.open(os.path.join(pfad, "phrase.wav"), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(44100)
+            w.writeframes(b"".join(struct.pack("<h", 2000 if i % 2 else -2000)
+                                   for i in range(6000)))
+    print(T("  Testkarte: %s") % basis)
+    sicherungen = os.path.join(temp, "sicherungen")
+    os.makedirs(sicherungen)
+    alt_wurzel = SICHERUNG_WURZEL
+    SICHERUNG_WURZEL = sicherungen
+
+    # 2. Dateibefehle
+    probe = [
+        ("liste", lambda: befehl_liste(basis)),
+        ("sichern", lambda: befehl_sichern(basis, os.path.join(temp, "ziel"), True)),
+        ("aendern", lambda: befehl_aendern(basis, 1, True, None, None, "single",
+                                           None, None, 0.5, -2.0, False, True)),
+        ("normieren", lambda: befehl_alle_normieren(basis, True)),
+    ]
+    for name, befehl in probe:
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                befehl()
+            print(T("  [ok]   Befehl %s") % name)
+        except SystemExit as fehler:
+            print(T("  [ok]   Befehl %s meldet: %s") % (name, str(fehler)[:60]))
+        except Exception as fehler:
+            befunde.append("%s: %s" % (name, fehler))
+            print(T("  [FEHL] Befehl %s: %s") % (name, fehler))
+
+    # 3. Fenster: jeden Knopf drücken
+    try:
+        import tkinter
+        from tkinter import messagebox
+    except Exception as fehler:
+        print(T("  [Hinweis] Ohne Tk kein Fenstertest: %s") % fehler)
+        tkinter = None
+    if tkinter is not None:
+        for name in ("showinfo", "showerror", "showwarning"):
+            setattr(messagebox, name, lambda *a, **k: None)
+        messagebox.askyesno = lambda *a, **k: False
+        for sprache in sprachen:
+            sprache_setzen(sprache)
+            fehler_liste = []
+            fenster_merker = {}
+            echtes_mainloop = tkinter.Tk.mainloop
+
+            def fake_mainloop(self, *a, **k):
+                self.update()
+                fenster_merker["w"] = self
+                gedrueckt = []
+
+                def melde(*teile):
+                    # Welcher Knopf war es? Das macht den Bericht brauchbar.
+                    spur = "".join(traceback_parameter(teile))
+                    letzte = spur.strip().splitlines()[-1] if spur.strip() else "Fehler"
+                    knopf = fenster_merker.get("knopf")
+                    fehler_liste.append(("%s: %s" % (knopf, letzte))
+                                        if knopf else letzte)
+
+                self.report_callback_exception = melde
+
+                def waechter():
+                    try:
+                        for w in self.winfo_children():
+                            if w.winfo_class() == "Toplevel":
+                                try:
+                                    w.grab_release()
+                                except Exception:
+                                    pass
+                                try:
+                                    w.destroy()
+                                except Exception:
+                                    pass
+                        self.after(250, waechter)
+                    except Exception:
+                        pass
+
+                self.after(250, waechter)
+
+                def sammeln(w, ziel):
+                    for kind in w.winfo_children():
+                        if kind.winfo_class() in ("Button", "Checkbutton",
+                                                  "Radiobutton"):
+                            ziel.append(kind)
+                        sammeln(kind, ziel)
+
+                # Einen Patch auswählen, sonst bleiben die auswahlabhängigen
+                # Knöpfe grau und werden nie geprüft.
+                listen = []
+                def listen_sammeln(w):
+                    for kind in w.winfo_children():
+                        if kind.winfo_class() == "Listbox":
+                            listen.append(kind)
+                        listen_sammeln(kind)
+                listen_sammeln(self)
+                for liste in listen:
+                    try:
+                        if liste.size():
+                            liste.selection_set(0)
+                            liste.event_generate("<<ListboxSelect>>")
+                            self.update()
+                    except Exception:
+                        pass
+
+                elemente = []
+                sammeln(self, elemente)
+                for el in elemente:
+                    if not self.winfo_exists():
+                        break
+                    try:
+                        if str(el.cget("state")) == "disabled":
+                            continue
+                        beschriftung = str(el.cget("text"))
+                    except Exception:
+                        continue
+                    if beschriftung in (T("Beenden"), T("Abbrechen")):
+                        continue
+                    gedrueckt.append(beschriftung)
+                    fenster_merker["knopf"] = beschriftung
+                    try:
+                        with contextlib.redirect_stdout(io.StringIO()):
+                            el.invoke()
+                    except Exception as fehler:
+                        fehler_liste.append("%s: %s" % (beschriftung, fehler))
+                    self.update()
+                if Fortschritt.offen:
+                    fehler_liste.append(T("%d Balkenfenster blieben offen")
+                                        % Fortschritt.offen)
+                    Fortschritt.offen = 0
+                fenster_merker["knoepfe"] = gedrueckt
+                self.quit()
+
+            tkinter.Tk.mainloop = fake_mainloop
+            tkinter.Misc.mainloop = fake_mainloop
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    gui(basis)
+            except Exception as fehler:
+                fehler_liste.append("%s: %s" % (T("Fenster"), fehler))
+            finally:
+                tkinter.Tk.mainloop = echtes_mainloop
+                try:
+                    fenster_merker["w"].destroy()
+                except Exception:
+                    pass
+            if not fenster_merker.get("w"):
+                # Tk 8.5 (z. B. Apples /usr/bin/python3): Das Werkzeug zeigt
+                # dann das Textmenü statt eines Fensters — es gibt nichts zu
+                # drücken. Das ist kein Fehler, sondern die Umgebung.
+                print(T("  [Hinweis] Kein Fenster geprüft (%s): dieses Python "
+                        "hat Tk 8.5 — es lief das Textmenü.") % sprache)
+            elif fehler_liste:
+                befunde.extend(fehler_liste)
+                print(T("  [FEHL] Fenster (%s): %s")
+                      % (sprache, "; ".join(sorted(set(fehler_liste))[:3])))
+            else:
+                print(T("  [ok]   Fenster (%s): %d Knöpfe, keine Ausnahme")
+                      % (sprache, len(set(fenster_merker.get("knoepfe", [])))))
+
+    SICHERUNG_WURZEL = alt_wurzel
+    try:
+        shutil.rmtree(temp, ignore_errors=True)
+    except Exception:
+        pass
+    print()
+    if befunde:
+        print(T("  %d Befund(e) — bitte mitschicken (stehen auch in %s).")
+              % (len(befunde), "jamman-fehler.log"))
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "jamman-fehler.log"), "a", encoding="utf-8") as f:
+                f.write("\n" + datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        + "  Funktionstest\n")
+                for b in befunde:
+                    f.write("  " + b + "\n")
+        except OSError:
+            pass
+        return 1
+    print(T("  Ergebnis: keine Befunde."))
+    return 0
+
+
+def traceback_parameter(teile):
+    """Eine Ausnahme aus einem Tk-Rückruf als Text.
+
+    Tk ruft report_callback_exception(art, wert, spur) — manchmal kommt auch
+    nur die Ausnahme selbst. Beides wird zu einer lesbaren Spur, ohne die
+    Ein-Argument-Form von format_exception zu benutzen (die fehlt auf
+    Python 3.9, siehe 19.11.2026).
+    """
+    import traceback
+    liste = list(teile) + [None, None, None]
+    art, wert, spur = liste[0], liste[1], liste[2]
+    try:
+        if isinstance(art, type) and issubclass(art, BaseException):
+            return traceback.format_exception(art, wert, spur)
+        if isinstance(art, BaseException):
+            return traceback.format_exception(type(art), art, art.__traceback__)
+    except Exception:
+        pass
+    return ["%s" % (art,)]
 
 
 def selbsttest(pfad=None):
@@ -8102,6 +8999,48 @@ def neueste_fassung(zeitlimit=15):
     return {"tag": "", "url": "", "groesse": 0, "fehler": fehler}
 
 
+def _ist_versteckt(name):
+    """Soll diese Datei aus dem Paket NICHT entpackt werden?
+
+    Mit einem Punkt beginnende Einträge werden übergangen (.gitignore,
+    .DS_Store) — außer dem Programmordner `.jamman`, der bewusst versteckt
+    liegt (19.11.2026).
+    """
+    teile = name.split("/")
+    if teile and teile[0] == ".jamman":
+        return False
+    return any(teil.startswith(".") for teil in teile)
+
+
+def _alte_aufteilung_wegraeumen(wurzel):
+    """Reste der flachen Aufteilung (vor 3.118) in einen versteckten Ordner.
+
+    Anlaß (19.11.2026): Mit der neuen Aufteilung liegen Programm und Extras in
+    Unterordnern. Bei einem Update in einen bestehenden Ordner blieben die
+    alten Dateien daneben liegen und verwirrten. Sie werden nicht gelöscht,
+    sondern nach .alt-aufteilung-<Stempel>/ verschoben.
+    """
+    reste = ("jamman.py", "greenglass.py", "CHANGELOG.md", "DONATE.txt",
+             "SPENDEN.txt", "FFMPEG-INSTALLATION.txt", "JamMan.command",
+             "JamMan.bat", "JamMan.sh", "JamMan-mit-Konsole.bat",
+             "Starten-mit-Textmenue.command", "werkzeuge", "docs",
+             "__pycache__")
+    vorhanden = [n for n in reste if os.path.exists(os.path.join(wurzel, n))]
+    if not vorhanden:
+        return
+    stempel = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    ziel = os.path.join(wurzel, ".alt-aufteilung-" + stempel)
+    try:
+        os.makedirs(ziel, exist_ok=True)
+    except OSError:
+        return
+    for name in vorhanden:
+        try:
+            shutil.move(os.path.join(wurzel, name), os.path.join(ziel, name))
+        except OSError:
+            pass
+
+
 def aktualisieren(melden=None):
     """Holt die neueste Fassung und ersetzt die Programmdateien.
 
@@ -8114,7 +9053,14 @@ def aktualisieren(melden=None):
     import urllib.request
     import zipfile
 
-    sag = melden or (lambda text: None)
+    def sag(wert, text=None):
+        """Meldung mit Anteil — oder nur Text (alte Aufrufer)."""
+        if melden is None:
+            return
+        if isinstance(wert, (int, float)) and text is not None:
+            melden(wert, text)
+        else:
+            melden(0.0, wert)
     stand = neueste_fassung()
     if not stand.get("tag"):
         grund = stand.get("fehler") or T("unbekannter Grund")
@@ -8131,7 +9077,14 @@ def aktualisieren(melden=None):
                        % stand["tag"])
 
     sag(T("Lade Fassung %s …") % stand["tag"])
-    ziel_ordner = os.path.dirname(os.path.abspath(__file__))
+    # Aufteilung seit 3.118: das Programm liegt in „.jamman/", die Starter
+    # eine Ebene darüber. Entpackt wird deshalb in die Paketwurzel, sonst
+    # entstünde „programm/programm/…" (19.11.2026).
+    programm_ordner = os.path.dirname(os.path.abspath(__file__))
+    if os.path.basename(programm_ordner) == ".jamman":
+        ziel_ordner = os.path.dirname(programm_ordner)
+    else:
+        ziel_ordner = programm_ordner
     anzahl = 0
     with tempfile.TemporaryDirectory() as temp:
         paket = os.path.join(temp, "neu.zip")
@@ -8181,11 +9134,15 @@ def aktualisieren(melden=None):
             if kaputt:
                 return False, T("Die Datei ist beschädigt (%s).") % kaputt
             namen = [n.replace("\\", "/") for n in archiv.namelist()]
-            if "jamman.py" not in namen:
+            if ".jamman/jamman.py" in namen:
+                programm_pfad = ".jamman/jamman.py"
+            elif "jamman.py" in namen:
+                programm_pfad = "jamman.py"
+            else:
                 return False, T("In der Datei fehlt jamman.py.")
 
             # Gehört das Paket wirklich zur angekündigten Fassung?
-            quelle = archiv.read("jamman.py").decode("utf-8", "replace")
+            quelle = archiv.read(programm_pfad).decode("utf-8", "replace")
             treffer = re.search(r'FASSUNG\s*=\s*"([^"]+)"', quelle)
             # Nur die ersten beiden Zahlen vergleichen: in FASSUNG steht
             # „3.109 (17.11.2026)", im Tag nur „3.109".
@@ -8205,7 +9162,7 @@ def aktualisieren(melden=None):
                 # Mit einem Punkt beginnende Dateien (.gitignore & Co.) gehören
                 # nicht ins Programm; unter Windows sind sie außerdem oft
                 # schreibgeschützt (Rückmeldung 18.11.2026: Errno 13).
-                if any(teil.startswith(".") for teil in name.split("/")):
+                if _ist_versteckt(name):
                     continue
                 alt = os.path.join(ziel_ordner, name)
                 if os.path.exists(alt):
@@ -8216,6 +9173,9 @@ def aktualisieren(melden=None):
                     except OSError:
                         pass
 
+            if ".jamman/jamman.py" in namen:
+                _alte_aufteilung_wegraeumen(ziel_ordner)
+
             for name in namen:
                 if name.endswith("/") or "__pycache__" in name:
                     continue
@@ -8224,7 +9184,7 @@ def aktualisieren(melden=None):
                 # Mit einem Punkt beginnende Dateien (.gitignore & Co.) gehören
                 # nicht ins Programm; unter Windows sind sie außerdem oft
                 # schreibgeschützt (Rückmeldung 18.11.2026: Errno 13).
-                if any(teil.startswith(".") for teil in name.split("/")):
+                if _ist_versteckt(name):
                     continue
                 ziel = os.path.join(ziel_ordner, name)
                 try:
@@ -8926,8 +9886,31 @@ def _als_zip(g, basis, platzliste, ziel_datei, meldung=None, stopp=None):
     Der Inhalt entspricht dem Ordner, den „Alle holen“ anlegt: <Gerät>/PatchNN/…
     """
     import zipfile
+    # Erst als .part schreiben und am Ende umbenennen (19.11.2026): Wird der
+    # Vorgang abgebrochen, bleibt sonst eine halbe ZIP-Datei liegen, die wie
+    # eine fertige Sicherung aussieht.
+    zwischen = ziel_datei + ".part"
     geraetename = os.path.basename(basis.rstrip("/")) or "JamMan"
-    with zipfile.ZipFile(ziel_datei, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+    geschafft = False
+    try:
+        _zip_schreiben(g, basis, platzliste, zwischen, geraetename,
+                       meldung=meldung, stopp=stopp)
+        os.replace(zwischen, ziel_datei)
+        geschafft = True
+        return True
+    finally:
+        if not geschafft and os.path.exists(zwischen):
+            # Abbruch oder Fehler: keine halbe Sicherung liegen lassen.
+            try:
+                os.remove(zwischen)
+            except OSError:
+                pass
+
+
+def _zip_schreiben(g, basis, platzliste, zwischen, geraetename, meldung=None,
+                   stopp=None):
+    import zipfile
+    with zipfile.ZipFile(zwischen, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         def sammle(pfad, innen):
             dateien, ordner = g.ordner(pfad)
             for f in dateien:
@@ -8950,7 +9933,6 @@ def _als_zip(g, basis, platzliste, ziel_datei, meldung=None, stopp=None):
             if meldung:
                 meldung(platz, i)
             sammle(basis + platz, platz + "/")
-    return True
 
 
 def frage_ja_nein_konsole(text=None):
@@ -9247,7 +10229,9 @@ def sammelsicherung(ziel, laeufe, melden=None):
     anzahl = 0
     for nummer, (quelldatei, patchpfad) in enumerate(einmalig, 1):
         neu = "Patch%02d" % nummer
-        sag(T("Rette") + " %s -> %s" % (os.path.basename(patchpfad), neu))
+        sag(((nummer - 1) / float(len(einmalig)),
+             T("%d von %d Patches: %s") % (nummer, len(einmalig),
+                                           os.path.basename(patchpfad))))
         shutil.copytree(patchpfad, os.path.join(inhalt, neu), dirs_exist_ok=True)
         zuordnung.append("%s\t%s\t%s" % (neu, os.path.basename(patchpfad),
                                           os.path.basename(quelldatei)))
@@ -9257,6 +10241,7 @@ def sammelsicherung(ziel, laeufe, melden=None):
             f.write("\n".join(zuordnung) + "\n")
     except OSError:
         pass
+    sag(1.0, T("fertig"))
     return zielordner, anzahl
 
 
@@ -9719,27 +10704,40 @@ def fenster_aufraeumen(ziel, haupfenster, sichern=None):
         weg = [laeufe[i] for i in indizes]
         menge = sum(g for _, _, _, g in weg) / 1048576.0
         if any(name == "vor-ueberschreiben" for _, name, _, _ in weg):
-            if not _frage_ja(f, 
+            if not _frage_ja(f,
                     T("Sicherungen aufräumen"),
                     T("Darunter ist die Sicherung für Rückgängig. Danach läßt "
                       "sich der letzte Schreibvorgang nicht mehr zurücknehmen. "
                       "Trotzdem löschen?")):
                 return
-        if not _frage_ja(f, 
+        if not _frage_ja(f,
                 T("Sicherungen aufräumen"),
                 T("%d Sicherungen mit %.1f MB werden endgültig gelöscht. Fortsetzen?")
                 % (len(weg), menge)):
             return
-        fehler = 0
-        for pfad, name, _, _ in weg:
-            # Sicherheitsnetz: nur löschen, was direkt im Zielordner liegt
-            if os.path.dirname(os.path.abspath(pfad)) != os.path.abspath(ziel):
-                fehler += 1
-                continue
-            try:
-                shutil.rmtree(pfad)
-            except OSError:
-                fehler += 1
+
+        # Löschen im Hintergrund, Balken im Hauptfaden (19.11.2026: GB räumen
+        # ließ das Fenster erstarren).
+        def arbeit(melden):
+            nicht_weg = 0
+            for nummer, (pfad, name, _, _) in enumerate(weg, 1):
+                melden((nummer - 1) / float(len(weg)),
+                       T("%d von %d gelöscht: %s") % (nummer - 1, len(weg), name[:30]))
+                if os.path.dirname(os.path.abspath(pfad)) != os.path.abspath(ziel):
+                    nicht_weg += 1
+                    continue
+                try:
+                    shutil.rmtree(pfad)
+                except OSError:
+                    nicht_weg += 1
+            melden(1.0, T("%d von %d gelöscht")
+                   % (len(weg) - nicht_weg, len(weg)))
+            return nicht_weg
+
+        try:
+            fehler = fuehre_im_hintergrund(f, T("Sicherungen löschen"), arbeit)
+        except Exception:
+            fehler = len(weg)
         if fehler:
             messagebox.showwarning(T("Aufräumen"),
                                    T("%d Sicherungen konnten nicht gelöscht werden.") % fehler)
@@ -9747,7 +10745,14 @@ def fenster_aufraeumen(ziel, haupfenster, sichern=None):
         fenster_aufraeumen(ziel, haupfenster)
 
     def retten():
-        ziel_neu, anzahl = sammelsicherung(ziel, laeufe, melden=print)
+        def arbeit(melden):
+            return sammelsicherung(ziel, laeufe, melden=melden)
+        try:
+            ziel_neu, anzahl = fuehre_im_hintergrund(
+                f, T("Sammelsicherung"), arbeit)
+        except Exception as fehler:
+            messagebox.showerror(T("Fehler"), str(fehler))
+            return
         if not anzahl:
             messagebox.showinfo(T("Sammelsicherung"),
                                 T("Es gibt keine unersetzlichen Patches."))
@@ -10603,7 +11608,8 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
                        font=schrift(9), wraplength=560, justify="center")
     hinweis.pack(pady=(0, 4))
 
-    stand = {"geraet": None, "basis": None, "patchliste": [], "laeuft": False,
+    stand = {"balken": None, "geraet": None, "basis": None,
+             "patchliste": [], "laeuft": False,
              "abbruch": False, "t0": 0.0, "bytes": 0,
              "ziel": "", "ziel_eigen": False,
              "zu": False, "nach": None}
@@ -10643,6 +11649,18 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
         except Exception:
             pass
 
+    def balken_holen():
+        """Fortschrittsfenster für die laufende Arbeit (19.11.2026)."""
+        if stand.get("balken") is None and not stand["zu"]:
+            stand["balken"] = Fortschritt(f, T("Pedal über USB"))
+        return stand.get("balken")
+
+    def balken_zu():
+        b = stand.get("balken")
+        if b is not None:
+            b.schliessen()
+            stand["balken"] = None
+
     def abholen():
         """Im Hauptstrang: Meldungen des Arbeitsstrangs abarbeiten."""
         if stand["zu"]:
@@ -10652,6 +11670,11 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
                 art, inhalt = meldungen.get_nowait()
                 if art == "text":
                     melde(inhalt)
+                elif art == "anteil":
+                    anteil, text = inhalt
+                    b = balken_holen()
+                    if b is not None:
+                        b.setzen(anteil, text)
                 elif art == "setlists":
                     ort, zuege_fertig = inhalt
                     try:
@@ -10693,6 +11716,16 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
                 elif art == "neu":
                     stand["laeuft"] = False
                     anstossen()
+                elif art == "balken_zu":
+                    balken_zu()
+                elif art == "verbindung_neu":
+                    # Nach einem Abbruch ist der Anschluß oft in einem
+                    # Zwischenzustand; neu aufbauen spart den zweiten Fehler
+                    # (19.11.2026: „Fehler beim Sichern" gleich nach Abbruch).
+                    try:
+                        verbindung_neu()
+                    except Exception:
+                        pass
                 elif art == "aufraeumen":
                     ordner_pfad, dateien = inhalt
                     # Läuft schon ein neuer Hole-Lauf (z. B. nach „Verbindung
@@ -10723,6 +11756,7 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
                         except Exception as e:
                             messagebox.showerror(T("Fehler"), str(e))
                 elif art == "fertig":
+                    balken_zu()
                     sperren(False)
                     stand["laeuft"] = False
         except queue.Empty:
@@ -10746,6 +11780,10 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
             stand["geraet"] = geraet
             def fortschritt(fertig, gesamt, bisher):
                 meldungen.put(("liste", list(bisher)))
+                if gesamt:
+                    meldungen.put(("anteil", (fertig / float(gesamt),
+                                              T("%d von %d Patches gelesen")
+                                              % (fertig, gesamt))))
 
             basis, patchliste = _pedal_lesen(geraet, speicher, fortschritt)
             stand["basis"], stand["patchliste"] = basis, patchliste
@@ -11335,15 +12373,30 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
         def arbeit():
             try:
                 meldungen.put(("text", T("Sichere als ZIP …")))
+                gesamt = max(1, len(platzliste))
                 _als_zip(stand["geraet"], stand["basis"], platzliste, ziel_datei,
                          meldung=lambda name, i: meldungen.put(
-                             ("text", "%s %s" % (T("Sichere:"), name))),
+                             ("anteil", ((i - 0.5) / gesamt,
+                                         "%s %s" % (T("Sichere:"), name)))),
                          stopp=lambda: stand["abbruch"])
+                meldungen.put(("anteil", (1.0, T("fertig"))))
                 meldungen.put(("text", T("Fertig:") + " " + ziel_datei))
             except Exception as e:
-                meldungen.put(("text", T("Fehler beim Sichern:") + " " + str(e)))
+                if os.path.exists(ziel_datei + ".part"):
+                    try:
+                        os.remove(ziel_datei + ".part")
+                    except OSError:
+                        pass
+                # Ein Abbruch ist kein Fehler (19.11.2026: Nach dem Schließen
+                # während des Sicherns stand „Fehler beim Sichern:" da).
+                if "Abgebrochen" in type(e).__name__ or "Abgebrochen" in str(e):
+                    meldungen.put(("text", T("Abgebrochen — keine Datei geschrieben.")))
+                    meldungen.put(("verbindung_neu", None))
+                else:
+                    meldungen.put(("text", T("Fehler beim Sichern:") + " " + str(e)))
             finally:
                 stand["abbruch"] = False
+                meldungen.put(("balken_zu", None))
                 meldungen.put(("fertig", None))
         stand["laeuft"] = True
         sperren(True)
@@ -11651,8 +12704,32 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
 
     # Was während eines Laufs gesperrt wird: alle Knöpfe und Auswahlmenüs
     def schliessen():
+        # Läuft noch eine Arbeit, erst fragen (19.11.2026: Das Fenster ließ
+        # sich mitten im ZIP-Sichern schließen — der Vorgang lief unsichtbar
+        # weiter, und eine halbe Datei blieb liegen).
+        if stand.get("laeuft"):
+            if not _frage_ja(
+                    f, T("Pedal über USB"),
+                    T("Es läuft noch eine Arbeit. Abbrechen und das Fenster "
+                      "schließen?\n\nDie unfertige Datei wird gelöscht.")):
+                try:
+                    f.lift()
+                except Exception:
+                    pass
+                return
+            stand["abbruch"] = True
+            # Kurz warten, damit der Arbeitsfaden die Datei aufräumen kann.
+            import time as _zeit
+            ende = _zeit.time() + 5.0
+            while stand.get("laeuft") and _zeit.time() < ende:
+                try:
+                    f.update()
+                except Exception:
+                    break
+                _zeit.sleep(0.05)
         # erst den Zeitgeber abbestellen, sonst meldet Tk nach dem Schließen
         # „invalid command name …abholen" (16.11.2026)
+        balken_zu()
         stand["zu"] = True
         try:
             if stand.get("nach"):
@@ -11871,7 +12948,9 @@ def gui(karte):
 
     basis = karte_finden(karte, streng=False)
 
+    global GUI_FENSTER
     fenster = tk.Tk()
+    GUI_FENSTER = fenster
     fenster.minsize(1000, 720)
     fenster.configure(bg=FARBE_HINTERGRUND)
     # Größe und Lage merken (19.11.2026): Wer das Fenster auf seinen Bildschirm
@@ -12070,6 +13149,41 @@ def gui(karte):
             zustand["basis"] = karte_pruefen(pfad)
             neu_laden()
         usb_fenster(fenster, oeffne_karte=oeffne)
+
+    # Selbsttest: prüft das Werkzeug auf DIESEM Rechner, ohne Pedal
+    # (19.11.2026 — der Nutzer fragte, wo er ihn findet; ein Knopf ist
+    # leichter zu finden als ein Aufruf mit Argument).
+    def selbsttest_starten():
+        if not frage_ja_nein(
+                fenster, T("Selbsttest"),
+                T("Das Werkzeug prüft sich selbst: es legt eine Testkarte an, "
+                  "drückt jeden Knopf und spielt die Dateibefehle durch.\n\n"
+                  "Dabei gehen kurz Fenster auf und zu. Das Pedal bleibt "
+                  "unberührt, es wird nichts an deinen Karten geändert.\n\n"
+                  "Dauert ein paar Sekunden. Fortfahren?")):
+            return
+        lauf = {"fertig": False, "text": ""}
+
+        def arbeit():
+            import subprocess
+            versuch = subprocess.run(
+                [sys.executable, os.path.abspath(__file__), "funktionstest"],
+                capture_output=True, text=True, timeout=300)
+            lauf["text"] = (versuch.stdout or "") + (versuch.stderr or "")
+            lauf["fertig"] = True
+
+        threading.Thread(target=arbeit, daemon=True).start()
+
+        def warten():
+            if not lauf["fertig"]:
+                fenster.after(300, warten)
+                return
+            bericht_fenster(fenster, lauf["text"])
+
+        warten()
+
+    tk.Button(leiste, text=T("Selbsttest …"),
+              command=selbsttest_starten).pack(side="right", padx=(0, 12))
 
     tk.Button(leiste, text=T("Aktualisieren"),
               command=jetzt_aktualisieren).pack(side="right", padx=(0, 12))
@@ -12319,7 +13433,11 @@ def gui(karte):
             if not zustand["basis"]:
                 messagebox.showinfo(T("Hinweis"), T("Erst eine Karte wählen."))
                 return
-            befehl_sichern(zustand["basis"], ziel, True)
+            # Im Hintergrund sichern, Balken im Hauptfaden (19.11.2026).
+            def arbeit(melden):
+                befehl_sichern(zustand["basis"], ziel, True,
+                               melden=lambda a, t: melden(a, t))
+            fuehre_im_hintergrund(fenster, T("Sicherung anlegen"), arbeit)
             messagebox.showinfo(T("Sicherung"),
                                 T("Fertig. Ordner:\n%s") % ziel)
 
@@ -13406,15 +14524,14 @@ def gui(karte):
         stand = stand.replace("_", " ")
         nur_einstellungen = ist_einstellungssicherung(quelle)
         if nur_einstellungen:
-            frage = T("Patch%d: Name, Stoppart, Rhythmus und Wiedergabe kommen "
-                      "aus dieser Sicherung zurück:\n\n  %s\n\n"
-                      "Die Aufnahme bleibt unberührt — sie war in dieser "
-                      "Sicherung nicht enthalten.\n"
-                      "Der jetzige Stand wird vorher gesichert.") % (n, stand)
+            frage = T("Patch%d: Name, Stoppart, Rhythmus und Wiedergabe "
+                      "aus dieser Sicherung zurückholen?\n\n  %s\n\n"
+                      "Die Aufnahme bleibt, wie sie ist. Der jetzige Stand "
+                      "wird vorher gesichert.") % (n, stand)
         else:
-            frage = T("Patch%d wird aus dieser Sicherung wiederhergestellt:"
+            frage = T("Patch%d aus dieser Sicherung wiederherstellen?"
                       "\n\n  %s\n\n"
-                      "Damit lässt sich zum Beispiel ein Fade zurücknehmen.\n"
+                      "Damit lässt sich zum Beispiel ein Fade zurücknehmen. "
                       "Der jetzige Stand wird vorher gesichert.") % (n, stand)
         if not frage_ja_nein(fenster, "Zurücknehmen", frage):
             return
@@ -13520,16 +14637,22 @@ def gui(karte):
                 "übrigen werden vorher gesichert und neu geschrieben.\n\n"
                 "Fortfahren?"):
             return
-        def melde(text):
-            status_var.set(text)
+        balken = Fortschritt(fenster, T("Alle normieren"))
+        def melde(anteil, text=""):
+            if isinstance(anteil, str):
+                status_var.set(anteil)
+            else:
+                balken.setzen(anteil, text)
+                status_var.set(text)
             fenster.update_idletasks()
-            fenster.update()
         try:
             befehl_alle_normieren(zustand["basis"], True, fortschritt=melde)
             neu_laden()
             status_var.set("alle Patches normiert")
         except SystemExit as e:
             messagebox.showerror(T("Fehler"), str(e))
+        finally:
+            balken.schliessen()
 
     def platz_aendern():
         """Patch auf eine bestimmte Platznummer legen."""
@@ -13691,9 +14814,14 @@ def gui(karte):
                 "Patch%d bekommt:\n\n%s\n\nVorher wird gesichert. Fortfahren?"
                 % (n, "\n".join(teile))):
             return
-        try:
+        # Im Hintergrund arbeiten, damit das Fenster nicht einfriert
+        # (19.11.2026: Beachball beim Anwenden auf einer Karte im Leser).
+        def arbeit(melden):
             befehl_aendern(zustand["basis"], n, True, st, rh, wg, None, None,
-                           fade_wert, gain_wert, normieren, begrenzen_var.get())
+                           fade_wert, gain_wert, normieren, begrenzen_var.get(),
+                           melden=melden)
+        try:
+            fuehre_im_hintergrund(fenster, T("Einstellungen anwenden"), arbeit)
             neu_laden()
         except SystemExit as e:
             messagebox.showerror(T("Fehler"), str(e))
@@ -14182,6 +15310,9 @@ def main():
         epilog=befehlsliste(),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--version", action="version", version="JamMan Card Tool " + FASSUNG)
+    # Nur für „funktionstest": alle fünf Sprachen prüfen (19.11.2026).
+    p.add_argument("--alle-sprachen", action="store_true",
+                   help="Funktionstest in allen fünf Sprachen")
     p.add_argument("befehl", metavar=T("BEFEHL"),
                    choices=sorted(list(BEFEHLE) + list(BEFEHL_ALIAS)),
                    help=T("was zu tun ist (Liste unten; englische Namen gehen auch)"))
@@ -14244,6 +15375,10 @@ def main():
     if a.befehl == "gui":
         gui(a.karte)
         return
+    if a.befehl == "funktionstest":
+        alle = getattr(a, "alle_sprachen", False)
+        sys.exit(funktionstest(None if not alle
+                               else ["de", "en", "fr", "es", "zh"]))
     if a.befehl == "selbsttest":
         selbsttest(a.karte)
         return
@@ -14426,7 +15561,15 @@ def _absturz_protokoll(fehler):
     (pythonw): Ohne das Protokoll wäre ein Absturz unsichtbar (17.11.2026).
     """
     import traceback
-    text = "".join(traceback.format_exception(fehler))
+    # Ältere Pythons (Apples /usr/bin/python3 ist 3.9) kennen die
+    # Ein-Argument-Form von format_exception nicht. Anlaß (19.11.2026): Der
+    # Absturzbericht selbst stürzte ab, und der eigentliche Fehler blieb
+    # unsichtbar.
+    try:
+        text = "".join(traceback.format_exception(
+            type(fehler), fehler, fehler.__traceback__))
+    except Exception:
+        text = "%s: %s" % (type(fehler).__name__, fehler)
     ordner = os.path.dirname(os.path.abspath(__file__))
     pfad = os.path.join(ordner, "jamman-fehler.log")
     try:

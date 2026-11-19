@@ -43,10 +43,14 @@ for P in /usr/local/bin/python3 /opt/homebrew/bin/python3 \
          /usr/bin/python3 "$(command -v python3 2>/dev/null)"; do
     [ -x "$P" ] || continue
     if "$P" -c "import tkinter,sys; sys.exit(0 if tkinter.TkVersion >= 8.6 else 1)" >/dev/null 2>&1; then
-        if [ -n "$KARTE" ]; then
-            "$P" jamman.py gui --karte "$KARTE"
+        # Mit Argumenten weiterreichen (--version, --hilfe …), sonst Fenster
+        # starten (19.11.2026).
+        if [ $# -gt 0 ]; then
+            "$P" .jamman/jamman.py "$@"
+        elif [ -n "$KARTE" ]; then
+            "$P" .jamman/jamman.py gui --karte "$KARTE"
         else
-            "$P" jamman.py gui
+            "$P" .jamman/jamman.py gui
         fi
         if [ $? -eq 0 ]; then
             fenster_zu
@@ -65,4 +69,4 @@ echo "Apples Tk 8.5 zeichnet auf diesem macOS keinen Text im Fenster."
 echo "Es geht im Textmenü weiter - mit denselben Funktionen."
 echo "Für ein Fenster: Python von python.org installieren."
 echo
-exec /usr/bin/python3 jamman.py menu ${KARTE:+--karte "$KARTE"}
+exec /usr/bin/python3 .jamman/jamman.py menu ${KARTE:+--karte "$KARTE"}

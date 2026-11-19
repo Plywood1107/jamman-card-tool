@@ -26,7 +26,23 @@ Reines Python 3 mit der Standardbibliothek. Kein ffmpeg, kein Homebrew.
 
 ---
 
-![Fenster](docs/fenster-deutsch.png)
+![Fenster](.jamman/docs/fenster-deutsch.png)
+
+**Selbst prüfen:** Wenn ein Knopf nichts tut oder ein Fenster offen bleibt,
+kannst du das Werkzeug selbst testen. Es baut eine Testkarte im
+Temp-Ordner, drückt jeden Knopf und spielt die Dateibefehle durch — ohne
+Pedal, ohne Internet:
+
+```
+JamMan-macOS.command funktionstest         # macOS
+JamMan-Windows.bat funktionstest           # Windows
+./JamMan-Linux.sh funktionstest            # Linux
+```
+
+Mit `--alle-sprachen` läuft es in allen fünf Sprachen. Am Ende steht
+„keine Befunde" oder eine Liste; die Meldungen landen zusätzlich in
+`jamman-fehler.log` und lassen sich mitschicken.
+
 
 ## Neue Fassungen
 
@@ -125,7 +141,18 @@ bestätigt. Gelesen und geschrieben wurde unter Windows noch nicht geprüft.
 
 ## Starten
 
-**macOS:** `JamMan.command` doppelklicken. Es öffnet sich ein Terminal (das
+Im Paket liegen nur wenige Dinge offen: die drei Starter (je Betriebssystem
+einer), diese Anleitung, die Lizenz und zwei Ordner.
+
+`Hilfe-Help-Aide-Ayuda-帮助/` trägt seinen Namen in allen Sprachen, die das
+Werkzeug spricht — wer nur Chinesisch oder Spanisch liest, erkennt ihn trotzdem.
+Darin liegen die Zusatzstarter (Konsolenfenster, Textmenü), die alten kurzen
+Dateinamen als Weiterleitung und die Textdateien.
+
+`.jamman/` ist absichtlich versteckt: dort liegt das Programm selbst. Man muß
+nicht hineinsehen.
+
+**macOS:** `JamMan-macOS.command` doppelklicken. Es öffnet sich ein Terminal (das
 macht macOS bei `.command`-Dateien so), und nach dem Schließen des Werkzeugs
 **schließt sich das Fenster mit**. Beim ersten Mal fragt macOS, ob das Skript
 „Terminal" steuern darf — einmal **Erlauben**, danach ist Ruhe.
@@ -140,10 +167,10 @@ steuern); dort macht es die Einstellung: iTerm → Settings → Profiles →
 General → „When the session ends: Close" — beim Profil „Default" ist das ab
 Werk eingeschaltet, dann geht das Fenster von selbst.
 
-**Windows:** `JamMan.bat` doppelklicken (ohne Konsolenfenster) oder
-`JamMan-mit-Konsole.bat`, wenn Meldungen sichtbar bleiben sollen.
+**Windows:** `JamMan-Windows.bat` doppelklicken (ohne Konsolenfenster) oder
+`JamMan-Windows-Konsole.bat`, wenn Meldungen sichtbar bleiben sollen.
 
-**Linux:** `./JamMan.sh`.
+**Linux:** `./JamMan-Linux.sh`.
 
 ## Firmware von einem Pedal auf das andere
 
@@ -196,19 +223,19 @@ Rechner. Am 18.11.2026 wurde ein Solo XT von FirmwareVersion 5376 auf 5632
 gebracht (Anzeige danach „1.06") — es hat funktioniert, aber es bleibt ein
 Eingriff in Systemdateien.
 
-## macOS: „JamMan.command" wurde nicht geöffnet
+## macOS: „JamMan-macOS.command" wurde nicht geöffnet
 
 Lädt man das ZIP aus dem Netz, hängt macOS jedem entpackten Programm eine
 Markierung an (Quarantäne). Beim ersten Start erscheint dann:
 
-> „JamMan.command" nicht geöffnet — Apple konnte nicht überprüfen, ob
-> „JamMan.command" frei von Schadsoftware ist.
+> „JamMan-macOS.command" nicht geöffnet — Apple konnte nicht überprüfen, ob
+> „JamMan-macOS.command" frei von Schadsoftware ist.
 
 Das ist kein Fehler des Werkzeugs, sondern die Voreinstellung für alles, was
 nicht bei Apple angemeldet ist. Zwei Wege:
 
 **Einmal erlauben:** im Finder mit der rechten Maustaste (oder Ctrl-Klick) auf
-`JamMan.command` → **Öffnen** → im Dialog noch einmal **Öffnen**. Danach startet
+`JamMan-macOS.command` → **Öffnen** → im Dialog noch einmal **Öffnen**. Danach startet
 es dauerhaft per Doppelklick.
 
 **Oder die Markierung entfernen** (im Terminal, Pfad anpassen):
@@ -256,9 +283,9 @@ Oder auf der Projektseite "Code" → "Download ZIP".
 
 | System | Python | Start |
 |---|---|---|
-| macOS | `xcode-select --install` oder Python von [python.org](https://www.python.org/downloads/) | `JamMan.command` |
-| Windows | Python von [python.org](https://www.python.org/downloads/) („Add python.exe to PATH") | `JamMan.bat` |
-| Linux | `sudo apt install python3-tk` | `./JamMan.sh` |
+| macOS | `xcode-select --install` oder Python von [python.org](https://www.python.org/downloads/) | `JamMan-macOS.command` |
+| Windows | Python von [python.org](https://www.python.org/downloads/) („Add python.exe to PATH") | `JamMan-Windows.bat` |
+| Linux | `sudo apt install python3-tk` | `./JamMan-Linux.sh` |
 
 Für den Ton nimmt es, was da ist: `afplay` (macOS), `winsound` (Windows),
 `aplay`/`paplay`/`mpv`/`ffplay` (Linux).
@@ -415,7 +442,7 @@ von dem Nutzer unter Kubuntu. Unter Windows hat noch niemand eine
 Stereo-Karte gemeldet.
 
 Auf manchen Intel-Macs bringt Apples Python 3.9 das alte Tk 8.5.9 mit, das
-beim Öffnen eines Fensters abstürzt. `JamMan.command` erkennt das und
+beim Öffnen eines Fensters abstürzt. `JamMan-macOS.command` erkennt das und
 weicht auf das Textmenü aus; Python von python.org (Tk 8.6) bringt das
 Fenster zurück.
 
