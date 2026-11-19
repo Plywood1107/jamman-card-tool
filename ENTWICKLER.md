@@ -72,6 +72,21 @@ gh release create v3.126 jamman-bruecke-3.126.zip \
 # Danach IMMER: herunterladen, Byte vergleichen, entpacken, Selbsttest
 ```
 
+## 3b. Wie Fassungen gezählt werden
+
+```
+3.131.1   kleine Änderung an einer schon veröffentlichten Fassung
+          (Beispiel: das Häkchen „Selbsttest nach Update" kam nach der
+          Veröffentlichung von 3.131 — der Aktualisierer sieht (3,131,1) als
+          neuer an und holt sie)
+3.133     größere Änderung, neue Funktion, Umbau: die nächste volle Zahl
+```
+
+**Nie eine Nummer wiederverwenden**, auch wenn eine Veröffentlichung
+zurückgezogen wurde — jemand kann sie in der Zwischenzeit geladen haben.
+3.132 wurde am 19.11.2026 veröffentlicht und wieder zurückgenommen; sie bleibt
+deshalb gesperrt, die nächste volle Fassung ist 3.133.
+
 ## 4. Regeln beim Ändern
 
 ```
