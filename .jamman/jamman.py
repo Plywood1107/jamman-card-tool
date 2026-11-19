@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.123 (19.11.2026)"
+FASSUNG = "3.124 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2573,6 +2573,12 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Per E-Mail senden':
+         'Send by e-mail',
+        'Mail im Mailprogramm vorbereitet — abschicken mußt du selbst.':
+         'Mail prepared in your mail program — you have to send it yourself.',
+        'Mailprogramm ließ sich nicht öffnen.':
+         'The mail program did not open.',
         'Hier liegen einmal die Zusatzstarter und die Textdateien.\nDer Selbsttest im Werkzeug schreibt seinen Bericht dorthin, wo das Programm liegt: .jamman/.\n':
          'This folder holds the extra starters and the text files.\nThe self test writes its report where the program lives: .jamman/.\n',
         '  Ordner aufgeräumt — das Werkzeug startet neu …':
@@ -3947,6 +3953,12 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Per E-Mail senden':
+         'Envoyer par e-mail',
+        'Mail im Mailprogramm vorbereitet — abschicken mußt du selbst.':
+         "Courriel préparé dans votre logiciel de messagerie — à vous de l'envoyer.",
+        'Mailprogramm ließ sich nicht öffnen.':
+         "Le logiciel de messagerie ne s'est pas ouvert.",
         'Hier liegen einmal die Zusatzstarter und die Textdateien.\nDer Selbsttest im Werkzeug schreibt seinen Bericht dorthin, wo das Programm liegt: .jamman/.\n':
          'Ce dossier contient les lanceurs supplémentaires et les fichiers texte.\nLe test de fonctionnement écrit son rapport là où se trouve le programme : .jamman/.\n',
         '  Ordner aufgeräumt — das Werkzeug startet neu …':
@@ -5213,6 +5225,12 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Per E-Mail senden':
+         'Enviar por correo',
+        'Mail im Mailprogramm vorbereitet — abschicken mußt du selbst.':
+         'Correo preparado en tu programa de correo — envíalo tú mismo.',
+        'Mailprogramm ließ sich nicht öffnen.':
+         'No se pudo abrir el programa de correo.',
         'Hier liegen einmal die Zusatzstarter und die Textdateien.\nDer Selbsttest im Werkzeug schreibt seinen Bericht dorthin, wo das Programm liegt: .jamman/.\n':
          'Esta carpeta contiene los iniciadores adicionales y los archivos de texto.\nLa prueba escribe su informe donde está el programa: .jamman/.\n',
         '  Ordner aufgeräumt — das Werkzeug startet neu …':
@@ -6479,6 +6497,12 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Per E-Mail senden':
+         '通过电子邮件发送',
+        'Mail im Mailprogramm vorbereitet — abschicken mußt du selbst.':
+         '已在邮件程序中准备好邮件 —— 需要你自己发送。',
+        'Mailprogramm ließ sich nicht öffnen.':
+         '无法打开邮件程序。',
         'Hier liegen einmal die Zusatzstarter und die Textdateien.\nDer Selbsttest im Werkzeug schreibt seinen Bericht dorthin, wo das Programm liegt: .jamman/.\n':
          '此文件夹用于存放附加启动器和文本文件。\n功能测试会把报告写在程序所在的 .jamman/ 中。\n',
         '  Ordner aufgeräumt — das Werkzeug startet neu …':
@@ -8568,10 +8592,32 @@ def bericht_fenster(haupfenster, text):
         except Exception:
             status.config(text=T("Browser ließ sich nicht öffnen."))
 
+    def per_mail():
+        """Bericht als Mail an den Autor vorbereiten.
+
+        Anlaß (19.11.2026): Der Issue-Weg verlangt ein GitHub-Konto. Wer keines
+        hat, schickt den Bericht per Mail; dieser Knopf öffnet das Mailprogramm
+        mit eingesetztem Text. Abgeschickt wird auch hier nur vom Nutzer.
+        """
+        import urllib.parse
+        import webbrowser
+        betreff = "JamMan Card Tool %s — Bericht" % FASSUNG
+        rumpf = text[-5000:]
+        ziel = ("mailto:suilui@julius-k.de?subject=%s&body=%s"
+                % (urllib.parse.quote(betreff), urllib.parse.quote(rumpf)))
+        try:
+            webbrowser.open(ziel)
+            status.config(text=T("Mail im Mailprogramm vorbereitet — abschicken "
+                                 "mußt du selbst."))
+        except Exception:
+            status.config(text=T("Mailprogramm ließ sich nicht öffnen."))
+
     status = tk.Label(leiste, text="", bg=FARBE_HINTERGRUND, fg=FARBE_LEISE)
     status.pack(side="left")
     tk.Button(leiste, text=T("Schließen"), command=f.destroy).pack(side="right")
     tk.Button(leiste, text=T("Kopieren"), command=kopieren).pack(side="right", padx=(0, 8))
+    tk.Button(leiste, text=T("Per E-Mail senden"),
+              command=per_mail).pack(side="right", padx=(0, 8))
     tk.Button(leiste, text=T("Als Issue vorbereiten"),
               command=als_issue).pack(side="right", padx=(0, 8))
     tk.Label(f, text=T("Nichts wird gesendet, solange du nicht selbst auf "
