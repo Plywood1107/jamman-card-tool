@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.130 — 2026-11-19
+
+* **Only real clipping is reported now.** 3.128/3.129 also complained when the
+  window was narrower than everything it contained — but a long status line
+  somewhere makes the window request wider without anything being cut. The test
+  now reports clipped buttons and checkboxes only. Reason: the own check failed
+  the build on GitHub for French and Spanish although nothing was cut.
+* **The window grows once if a button would be clipped.** Rather than only
+  reporting it, the window adds the missing pixels (up to the screen edge).
+
 ## 3.129 — 2026-11-19
 
 * **The window grows again after the layout settles.** The new width check

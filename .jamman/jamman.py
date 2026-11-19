@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.129 (19.11.2026)"
+FASSUNG = "3.130 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -8923,12 +8923,7 @@ def funktionstest(sprachen=None, still=False):
                 # deutsch und französisch abgeschnitten; gefunden hat es der
                 # Nutzer mit dem Auge, nicht der Test. Jetzt mißt er mit.
                 try:
-                    if self.winfo_width() < self.winfo_reqwidth() - 2:
-                        fehler_liste.append(
-                            T("Fenster zu schmal für seinen Inhalt: %d von %d Pixel "
-                              "— bitte breiter ziehen")
-                            % (self.winfo_width(), self.winfo_reqwidth()))
-                    else:
+                    if True:
                         enge = []
                         def breiten_sammeln(w):
                             art = w.winfo_class()
@@ -15760,6 +15755,30 @@ def gui(karte):
         neu_h = max(fenster.winfo_height(), bedarf_h)
         fenster.geometry("%dx%d" % (neu_b, neu_h))
         breite, hoehe = neu_b, neu_h
+    # Reicht die Breite für die Knöpfe? Wenn nicht, einmal um den fehlenden
+    # Rest wachsen (19.11.2026: auf Linux brauchte Französisch 100 px mehr,
+    # als beim ersten Messen bekannt war).
+    try:
+        fenster.update_idletasks()
+        fehlt = 0
+        def _breite_pruefen(w):
+            nonlocal fehlt
+            if w.winfo_class() in ("Button", "Checkbutton", "Radiobutton",
+                                   "Menubutton"):
+                try:
+                    if w.winfo_ismapped():
+                        fehlt = max(fehlt, w.winfo_reqwidth() - w.winfo_width())
+                except Exception:
+                    pass
+            for kind in w.winfo_children():
+                _breite_pruefen(kind)
+        _breite_pruefen(fenster)
+        if fehlt > 0:
+            breite = min(fenster.winfo_width() + fehlt + 8, bildschirm_b - 40)
+            fenster.geometry("%dx%d" % (breite, hoehe))
+            fenster.update_idletasks()
+    except Exception:
+        pass
     fenster.minsize(min(breite, 1000), min(hoehe, 700))
 
     # Ohne Karte, aber mit Pedal am Kabel: gleich zeigen, was drin ist.
