@@ -184,6 +184,18 @@ Profiles → General → "When the session ends: Close" — on by default for th
 **Windows:** `JamMan-Windows.bat` (no console window) or `JamMan-Windows-Konsole.bat` if
 you want messages to stay visible.
 
+**macOS:** double-click `JamMan-macOS.command`. If macOS says it “could not be
+executed because you do not have the necessary access privileges”, the execute
+bit is missing — this happens when the file was copied via an exFAT stick, a
+Windows share or an archive that does not keep permissions:
+
+```
+chmod +x JamMan-macOS.command     # once, in Terminal, inside that folder
+```
+
+`bash JamMan-macOS.command` also works without the execute bit. Since 3.122
+the tool repairs the permission on every start — but only once it runs.
+
 **Linux:** go into the folder and start it:
 
 ```

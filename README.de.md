@@ -177,6 +177,19 @@ Werk eingeschaltet, dann geht das Fenster von selbst.
 **Windows:** `JamMan-Windows.bat` doppelklicken (ohne Konsolenfenster) oder
 `JamMan-Windows-Konsole.bat`, wenn Meldungen sichtbar bleiben sollen.
 
+**macOS:** `JamMan-macOS.command` doppelklicken. Meldet macOS „konnte nicht
+ausgeführt werden, da du nicht über die notwendigen Zugriffsrechte verfügst",
+fehlt das Ausführbar-Recht — das passiert, wenn die Datei über einen
+exFAT-Stick, eine Windows-Freigabe oder ein Archiv ohne Rechte kopiert wurde:
+
+```
+chmod +x JamMan-macOS.command     # einmal im Terminal, im Ordner ausgeführt
+```
+
+Ohne Ausführbar-Recht geht auch `bash JamMan-macOS.command`. Ab Fassung 3.122
+setzt das Werkzeug das Recht bei jedem Start selbst — das hilft aber erst,
+wenn es einmal gestartet ist.
+
 **Linux:** in den Ordner gehen und starten:
 
 ```
