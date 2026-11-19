@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.119 (19.11.2026)"
+FASSUNG = "3.121 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2550,6 +2550,10 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Hier liegen einmal die Zusatzstarter und die Textdateien.\nDer Selbsttest im Werkzeug schreibt seinen Bericht dorthin, wo das Programm liegt: .jamman/.\n':
+         'This folder holds the extra starters and the text files.\nThe self test writes its report where the program lives: .jamman/.\n',
+        '  Ordner aufgeräumt — das Werkzeug startet neu …':
+         '  Folder tidied up — the tool restarts …',
         'Diese Fassung liegt in einer anderen Ordneraufteilung. Bitte einmal von Hand herunterladen:\n%s':
          'This version uses a different folder layout. Please download it by hand once:\n%s',
         'Diese Fassung des Werkzeugs kann sich nicht selbst aktualisieren (neue Ordneraufteilung). Bitte einmal von Hand herunterladen:\n%s':
@@ -3920,6 +3924,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Hier liegen einmal die Zusatzstarter und die Textdateien.\nDer Selbsttest im Werkzeug schreibt seinen Bericht dorthin, wo das Programm liegt: .jamman/.\n':
+         'Ce dossier contient les lanceurs supplémentaires et les fichiers texte.\nLe test de fonctionnement écrit son rapport là où se trouve le programme : .jamman/.\n',
+        '  Ordner aufgeräumt — das Werkzeug startet neu …':
+         "  Dossiers rangés — l'outil redémarre …",
         'Diese Fassung liegt in einer anderen Ordneraufteilung. Bitte einmal von Hand herunterladen:\n%s':
          'Cette version utilise une autre arborescence. Merci de la télécharger une fois à la main :\n%s',
         'Diese Fassung des Werkzeugs kann sich nicht selbst aktualisieren (neue Ordneraufteilung). Bitte einmal von Hand herunterladen:\n%s':
@@ -5182,6 +5190,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Hier liegen einmal die Zusatzstarter und die Textdateien.\nDer Selbsttest im Werkzeug schreibt seinen Bericht dorthin, wo das Programm liegt: .jamman/.\n':
+         'Esta carpeta contiene los iniciadores adicionales y los archivos de texto.\nLa prueba escribe su informe donde está el programa: .jamman/.\n',
+        '  Ordner aufgeräumt — das Werkzeug startet neu …':
+         '  Carpetas ordenadas — la herramienta se reinicia …',
         'Diese Fassung liegt in einer anderen Ordneraufteilung. Bitte einmal von Hand herunterladen:\n%s':
          'Esta versión usa otra estructura de carpetas. Descárgala una vez a mano:\n%s',
         'Diese Fassung des Werkzeugs kann sich nicht selbst aktualisieren (neue Ordneraufteilung). Bitte einmal von Hand herunterladen:\n%s':
@@ -6444,6 +6456,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Hier liegen einmal die Zusatzstarter und die Textdateien.\nDer Selbsttest im Werkzeug schreibt seinen Bericht dorthin, wo das Programm liegt: .jamman/.\n':
+         '此文件夹用于存放附加启动器和文本文件。\n功能测试会把报告写在程序所在的 .jamman/ 中。\n',
+        '  Ordner aufgeräumt — das Werkzeug startet neu …':
+         '  文件夹已整理 —— 程序将重新启动 …',
         'Diese Fassung liegt in einer anderen Ordneraufteilung. Bitte einmal von Hand herunterladen:\n%s':
          '此版本使用不同的文件夹结构。请手动下载一次：\n%s',
         'Diese Fassung des Werkzeugs kann sich nicht selbst aktualisieren (neue Ordneraufteilung). Bitte einmal von Hand herunterladen:\n%s':
@@ -8540,6 +8556,109 @@ def bericht_fenster(haupfenster, text):
              bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
              font=schrift(9)).pack(pady=(0, 8))
     f.bind("<Escape>", lambda e: f.destroy())
+
+
+def _aufteilung_migrieren():
+    """Alte flache Ablage in die aufgeräumte umbauen — beim Start, einmalig.
+
+    Anlaß (19.11.2026): Nach dem Update von 3.117 auf 3.120 lag alles wieder
+    flach im Ordner. Statt den Nutzer umräumen zu lassen, macht das Werkzeug es
+    selbst: Programm nach `.jamman/`, Zusatzdateien und alte Startnamen nach
+    `Hilfe-Help-Aide-Ayuda-帮助/`, die drei Starter zeigen danach dorthin.
+    Nichts wird gelöscht, nur verschoben.
+
+    Das läuft auch dann richtig, wenn eine flache Fassung über eine bereits
+    aufgeräumte kopiert wurde: dann wandern die neuen Dateien nach `.jamman/`
+    und ersetzen die alten.
+
+    Rückgabe: True, wenn umgebaut wurde (der Aufrufer startet dann neu).
+    """
+    eigener = os.path.abspath(__file__)
+    ordner = os.path.dirname(eigener)
+    if os.path.basename(ordner) == ".jamman":
+        return False
+    if not os.path.exists(eigener):
+        return False
+    programm = os.path.join(ordner, ".jamman")
+    hilfe = os.path.join(ordner, "Hilfe-Help-Aide-Ayuda-帮助")
+
+    def hinein(quelle, zielordner):
+        """Verschieben und ein vorhandenes Ziel dabei ersetzen."""
+        if not os.path.exists(quelle):
+            return False
+        ziel = os.path.join(zielordner, os.path.basename(quelle))
+        try:
+            os.makedirs(zielordner, exist_ok=True)
+            if os.path.exists(ziel):
+                shutil.copy2(quelle, ziel)
+                os.remove(quelle)
+            else:
+                shutil.move(quelle, ziel)
+            return True
+        except OSError:
+            return False
+
+    umgebaut = False
+    # Beide Ordner anlegen, auch wenn nichts hineinwandert — sonst bleibt der
+    # Hilfe-Ordner unsichtbar (19.11.2026 im Test aufgefallen).
+    try:
+        os.makedirs(programm, exist_ok=True)
+        os.makedirs(hilfe, exist_ok=True)
+    except OSError:
+        return False
+    for name in ("jamman.py", "greenglass.py"):
+        umgebaut = hinein(os.path.join(ordner, name), programm) or umgebaut
+    for name in ("docs", "werkzeuge"):
+        quelle = os.path.join(ordner, name)
+        ziel = os.path.join(programm, name)
+        if os.path.isdir(quelle) and not os.path.exists(ziel):
+            try:
+                shutil.move(quelle, ziel)
+            except OSError:
+                pass
+    for name in ("CHANGELOG.md", "DONATE.txt", "SPENDEN.txt",
+                 "FFMPEG-INSTALLATION.txt", "JamMan.command", "JamMan.bat",
+                 "JamMan.sh", "JamMan-mit-Konsole.bat",
+                 "Starten-mit-Textmenue.command"):
+        hinein(os.path.join(ordner, name), hilfe)
+    for name in ("JamMan-macOS.command", "JamMan-Linux.sh",
+                 "JamMan-Windows.bat"):
+        pfad = os.path.join(ordner, name)
+        if not os.path.exists(pfad):
+            continue
+        try:
+            with open(pfad, "rb") as f:
+                inhalt = f.read()
+            if b".jamman" in inhalt:
+                continue
+            inhalt = inhalt.replace(b"programm/jamman.py", b".jamman/jamman.py")
+            inhalt = inhalt.replace(b"jamman.py", b".jamman/jamman.py")
+            with open(pfad, "wb") as f:
+                f.write(inhalt)
+        except OSError:
+            pass
+    # Ist der Hilfe-Ordner leer geblieben (die Übergangsfassung hatte keine
+    # Zusatzdateien), bekommt er einen kurzen Zettel, damit er nicht wie ein
+    # Fehler aussieht.
+    try:
+        if not os.listdir(hilfe):
+            with open(os.path.join(hilfe, "LIESMICH.txt"), "w",
+                      encoding="utf-8") as f:
+                f.write(T("Hier liegen einmal die Zusatzstarter und die "
+                          "Textdateien.\nDer Selbsttest im Werkzeug schreibt "
+                          "seinen Bericht dorthin, wo das Programm liegt: "
+                          ".jamman/.\n"))
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(programm, "jamman-fehler.log"), "a",
+                  encoding="utf-8") as f:
+            f.write("\n%s  Aufteilung umgebaut: Programm nach .jamman/, "
+                    "Hilfen nach Hilfe-Help-Aide-Ayuda-帮助/\n"
+                    % datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    except OSError:
+        pass
+    return umgebaut
 
 
 def funktionstest(sprachen=None, still=False):
@@ -15676,6 +15795,19 @@ def _absturz_protokoll(fehler):
 
 
 if __name__ == "__main__":
+    # Liegt das Paket noch flach (Fassung 3.120 oder älter), wird es beim
+    # ersten Start umgebaut und danach neu gestartet (19.11.2026).
+    try:
+        if _aufteilung_migrieren():
+            import subprocess as _sp
+            neuer = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 ".jamman", "jamman.py")
+            print(T("  Ordner aufgeräumt — das Werkzeug startet neu …"))
+            _sp.Popen([sys.executable, neuer] + sys.argv[1:], cwd=os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))))
+            sys.exit(0)
+    except Exception:
+        pass
     try:
         main()
     except SystemExit:
