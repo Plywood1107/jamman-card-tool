@@ -26,39 +26,18 @@ fenster_zu() {
         /dev/ttys*) ;;
         *) return 0 ;;
     esac
-    # Welches Terminal läuft? TERM_PROGRAM setzen die Terminals selbst.
-    # (18.11.2026: Der Nutzer arbeitet mit iTerm, nicht mit Terminal.)
+    # Nur Terminal.app wird per AppleScript geschlossen. iTerm, kitty, WezTerm
+    # und andere bleiben unangetastet — dort schließt die eigene Einstellung
+    # des Terminals das Fenster (bei iTerm ist „When the session ends: Close"
+    # im Profil „Default" ab Werk an). Anlaß für die Rücknahme (19.11.2026):
+    # der iTerm-Weg hätte beim ersten Start eine Rückfrage „iTerm möchte iTerm
+    # steuern" erzeugt — mehr Störung als Nutzen, weil die Einstellung reicht.
     case "${TERM_PROGRAM:-}" in
-        iTerm.app|iTerm2.app)
-            # Nur die Sitzung mit unserer tty schließen — nicht das Fenster,
-            # das gerade vorn ist (der Nutzer kann mehrere offen haben).
-            osascript >/dev/null 2>&1 <<AS
-try
-    tell application "iTerm2"
-        repeat with w in windows
-            repeat with t in tabs of w
-                repeat with sit in sessions of t
-                    try
-                        if tty of sit is "$MEIN_TTY" then close sit
-                    end try
-                end repeat
-            end repeat
-        end repeat
-    end tell
-end try
-AS
-            ;;
         Apple_Terminal|"")
             osascript -e "tell application \"Terminal\" to close (every window whose tty is \"$MEIN_TTY\")" >/dev/null 2>&1
             ;;
-        *)
-            # kitty, WezTerm, Hyper und andere lassen sich nicht per AppleScript
-            # schließen; dort gilt die Einstellung des Terminals
-            # („Fenster schließen, wenn der Prozeß endet").
-            ;;
     esac
 }
-
 for P in /usr/local/bin/python3 /opt/homebrew/bin/python3 \
          /Library/Frameworks/Python.framework/Versions/Current/bin/python3 \
          /usr/bin/python3 "$(command -v python3 2>/dev/null)"; do

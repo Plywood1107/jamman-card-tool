@@ -145,12 +145,10 @@ allow it once, and that is the end of it.
 If you would rather not allow that, the same effect is a setting: Terminal →
 Settings → Profiles → "Shell" → "When the shell exits: Close the window".
 
-**With iTerm** it works the same way: `JamMan.command` recognises the terminal
-via `TERM_PROGRAM` and closes the session that owns its own tty — not whichever
-window happens to be in front. iTerm asks once whether it may control itself.
-Without that permission the same effect is a setting: iTerm → Settings →
-Profiles → General → "When the session ends: Close" (on by default for the
-"Default" profile).
+**With iTerm** the script closes nothing (iTerm cannot be scripted without a
+permission prompt); that is what the setting is for: iTerm → Settings →
+Profiles → General → "When the session ends: Close" — on by default for the
+"Default" profile, so the window closes on its own.
 
 **Windows:** `JamMan.bat` (no console window) or `JamMan-mit-Konsole.bat` if
 you want messages to stay visible.
