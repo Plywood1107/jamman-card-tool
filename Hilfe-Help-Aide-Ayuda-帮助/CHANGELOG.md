@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.127 — 2026-11-19
+
+**Documentation for reviewers — no change to the program itself.**
+
+* **`ARCHITEKTUR.md`** — the three rules that hold everywhere (never write
+  without a backup, never write half a file, never rename folders that belong to
+  the device), the layers, why everything is one file, where state lives.
+* **`SICHERHEIT.md`** — what is written where, in which order
+  (backup → `.part` → check → `os.replace`), what happens when the card is full
+  or the cable is pulled, what the firmware transfer does and does not touch,
+  and which network calls exist (one update query, no telemetry). Each claim has
+  a `grep` command beside it so it can be checked.
+* **`ENTWICKLER.md`** — the checks in order, how to build a release, the rules
+  when changing something, where the knowledge about card format and USB
+  protocol comes from.
+* **`.github/workflows/pruefen.yml`** — linter and self test (five languages,
+  Tk under xvfb) run on every push. First run: green in 6 s and 26 s.
+
 ## 3.126 — 2026-11-19
 
 **Code cleaning, checked with a linter (`ruff`), without changing behaviour.**
