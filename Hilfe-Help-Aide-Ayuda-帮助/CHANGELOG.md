@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.129 — 2026-11-19
+
+* **The window grows again after the layout settles.** The new width check
+  proved its worth on the very first CI run: on GitHub's Linux runner the French
+  window was 1048 px wide while its content needed 1148, because the size had
+  been measured one layout pass too early. The window now re-measures up to
+  three times and only ever grows.
+* Found by the check added in 3.128 — the measurement caught a real layout
+  shortfall that the author would not have seen on macOS.
+
 ## 3.128 — 2026-11-19
 
 * **The self test now measures labels.** For every button, checkbox and label it

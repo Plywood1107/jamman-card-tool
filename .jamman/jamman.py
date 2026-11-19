@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.128 (19.11.2026)"
+FASSUNG = "3.129 (19.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -15746,6 +15746,20 @@ def gui(karte):
             fenster.geometry("%dx%d" % (breite, hoehe))
     else:
         fenster.geometry("%dx%d" % (breite, hoehe))
+    # Nachlauf (19.11.2026): Auf dem Prüfrechner von GitHub war das Fenster
+    # französisch 1048 px breit, der Inhalt brauchte 1148 — die Messung oben
+    # war vor dem letzten Layout-Durchgang entstanden. Deshalb bis zu drei
+    # Mal nachmessen und nur wachsen, nie schrumpfen.
+    for _ in range(3):
+        fenster.update_idletasks()
+        bedarf_b = min(fenster.winfo_reqwidth() + 24, bildschirm_b - 40)
+        bedarf_h = min(fenster.winfo_reqheight() + 24, bildschirm_h - 80)
+        if bedarf_b <= fenster.winfo_width() and bedarf_h <= fenster.winfo_height():
+            break
+        neu_b = max(fenster.winfo_width(), bedarf_b)
+        neu_h = max(fenster.winfo_height(), bedarf_h)
+        fenster.geometry("%dx%d" % (neu_b, neu_h))
+        breite, hoehe = neu_b, neu_h
     fenster.minsize(min(breite, 1000), min(hoehe, 700))
 
     # Ohne Karte, aber mit Pedal am Kabel: gleich zeigen, was drin ist.
