@@ -39,6 +39,23 @@ pruefen.yml`, mit virtuellem Bildschirm unter Linux).
 
 ## 3. Eine Fassung bauen und veröffentlichen
 
+**Am einfachsten mit einem Befehl** (bricht beim ersten Befund ab, dann wird
+nichts veröffentlicht):
+
+```bash
+# im Arbeitsordner, vorher notizen/release-<fassung>.md anlegen und den
+# Eintrag "## <fassung> …" in der Änderungsliste schreiben
+python3 werkzeuge/veroeffentliche_fassung.py 3.128
+python3 werkzeuge/veroeffentliche_fassung.py 3.128 --probe   # nur prüfen
+```
+
+Das Skript prüft die Dateilisten beider Pakete gegen einen Manifest (die drei
+Prüf-Dokumente müssen drin sein, `ruff.toml` und `.ruff_cache` nicht), läuft
+alle Prüfungen, committet, veröffentlicht, lädt zum Vergleich herunter, setzt
+die Werkzeugseiten und schreibt Prüfsumme und Größe ins Protokoll.
+
+**Von Hand geht es weiterhin:**
+
 ```bash
 # Paket für die aufgeräumte Aufteilung
 python3 werkzeuge/baue_jamman_zip.py
