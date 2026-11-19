@@ -135,6 +135,13 @@ wie bisher stehen, und derselbe Effekt läßt sich ohne Rückfrage einstellen:
 Terminal → Einstellungen → Profile → „Shell" → „Wenn die Shell beendet wird:
 Fenster schließen".
 
+**Mit iTerm** funktioniert es genauso: `JamMan.command` erkennt das Programm
+an `TERM_PROGRAM` und schließt die Sitzung mit der eigenen tty (nicht das
+Fenster, das gerade vorn ist). iTerm fragt beim ersten Mal, ob es sich selbst
+steuern darf. Ohne diese Erlaubnis gibt es dieselbe Wirkung als Einstellung:
+iTerm → Settings → Profiles → General → „When the session ends: Close" (beim
+Profil „Default" ist das ab Werk eingeschaltet).
+
 **Windows:** `JamMan.bat` doppelklicken (ohne Konsolenfenster) oder
 `JamMan-mit-Konsole.bat`, wenn Meldungen sichtbar bleiben sollen.
 
