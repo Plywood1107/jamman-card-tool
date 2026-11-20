@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.133.1 — 2026-11-20
+
+* **Evidence for the Delay folder name.** Plywood1107 queried the pedal over USB
+  in issue #2: it reports `InternalPatchFolderPath /mnt/nandfs/JamManDelay/` and
+  `RemovablePatchFolderPath /mnt/sdfs/JamManDelay/`. Both READMEs now quote that
+  instead of only assuming the name. The patch layout below it is still
+  unverified, and the text says so.
+
 ## 3.133 — 2026-11-20
 
 * **The JamMan Delay is recognised as a third device.** Suggested by

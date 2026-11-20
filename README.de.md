@@ -9,8 +9,12 @@ Windows oder Linux aus verwalten — ohne JamManager XT.
 https://www.julius-k.de/tool/*
 
 Karten des **JamMan Stereo** und des **JamMan Delay** werden über ihre
-Geräteordner `JamManStereo` und `JamManDelay` erkannt. Beim Delay wird derselbe
-Aufbau angenommen — bestätigt ist er nicht. Die Stereo-Unterstützung wurde mit
+Geräteordner `JamManStereo` und `JamManDelay` erkannt. Beim Delay ist der
+Ordner am echten Gerät bestätigt: Plywood1107 hat es am 19.11.2026 über USB
+abgefragt, das Pedal meldet `InternalPatchFolderPath /mnt/nandfs/JamManDelay/`
+und `RemovablePatchFolderPath /mnt/sdfs/JamManDelay/`. Der Aufbau darunter
+(PatchNN / PhraseA / patch.xml) ist noch nicht eingesehen — deshalb steht hier
+weiter „angenommen" und nicht „geprüft". Die Stereo-Unterstützung wurde mit
 einer nachgebauten Karte geprüft und seit 13.11.2026 **von einem Nutzer an einem
 echten JamMan Stereo (Kubuntu) bestätigt** („Funktioniert, top.") — trotzdem vor
 dem ersten Schreiben die Karte kopieren.

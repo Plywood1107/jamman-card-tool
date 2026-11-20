@@ -72,6 +72,19 @@ gh release create v3.126 jamman-bruecke-3.126.zip \
 # Danach IMMER: herunterladen, Byte vergleichen, entpacken, Selbsttest
 ```
 
+## 3a. Ankündigungen: deutsch und englisch
+
+**GitHub ist international** — dort steht die englische Fassung, die deutsche
+bleibt für den eigenen Gebrauch:
+
+```
+notizen/release-<fassung>-en.md   geht auf GitHub (Skript nimmt sie zuerst)
+notizen/release-<fassung>.md      deutsche Fassung, bleibt im Arbeitsordner
+Titel                             = erste Überschrift der englischen Datei
+```
+
+Fehlt die englische Datei, nimmt das Skript die deutsche — es bricht nicht ab.
+
 ## 3b. Wie Fassungen gezählt werden
 
 ```

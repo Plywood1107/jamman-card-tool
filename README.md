@@ -9,8 +9,12 @@ or Linux — without JamManager XT.**
 https://www.julius-k.de/tool/en/*
 
 Cards from the **JamMan Stereo** and the **JamMan Delay** are recognised by their
-device folders, `JamManStereo` and `JamManDelay`. For the Delay the same layout is
-assumed, not confirmed. Stereo support was tested with a rebuilt card and, since
+device folders, `JamManStereo` and `JamManDelay`. For the Delay the folder name is
+confirmed on a real pedal: on 19 November 2026 Plywood1107 queried it over USB and
+the pedal reports `InternalPatchFolderPath /mnt/nandfs/JamManDelay/` and
+`RemovablePatchFolderPath /mnt/sdfs/JamManDelay/`. The layout below that
+(PatchNN / PhraseA / patch.xml) has not been inspected — so the card layout is
+still "assumed", not "tested". Stereo support was tested with a rebuilt card and, since
 13 November 2026, **confirmed by a user on a real JamMan Stereo (Kubuntu)** —
 copy the card before writing to it for the first time.
 
