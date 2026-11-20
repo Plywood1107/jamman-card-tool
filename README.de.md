@@ -1,9 +1,15 @@
-# jamman-card-tool — deutsche Anleitung
+# JamMan Card Tool — Speicherkarte des JamMan Solo XT, Stereo und Delay
 
 Für Speicherkarte und internen Speicher — auch über USB.
 
-Die Speicherkarte des **DigiTech JamMan Solo XT und Stereo** von macOS,
+Die Speicherkarte des **DigiTech JamMan Solo XT, Stereo und Delay** von macOS,
 Windows oder Linux aus verwalten — ohne JamManager XT.
+
+![Fenster](.jamman/docs/fenster-deutsch.png)
+
+**Der Ausgang ist eingebaut:** Mit „Alles herausgeben …" wird die Karte zu
+gewöhnlichen WAV-Dateien plus einer Liste — lesbar ohne dieses Werkzeug. Wer
+aufhören, umsteigen oder ein Pedal abgeben will, nimmt die Musik mit.
 
 *English version: [README.md](README.md) · Seite mit Bildern:
 https://www.julius-k.de/tool/*
@@ -64,8 +70,6 @@ Laufwerk. Kein Windows, kein Rosetta, kein Emulator.
 Reines Python 3 mit der Standardbibliothek. Kein ffmpeg, kein Homebrew.
 
 ---
-
-![Fenster](.jamman/docs/fenster-deutsch.png)
 
 **Selbst prüfen:** Wenn ein Knopf nichts tut oder ein Fenster offen bleibt,
 kannst du das Werkzeug selbst testen. Es baut eine Testkarte im
@@ -315,6 +319,19 @@ xattr -dr com.apple.quarantine /Pfad/zum/Ordner/jamman-card-tool
 ```
 
 ## Aufbau der Karte
+
+**Wer hat was belegt?** Diese Tabelle ist der Stand, und sie wird nur ergänzt, wenn
+ein Beleg dazukommt — nicht, wenn etwas plausibel klingt.
+
+| Gerät | Geräteordner | Beleg durch | Aufbau | Offen |
+|---|---|---|---|---|
+| JamMan Solo XT | `JamManSoloXT` | eigenes Gerät, täglich im Einsatz | geprüft | — |
+| JamMan Stereo | `JamManStereo` | Nutzer am eigenen Pedal, Kubuntu, 13.11.2026 („Funktioniert, top.") | geprüft | andere Systeme ungeprüft |
+| JamMan Delay | `JamManDelay` | Plywood1107, `patch.xml`/`phrase.xml` vom Gerät, 20.11.2026 (Issue #2) | geprüft | Name der Audiodatei in `PhraseA` |
+| JamMan Solo HD | unbekannt | — | **offen** | Gerät wird im Nur-Lesen-Modus geöffnet; „Struktur melden …" liefert den Beleg |
+
+**Die Belege selbst liegen im Repository unter `Belege/`** — mit Datum, Herkunft
+und dem, was sie ausdrücklich **nicht** belegen.
 
 An echter Hardware geprüft (26.10.2026):
 

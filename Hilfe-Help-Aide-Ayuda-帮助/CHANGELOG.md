@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.135.3 — 2026-11-20
+
+* **A table of proof at the top of the card chapter.** Device, device folder, who
+  confirmed it, and what is still open — one glance instead of prose spread over
+  three sections. The Delay's open point (audio file name) is named inside the
+  table, not buried.
+* **The screenshot moved to the first screen.** It sat below half the manual.
+* **The exit moved to the first screen.** "Export everything …" is now mentioned
+  next to the intro: whoever stops or migrates takes the music along.
+* **Titles that say something**, and the intro names the Delay (it still said
+  "Solo XT and Stereo" while the text below mentioned the Delay).
+* Idea from *Retroactive*: compatibility table, screenshot first, and the end of
+  life named at the top instead of the bottom.
+
 ## 3.135.2 — 2026-11-20
 
 * **Issue forms in the repository.** Two templates: *report a bug* (version,

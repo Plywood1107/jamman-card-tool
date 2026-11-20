@@ -1,9 +1,15 @@
-# jamman-card-tool
+# JamMan Card Tool — memory card of the JamMan Solo XT, Stereo and Delay
 
 For the card and the internal memory — over USB as well.
 
-**Manage the SD card of a DigiTech JamMan Solo XT or Stereo from macOS, Windows
-or Linux — without JamManager XT.**
+**Manage the SD card of a DigiTech JamMan Solo XT, Stereo or Delay from macOS,
+Windows or Linux — without JamManager XT.**
+
+![Window](.jamman/docs/fenster-englisch.png)
+
+**The way out is built in:** "Export everything …" turns the card into ordinary
+WAV files plus a list — readable without this tool. Whoever stops, migrates or
+passes a pedal on takes the music with them.
 
 *Deutsche Fassung: [README.de.md](README.de.md) · Seite mit Bildern:
 https://www.julius-k.de/tool/en/*
@@ -63,8 +69,6 @@ Everything is plain Python 3 with the standard library only.
 No ffmpeg, no Homebrew, no build step.
 
 ---
-
-![Window](.jamman/docs/fenster-englisch.png)
 
 **Test it yourself:** if a button does nothing or a window stays open, you can
 check the tool on your own machine. It creates a test card in the temp folder,
@@ -313,6 +317,19 @@ xattr -dr com.apple.quarantine /path/to/jamman-card-tool
 ```
 
 ## Card layout
+
+**Who proved what?** This table is the record, and it only grows when evidence
+arrives — not when something sounds plausible.
+
+| Device | Device folder | Evidence | Layout | Open |
+|---|---|---|---|---|
+| JamMan Solo XT | `JamManSoloXT` | own device, in daily use | confirmed | — |
+| JamMan Stereo | `JamManStereo` | a user on his own pedal, Kubuntu, 13 Nov 2026 ("Funktioniert, top.") | confirmed | other systems untested |
+| JamMan Delay | `JamManDelay` | Plywood1107, `patch.xml`/`phrase.xml` from the pedal, 20 Nov 2026 (issue #2) | confirmed | name of the audio file in `PhraseA` |
+| JamMan Solo HD | unknown | — | **open** | the device opens read-only; "Report structure …" delivers the evidence |
+
+**The evidence itself sits in `Belege/` in the repository** — with date, source
+and what it explicitly does **not** prove.
 
 Verified on real hardware (2026-10-26):
 
