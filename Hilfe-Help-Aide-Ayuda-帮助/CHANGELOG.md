@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.134.1 — 2026-11-20
+
+* **The Delay card layout is confirmed, not assumed.** Plywood1107 sent the real
+  `patch.xml` and `phrase.xml` from his pedal (issue #2): same fields as the Solo
+  XT and the Stereo, only the root element differs — `device="JamManDelay"`.
+  Both READMEs now quote that instead of "assumed".
+* **Still open, and named as such:** the file name of the audio inside `PhraseA`
+  was not shown — only the XML. Copy the card before the first write.
+* Our own template for a new patch gains `<Author />`, so the metadata block
+  matches what the pedal itself writes.
+
 ## 3.134 — 2026-11-20
 
 * **An unknown JamMan is no longer turned away.** A card folder that looks like a

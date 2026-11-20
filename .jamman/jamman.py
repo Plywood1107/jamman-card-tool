@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.134 (20.11.2026)"
+FASSUNG = "3.134.1 (20.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -10921,6 +10921,7 @@ def _neuer_patch_xml(geraetename, name):
             '    <SettingsVersion>0</SettingsVersion>\n'
             '    <ID>%s</ID>\n'
             '    <Metadata>\n'
+            '    <Author />\n'
             '    <Description />\n'
             '    <Artist />\n'
             '    <Genre>Unspecified</Genre>\n'

@@ -9,12 +9,17 @@ or Linux — without JamManager XT.**
 https://www.julius-k.de/tool/en/*
 
 Cards from the **JamMan Stereo** and the **JamMan Delay** are recognised by their
-device folders, `JamManStereo` and `JamManDelay`. For the Delay the folder name is
-confirmed on a real pedal: on 19 November 2026 Plywood1107 queried it over USB and
-the pedal reports `InternalPatchFolderPath /mnt/nandfs/JamManDelay/` and
-`RemovablePatchFolderPath /mnt/sdfs/JamManDelay/`. The layout below that
-(PatchNN / PhraseA / patch.xml) has not been inspected — so the card layout is
-still "assumed", not "tested". Stereo support was tested with a rebuilt card and, since
+device folders, `JamManStereo` and `JamManDelay`. **For the Delay the layout is
+confirmed on a real pedal** (Plywood1107, 20 November 2026): the folder is
+`JamManDelay`, below it `PatchNN/patch.xml` and `PatchNN/PhraseA/phrase.xml`, and
+the XML fields are the same as on the Solo XT and the Stereo — `PatchName`,
+`RhythmType`, `StopMode`, `SettingsVersion`, `ID`, `Metadata`, plus
+`BeatsPerMinute`, `BeatsPerMeasure`, `IsLoop`, `IsReversed`, `AudioVersion`. The
+one difference: the root element carries `device="JamManDelay"`, and the tool
+writes it that way.
+**Not confirmed** is the name of the audio file inside `PhraseA` — the XML was
+shown, the WAV was not. So: copy the card before writing to it for the first
+time. Stereo support was tested with a rebuilt card and, since
 13 November 2026, **confirmed by a user on a real JamMan Stereo (Kubuntu)** —
 copy the card before writing to it for the first time.
 

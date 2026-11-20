@@ -10,11 +10,16 @@ https://www.julius-k.de/tool/*
 
 Karten des **JamMan Stereo** und des **JamMan Delay** werden über ihre
 Geräteordner `JamManStereo` und `JamManDelay` erkannt. Beim Delay ist der
-Ordner am echten Gerät bestätigt: Plywood1107 hat es am 19.11.2026 über USB
-abgefragt, das Pedal meldet `InternalPatchFolderPath /mnt/nandfs/JamManDelay/`
-und `RemovablePatchFolderPath /mnt/sdfs/JamManDelay/`. Der Aufbau darunter
-(PatchNN / PhraseA / patch.xml) ist noch nicht eingesehen — deshalb steht hier
-weiter „angenommen" und nicht „geprüft". Die Stereo-Unterstützung wurde mit
+Aufbau **am echten Gerät belegt** (Plywood1107, 20.11.2026): Der Ordner ist
+`JamManDelay`, darunter `PatchNN/patch.xml` und `PatchNN/PhraseA/phrase.xml`, und
+die XML-Felder sind dieselben wie beim Solo XT und beim Stereo — `PatchName`,
+`RhythmType`, `StopMode`, `SettingsVersion`, `ID`, `Metadata` sowie
+`BeatsPerMinute`, `BeatsPerMeasure`, `IsLoop`, `IsReversed`, `AudioVersion`.
+Einziger Unterschied: die Wurzel trägt `device="JamManDelay"`, und das schreibt
+das Werkzeug auch so.
+**Nicht belegt** ist der Name der Audiodatei innerhalb von `PhraseA` — das XML
+war zu sehen, die WAV-Datei nicht. Vor dem ersten Schreiben also weiterhin die
+Karte kopieren. Die Stereo-Unterstützung wurde mit
 einer nachgebauten Karte geprüft und seit 13.11.2026 **von einem Nutzer an einem
 echten JamMan Stereo (Kubuntu) bestätigt** („Funktioniert, top.") — trotzdem vor
 dem ersten Schreiben die Karte kopieren.
