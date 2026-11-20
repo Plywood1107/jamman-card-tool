@@ -8,10 +8,11 @@ or Linux — without JamManager XT.**
 *Deutsche Fassung: [README.de.md](README.de.md) · Seite mit Bildern:
 https://www.julius-k.de/tool/en/*
 
-Cards from the **JamMan Stereo** are also recognised: same folder layout, only the
-device folder is called `JamManStereo`. Tested with a rebuilt Stereo card and, since
+Cards from the **JamMan Stereo** and the **JamMan Delay** are recognised by their
+device folders, `JamManStereo` and `JamManDelay`. For the Delay the same layout is
+assumed, not confirmed. Stereo support was tested with a rebuilt card and, since
 13 November 2026, **confirmed by a user on a real JamMan Stereo (Kubuntu)** —
-still: copy the card before writing to it for the first time.
+copy the card before writing to it for the first time.
 
 The official DigiTech *JamManager XT* (version 2.0, 2012) crashes on recent
 macOS releases as soon as the pedal is connected:

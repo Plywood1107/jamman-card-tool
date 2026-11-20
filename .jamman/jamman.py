@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.131.4 (19.11.2026)"
+FASSUNG = "3.133 (20.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -978,7 +978,10 @@ UNTERORDNER = "JamManSoloXT"
 # Solo XT und Stereo sind darunter gleich aufgebaut (Patch01 … / PhraseA /
 # patch.xml). Belegt am 12.11.2026: ein Nutzer im Bassic-Forum hat den
 # Stereo erreicht, indem er im Skript „SoloXT" durch „Stereo" ersetzte.
-KARTENORDNER = ("JamManSoloXT", "JamManStereo")
+KARTENORDNER = ("JamManSoloXT", "JamManStereo", "JamManDelay")
+# Delay: Von Plywood1107 vorgeschlagen (Pull Request #3, 20.11.2026).
+# Der Kartenaufbau wird angenommen, nicht bestätigt — erkannt wird der
+# Ordner, geschrieben wird erst nach Sicherung und auf Befehl.
 
 
 def knopf_text(text, grenze=22):
@@ -1054,8 +1057,9 @@ def karte_pruefen(pfad):
     if gefunden:
         UNTERORDNER = gefunden
         return os.path.join(p, gefunden)
-    raise SystemExit(T("Fehler: auf '%s' liegt kein Ordner '%s' oder '%s'. "
-                         "Das ist keine JamMan-Karte.") % (p, KARTENORDNER[0], KARTENORDNER[1]))
+    raise SystemExit(T("Fehler: auf '%s' liegt kein unterstützter "
+                         "JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.")
+                     % (p, ", ".join(KARTENORDNER)))
 
 
 def ist_ordner(pfad):
@@ -2586,6 +2590,8 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        "Fehler: auf '%s' liegt kein unterstützter JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.":
+         "  Error: '%s' contains no supported JamMan device folder (%s). That is not a JamMan card.",
         'beim Start automatisch nach Updates sehen':
          'check for updates automatically on start',
         'nach jedem Update automatisch prüfen':
@@ -3954,6 +3960,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        "Fehler: auf '%s' liegt kein unterstützter JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.":
+         "  Erreur : '%s' ne contient aucun dossier d'appareil JamMan pris en charge (%s). Ce n'est pas une carte JamMan.",
         'beim Start automatisch nach Updates sehen':
          'chercher les mises à jour automatiquement au démarrage',
         'nach jedem Update automatisch prüfen':
@@ -5230,6 +5238,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        "Fehler: auf '%s' liegt kein unterstützter JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.":
+         "  Error: '%s' no contiene una carpeta de dispositivo JamMan compatible (%s). No es una tarjeta JamMan.",
         'beim Start automatisch nach Updates sehen':
          'buscar actualizaciones automáticamente al iniciar',
         'nach jedem Update automatisch prüfen':
@@ -6506,6 +6516,8 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        "Fehler: auf '%s' liegt kein unterstützter JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.":
+         "  错误：'%s' 中没有受支持的 JamMan 设备文件夹（%s）。这不是 JamMan 存储卡。",
         'beim Start automatisch nach Updates sehen':
          '启动时自动检查更新',
         'nach jedem Update automatisch prüfen':

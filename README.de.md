@@ -8,8 +8,12 @@ Windows oder Linux aus verwalten — ohne JamManager XT.
 *English version: [README.md](README.md) · Seite mit Bildern:
 https://www.julius-k.de/tool/*
 
-Karten des **JamMan Stereo** werden ebenfalls erkannt: gleicher Aufbau,
-nur heißt der Geräteordner `JamManStereo`. Geprüft mit einer nachgebauten
+Karten des **JamMan Stereo** und des **JamMan Delay** werden über ihre
+Geräteordner `JamManStereo` und `JamManDelay` erkannt. Beim Delay wird derselbe
+Aufbau angenommen — bestätigt ist er nicht. Die Stereo-Unterstützung wurde mit
+einer nachgebauten Karte geprüft und seit 13.11.2026 **von einem Nutzer an einem
+echten JamMan Stereo (Kubuntu) bestätigt** („Funktioniert, top.") — trotzdem vor
+dem ersten Schreiben die Karte kopieren.
 Stereo-Karte und seit 13.11.2026 **von einem Nutzer an einem echten
 JamMan Stereo (Kubuntu) bestätigt** ("Funktioniert, top.") — trotzdem
 vor dem ersten Schreiben die Karte kopieren.

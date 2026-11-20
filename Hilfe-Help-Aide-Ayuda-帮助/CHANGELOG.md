@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.133 — 2026-11-20
+
+* **The JamMan Delay is recognised as a third device.** Suggested by
+  **Plywood1107** in pull request #3: `JamManDelay` joins `JamManSoloXT` and
+  `JamManStereo` in the list of device folders. The card layout is *assumed* to
+  be the same — it is not confirmed, and the README says so. Recognising the
+  folder is harmless; writing still requires an explicit command and always
+  backs up first.
+* **The error message lists the supported folders** instead of naming two, so a
+  fourth device needs no change there.
+* Ported by hand instead of merging: the pull request was based on 3.119 and
+  main was 28 commits ahead, so a merge would have undone the work in between.
+
 ## 3.131.4 — 2026-11-19
 
 * **The settings row "Aktualisierung" is gone.** Both switches now sit where
