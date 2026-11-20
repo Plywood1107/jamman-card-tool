@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.133.3 (20.11.2026)"
+FASSUNG = "3.134 (20.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -979,6 +979,9 @@ UNTERORDNER = "JamManSoloXT"
 # patch.xml). Belegt am 12.11.2026: ein Nutzer im Bassic-Forum hat den
 # Stereo erreicht, indem er im Skript „SoloXT" durch „Stereo" ersetzte.
 KARTENORDNER = ("JamManSoloXT", "JamManStereo", "JamManDelay")
+# Unbekanntes Gerät: nur lesen (20.11.2026). Der Ordner wird erkannt,
+# aber geschrieben wird nichts — der Aufbau ist nicht belegt.
+NUR_LESEN = False
 # Delay: Von Plywood1107 vorgeschlagen (Pull Request #3, 20.11.2026).
 # Der Kartenaufbau wird angenommen, nicht bestätigt — erkannt wird der
 # Ordner, geschrieben wird erst nach Sicherung und auf Befehl.
@@ -1037,6 +1040,121 @@ def kartenordner_in(p):
     return None
 
 
+def struktur_bericht(basis):
+    """Einen kleinen Bericht über den Kartenaufbau schreiben (ohne Musik).
+
+    Anlaß (20.11.2026): Für ein unbekanntes Pedal braucht es nur Ordnernamen und
+    XML-Gerüst, um den Aufbau zu belegen. Der Bericht enthält:
+      · die Ordnerstruktur bis zur Ebene der Patch-Ordner
+      · die XML-Dateien, aber mit leeren Textwerten (Namen und Beschreibungen
+        des Nutzers bleiben draußen)
+      · KEINE Audiodateien
+    Abgelegt wird er in ~/JamMan-Strukturbericht/ — abgeschickt wird er nur vom
+    Nutzer selbst.
+    """
+    import zipfile
+    ziel_ordner = os.path.join(os.path.expanduser("~"), "JamMan-Strukturbericht")
+    os.makedirs(ziel_ordner, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    ziel = os.path.join(ziel_ordner, "struktur_%s_%s.zip"
+                        % (os.path.basename(basis.rstrip("/")), stamp))
+    import re as _re
+
+    def entschaerfen(text):
+        """Textwerte leeren, Feldnamen und kurze Werte (Zahlen) behalten."""
+        def ersetze(treffer):
+            wert = treffer.group(3).strip()
+            if len(wert) <= 3:          # 1, 0, 120 — technische Angaben
+                return treffer.group(0)
+            return treffer.group(1) + "…" + treffer.group(4)
+        return _re.sub("(<([A-Za-z_][A-Za-z0-9_]*)[^>]*>)([^<]{1,200})(</[A-Za-z_][A-Za-z0-9_]*>)",
+                       ersetze, text)
+
+    seiten = []
+    anzahl_xml = 0
+    for ordner, unterordner, dateien in os.walk(basis):
+        unterordner[:] = [u for u in unterordner if not u.startswith(".")][:8]
+        rel = os.path.relpath(ordner, basis)
+        if rel.count(os.sep) > 2:
+            unterordner[:] = []
+            continue
+        for datei in sorted(dateien):
+            if not datei.lower().endswith(".xml"):
+                continue
+            pfad = os.path.join(ordner, datei)
+            try:
+                with open(pfad, encoding="utf-8", errors="replace") as f:
+                    inhalt = f.read(4000)
+                seiten.append((os.path.relpath(pfad, basis).replace(os.sep, "/"),
+                               entschaerfen(inhalt)))
+                anzahl_xml += 1
+            except OSError:
+                continue
+            if anzahl_xml >= 6:
+                break
+        if anzahl_xml >= 6:
+            break
+    with zipfile.ZipFile(ziel, "w", zipfile.ZIP_DEFLATED) as z:
+        kopf = ["Geräteordner: %s" % os.path.basename(basis.rstrip("/")),
+                "Aufgenommen: %s" % datetime.now().strftime("%d.%m.%Y %H:%M"),
+                "Werkzeug: %s" % FASSUNG,
+                "",
+                "Enthalten sind Ordnernamen und XML-Gerüst. Textwerte (Patch-Namen,",
+                "Beschreibungen) sind durch … ersetzt. Keine Audiodateien.",
+                "",
+                "Ordner:"]
+        for ordner, unterordner, dateien in os.walk(basis):
+            rel = os.path.relpath(ordner, basis)
+            if rel.count(os.sep) > 1:
+                unterordner[:] = []
+                continue
+            kopf.append("  " + ("." if rel == "." else rel) + "/")
+            for name in sorted(dateien)[:12]:
+                if name.lower().endswith((".xml", ".txt")):
+                    kopf.append("      " + name)
+            if rel.count(os.sep) >= 1:
+                unterordner[:] = []
+        z.writestr("LIESMICH.txt", "\n".join(kopf) + "\n")
+        for name, inhalt in seiten:
+            z.writestr("xml/" + name, inhalt)
+    return ziel, anzahl_xml
+
+
+def unbekanntes_geraet(pfad):
+    """Ordner, der wie ein JamMan aussieht, aber nicht in KARTENORDNER steht.
+
+    Anlaß (20.11.2026): Statt fremde Karten abzuweisen, kann das Werkzeug sie
+    LESEN und den Aufbau melden — so wird aus jedem Besitzer eines unbekannten
+    Pedals ein möglicher Beleg. Geschrieben wird nichts.
+    """
+    p = os.path.abspath(os.path.expanduser(pfad))
+    if not ist_ordner(p):
+        return None
+    # direkt der Geräteordner gewählt?
+    if os.path.basename(p).lower().startswith("jamman"):
+        if os.path.basename(p).lower() not in [w.lower() for w in KARTENORDNER]:
+            return os.path.basename(p)
+    kandidaten = []
+    try:
+        for name in os.listdir(p):
+            if not name.lower().startswith("jamman"):
+                continue
+            if name.lower() in [w.lower() for w in KARTENORDNER]:
+                continue
+            q = os.path.join(p, name)
+            if not ist_ordner(q):
+                continue
+            # muß wenigstens einen Patch-Ordner enthalten
+            try:
+                if any(n.lower().startswith("patch") for n in os.listdir(q)):
+                    kandidaten.append(name)
+            except OSError:
+                continue
+    except OSError:
+        return None
+    return kandidaten[0] if kandidaten else None
+
+
 def karte_pruefen(pfad):
     """Gibt den Ordner des Geräts zurück oder bricht mit klarer Meldung ab.
 
@@ -1057,6 +1175,13 @@ def karte_pruefen(pfad):
     if gefunden:
         UNTERORDNER = gefunden
         return os.path.join(p, gefunden)
+    # Unbekanntes Gerät? Dann lesen, aber nicht schreiben.
+    fremd = unbekanntes_geraet(p)
+    if fremd:
+        global NUR_LESEN
+        NUR_LESEN = True
+        UNTERORDNER = fremd
+        return os.path.join(p, fremd) if os.path.basename(p).lower() != fremd.lower() else p
     raise SystemExit(T("Fehler: auf '%s' liegt kein unterstützter "
                          "JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.")
                      % (p, ", ".join(KARTENORDNER)))
@@ -2532,6 +2657,7 @@ BEFEHL_ALIAS = {
 
 BEFEHLE = {
     "liste": ("List patches", "Patches auflisten"),
+    "struktur": ("Report the card structure", "Kartenaufbau melden"),
     "namensform": ("Normalise folder names", "Ordnernamen angleichen"),
     "sichern": ("Back up the card", "Karte sichern"),
     "aufspielen": ("Import an audio file as a patch", "Audiodatei als Patch aufspielen"),
@@ -2590,6 +2716,24 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Nur-Lesen-Modus: „%s“ ist ein unbekanntes Gerät (%s). Der Kartenaufbau ist nicht belegt, deshalb wird nichts geschrieben. Lesen ist erlaubt (liste). Mit „jamman.py struktur <karte>“ entsteht ein Bericht, den Sie weitergeben können.':
+         'Read-only mode: “%s” is an unknown device (%s). The card layout is not verified, so nothing is written. Reading is allowed (liste). “jamman.py struktur <card>” writes a report you can pass on.',
+        'Speicherkarte des %s':
+         'Memory card of the %s',
+        'Struktur melden …':
+         'Report structure …',
+        'Strukturbericht':
+         'Structure report',
+        'Der Bericht ließ sich nicht schreiben: %s':
+         'The report could not be written: %s',
+        'Nur-Lesen-Modus: unbekanntes Gerät „%s“. Die Karte wird gelesen; geschrieben wird nichts, weil der Aufbau nicht belegt ist. Mit „Struktur melden …“ können Sie ihn belegen.':
+         'Read-only mode: unknown device “%s”. The card is read; nothing is written because the layout is not verified. “Report structure …” provides that evidence.',
+        'Bericht geschrieben: %s':
+         'Report written: %s',
+        'Enthalten: Ordnernamen und die XML-Dateien, ohne Musik und ohne Ihre Texte (Patch-Namen sind durch … ersetzt). %d XML-Dateien.':
+         'Contains: folder names and the XML files, no audio and none of your text (patch names replaced by …). %d XML files.',
+        'Bitte schicken Sie diese Datei an mich oder hängen Sie sie an ein GitHub-Issue — dann kann ich den Aufbau prüfen und das Gerät freigeben.':
+         'Please send me this file or attach it to a GitHub issue — then I can check the layout and approve the device.',
         'Spalten (%s): %s':
          'Columns (%s): %s',
         'Spalten (%s): Aufbau unvollständig':
@@ -3972,6 +4116,24 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Nur-Lesen-Modus: „%s“ ist ein unbekanntes Gerät (%s). Der Kartenaufbau ist nicht belegt, deshalb wird nichts geschrieben. Lesen ist erlaubt (liste). Mit „jamman.py struktur <karte>“ entsteht ein Bericht, den Sie weitergeben können.':
+         "Mode lecture seule : « %s » est un appareil inconnu (%s). La structure de la carte n'est pas vérifiée, donc rien n'est écrit. La lecture est permise (liste). « jamman.py struktur <carte> » crée un rapport que vous pouvez transmettre.",
+        'Speicherkarte des %s':
+         'Carte mémoire du %s',
+        'Struktur melden …':
+         'Signaler la structure …',
+        'Strukturbericht':
+         'Rapport de structure',
+        'Der Bericht ließ sich nicht schreiben: %s':
+         "Le rapport n'a pas pu être écrit : %s",
+        'Nur-Lesen-Modus: unbekanntes Gerät „%s“. Die Karte wird gelesen; geschrieben wird nichts, weil der Aufbau nicht belegt ist. Mit „Struktur melden …“ können Sie ihn belegen.':
+         "Mode lecture seule : appareil inconnu « %s ». La carte est lue ; rien n'est écrit car la structure n'est pas vérifiée. « Signaler la structure … » fournit cette preuve.",
+        'Bericht geschrieben: %s':
+         'Rapport écrit : %s',
+        'Enthalten: Ordnernamen und die XML-Dateien, ohne Musik und ohne Ihre Texte (Patch-Namen sind durch … ersetzt). %d XML-Dateien.':
+         'Contient : les noms de dossiers et les fichiers XML, sans audio et sans vos textes (noms de patches remplacés par …). %d fichiers XML.',
+        'Bitte schicken Sie diese Datei an mich oder hängen Sie sie an ein GitHub-Issue — dann kann ich den Aufbau prüfen und das Gerät freigeben.':
+         "Envoyez-moi ce fichier ou joignez-le à un ticket GitHub — je pourrai alors vérifier la structure et valider l'appareil.",
         'Spalten (%s): %s':
          'Colonnes (%s) : %s',
         'Spalten (%s): Aufbau unvollständig':
@@ -5262,6 +5424,24 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Nur-Lesen-Modus: „%s“ ist ein unbekanntes Gerät (%s). Der Kartenaufbau ist nicht belegt, deshalb wird nichts geschrieben. Lesen ist erlaubt (liste). Mit „jamman.py struktur <karte>“ entsteht ein Bericht, den Sie weitergeben können.':
+         'Modo de solo lectura: «%s» es un dispositivo desconocido (%s). La estructura de la tarjeta no está verificada, por eso no se escribe nada. La lectura está permitida (liste). «jamman.py struktur <tarjeta>» crea un informe que puedes enviar.',
+        'Speicherkarte des %s':
+         'Tarjeta de memoria del %s',
+        'Struktur melden …':
+         'Informar de la estructura …',
+        'Strukturbericht':
+         'Informe de estructura',
+        'Der Bericht ließ sich nicht schreiben: %s':
+         'No se pudo escribir el informe: %s',
+        'Nur-Lesen-Modus: unbekanntes Gerät „%s“. Die Karte wird gelesen; geschrieben wird nichts, weil der Aufbau nicht belegt ist. Mit „Struktur melden …“ können Sie ihn belegen.':
+         'Modo de solo lectura: dispositivo desconocido «%s». La tarjeta se lee; no se escribe nada porque la estructura no está verificada. «Informar de la estructura …» aporta esa prueba.',
+        'Bericht geschrieben: %s':
+         'Informe escrito: %s',
+        'Enthalten: Ordnernamen und die XML-Dateien, ohne Musik und ohne Ihre Texte (Patch-Namen sind durch … ersetzt). %d XML-Dateien.':
+         'Contiene: nombres de carpetas y los archivos XML, sin audio y sin tus textos (nombres de patches sustituidos por …). %d archivos XML.',
+        'Bitte schicken Sie diese Datei an mich oder hängen Sie sie an ein GitHub-Issue — dann kann ich den Aufbau prüfen und das Gerät freigeben.':
+         'Envíame este archivo o adjúntalo a un issue de GitHub — así podré revisar la estructura y aprobar el dispositivo.',
         'Spalten (%s): %s':
          'Columnas (%s): %s',
         'Spalten (%s): Aufbau unvollständig':
@@ -6552,6 +6732,24 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Nur-Lesen-Modus: „%s“ ist ein unbekanntes Gerät (%s). Der Kartenaufbau ist nicht belegt, deshalb wird nichts geschrieben. Lesen ist erlaubt (liste). Mit „jamman.py struktur <karte>“ entsteht ein Bericht, den Sie weitergeben können.':
+         '只读模式：“%s”是未知设备（%s）。存储卡结构尚未确认，因此不会写入。允许读取（liste）。用“jamman.py struktur <卡>”可生成可转交的报告。',
+        'Speicherkarte des %s':
+         '%s 的存储卡',
+        'Struktur melden …':
+         '报告结构 …',
+        'Strukturbericht':
+         '结构报告',
+        'Der Bericht ließ sich nicht schreiben: %s':
+         '无法写入报告：%s',
+        'Nur-Lesen-Modus: unbekanntes Gerät „%s“. Die Karte wird gelesen; geschrieben wird nichts, weil der Aufbau nicht belegt ist. Mit „Struktur melden …“ können Sie ihn belegen.':
+         '只读模式：未知设备“%s”。可以读取存储卡，但不会写入，因为结构尚未确认。请用“报告结构 …”提供证据。',
+        'Bericht geschrieben: %s':
+         '已写入报告：%s',
+        'Enthalten: Ordnernamen und die XML-Dateien, ohne Musik und ohne Ihre Texte (Patch-Namen sind durch … ersetzt). %d XML-Dateien.':
+         '包含：文件夹名称和 XML 文件，不含音频，也不含您的文字（音色名称以 … 代替）。共 %d 个 XML 文件。',
+        'Bitte schicken Sie diese Datei an mich oder hängen Sie sie an ein GitHub-Issue — dann kann ich den Aufbau prüfen und das Gerät freigeben.':
+         '请把此文件发给我，或附在 GitHub issue 上 —— 这样我就能检查结构并支持该设备。',
         'Spalten (%s): %s':
          '列（%s）：%s',
         'Spalten (%s): Aufbau unvollständig':
@@ -13631,6 +13829,12 @@ def _fenster_titel(basis, unterordner=""):
         return T("Speicherkarte") + " — " + T("Kopie vom Pedal")
     if "stereo" in (unterordner or "").lower():
         return T("Speicherkarte des JamMan Stereo")
+    if unterordner and unterordner.lower() not in ("jamman", "jamman solixt"):
+        # Unbekanntes Gerät: den Ordnernamen zeigen, nicht „Solo XT" behaupten
+        # (20.11.2026 — die Überschrift behauptete sonst ein Gerät, das es nicht
+        # ist).
+        if not unterordner.lower().startswith("jammansoloxt"):
+            return T("Speicherkarte des %s") % unterordner
     return T("Speicherkarte des JamMan Solo XT")
 
 
@@ -13959,6 +14163,36 @@ def gui(karte):
                             "nicht auf das Pedal."))
     tk.Label(fenster, textvariable=kopie_hinweis, bg=FARBE_HINTERGRUND,
              fg="#c8a24a", font=schrift(10), wraplength=1000).pack()
+
+    # Nur-Lesen-Modus (20.11.2026): Ein unbekanntes Gerät wird gelesen, aber
+    # nicht beschrieben. Der Hinweis sagt das, und ein Knopf holt den Bericht.
+    nur_lesen_var = tk.StringVar(value="")
+    tk.Label(fenster, textvariable=nur_lesen_var, bg=FARBE_HINTERGRUND,
+             fg="#e0b060", font=schrift(10), wraplength=1000).pack()
+
+    def struktur_melden():
+        basis = zustand.get("basis")
+        if not basis:
+            return
+        try:
+            ziel, anzahl = struktur_bericht(basis)
+        except Exception as fehler:
+            messagebox.showinfo(T("Strukturbericht"),
+                                T("Der Bericht ließ sich nicht schreiben: %s") % fehler)
+            return
+        messagebox.showinfo(
+            T("Strukturbericht"),
+            T("Bericht geschrieben: %s") % ziel + "\n\n"
+            + T("Enthalten: Ordnernamen und die XML-Dateien, ohne Musik und ohne "
+                "Ihre Texte (Patch-Namen sind durch … ersetzt). %d XML-Dateien.")
+            % anzahl + "\n\n"
+            + T("Bitte schicken Sie diese Datei an mich oder hängen Sie sie an "
+                "ein GitHub-Issue — dann kann ich den Aufbau prüfen und das "
+                "Gerät freigeben."))
+
+    knopf_struktur = tk.Button(leiste, text=T("Struktur melden …"),
+                               command=struktur_melden, state="disabled")
+    knopf_struktur.pack(side="right", padx=(0, 12))
 
     # Achtungshinweis, wenn hier eine geholte Kopie offen ist und nicht die
     # Karte selbst. Am 16.11.2026 zweimal verwechselt: „Neu laden" zeigte
@@ -14639,6 +14873,23 @@ def gui(karte):
             zeilen_anwenden()
             return
         pfad_var.set(zustand["basis"])
+        # Nur-Lesen-Modus anzeigen und den Bericht-Knopf freigeben
+        # (20.11.2026). Achtung: Einrückung auf Funktionsebene — beim ersten
+        # Einbau stand sie vier Spalten zu weit links, und die Zeilenliste
+        # blieb dadurch leer (selbst gesehen, nicht vermutet).
+        try:
+            if NUR_LESEN:
+                nur_lesen_var.set(
+                    T("Nur-Lesen-Modus: unbekanntes Gerät „%s“. Die Karte wird "
+                      "gelesen; geschrieben wird nichts, weil der Aufbau nicht "
+                      "belegt ist. Mit „Struktur melden …“ können Sie ihn belegen.")
+                    % (UNTERORDNER or "?"))
+                knopf_struktur.config(state="normal")
+            else:
+                nur_lesen_var.set("")
+                knopf_struktur.config(state="disabled")
+        except Exception:
+            pass
         try:
             titel_var.set(_fenster_titel(zustand["basis"], UNTERORDNER))
         except Exception:
@@ -15765,6 +16016,14 @@ def gui(karte):
                    ("Karte auswerfen", karte_auswerfen),
                    ("Löschen", loeschen)))
 
+    # Diese Knöpfe SCHREIBEN — bei einem unbekannten Gerät sind sie gesperrt
+    # (Nur-Lesen-Modus, 20.11.2026).
+    schreibend = ("Umbenennen", "Platz ändern", "Tauschen", "Löschen",
+                  "Datei teilen", "▲ nach oben", "▼ nach unten",
+                  "Einstellungen anwenden", "Beschreibung …",
+                  "Datei aufspielen", "Anhören", "Alle normieren",
+                  "Lücken schließen", "Zurücknehmen (letzter Schritt)",
+                  "Pegeländerung zurücknehmen …", "Karte auswerfen")
     braucht_auswahl = ("Anhören", "Umbenennen", "Platz ändern", "Tauschen",
                        "Löschen", "Datei teilen", "▲ nach oben", "▼ nach unten",
                        "Einstellungen anwenden", "Beschreibung …",
@@ -15779,6 +16038,12 @@ def gui(karte):
             k = knopf_refs.get(name)
             if k is not None:
                 k.config(state="normal" if hat else "disabled")
+        # Nur-Lesen: alles Schreibende bleibt gesperrt, auch mit Auswahl.
+        if NUR_LESEN:
+            for name in schreibend:
+                k = knopf_refs.get(name)
+                if k is not None:
+                    k.config(state="disabled")
 
     tk.Label(wahl, text=T("Fade am Ende"), bg=FARBE_HINTERGRUND,
              fg=FARBE_LEISE).pack(side="left", padx=(10, 2))
@@ -16366,8 +16631,25 @@ def main():
         return
 
     basis = karte_pruefen(a.karte)
+    # Nur-Lesen-Modus (20.11.2026): Unbekanntes Gerät — lesende Befehle gehen,
+    # schreibende nicht. Klare Meldung statt stiller Fehlschlag.
+    if NUR_LESEN:
+        lesend = ("liste", "struktur", "wav_info", "pruefen", "diagnose")
+        if a.befehl not in lesend:
+            raise SystemExit(
+                T("Nur-Lesen-Modus: „%s“ ist ein unbekanntes Gerät (%s). "
+                  "Der Kartenaufbau ist nicht belegt, deshalb wird nichts "
+                  "geschrieben. Lesen ist erlaubt (liste). Mit "
+                  "„jamman.py struktur <karte>“ entsteht ein Bericht, den Sie "
+                  "weitergeben können.") % (a.karte, UNTERORDNER))
     if a.befehl == "liste":
         befehl_liste(basis)
+    elif a.befehl == "struktur":
+        ziel, anzahl = struktur_bericht(basis)
+        print(T("Bericht geschrieben: %s") % ziel)
+        print(T("Enthalten: Ordnernamen und die XML-Dateien, ohne Musik und ohne "
+                "Ihre Texte (Patch-Namen sind durch … ersetzt). %d XML-Dateien.")
+              % anzahl)
     elif a.befehl == "namensform":
         befehl_namensform(basis, a.schreiben, a.sicherung)
     elif a.befehl == "sichern":

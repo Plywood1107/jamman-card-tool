@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.134 — 2026-11-20
+
+* **An unknown JamMan is no longer turned away.** A card folder that looks like a
+  JamMan but is not one of the known devices (`JamManSoloXT`, `JamManStereo`,
+  `JamManDelay`) now opens in **read-only mode**: the tool lists the patches,
+  shows the real device name in the title, and disables everything that writes.
+  The layout is not verified, so nothing is written — not even by accident.
+* **"Report structure …"** writes a small ZIP into `~/JamMan-Strukturbericht/`:
+  folder names and the XML files, with text values replaced by `…` (patch names
+  and descriptions stay on the owner's machine) and **no audio**. The owner
+  decides whether to pass it on. That turns any owner of an unknown pedal into a
+  possible source of evidence — the missing piece for the Solo HD.
+* Command line: `jamman.py struktur --karte <path>`; writing commands answer with
+  the read-only explanation instead of failing silently.
+
 ## 3.133.3 — 2026-11-20
 
 * **The list columns are aligned in every language.** The widths were written
