@@ -576,3 +576,67 @@ The tool is free. If you find it useful you may contribute something:
 
 The "Donate" button in the window opens the same page. The identifier is
 public; no account details are in it.
+
+## Questions and answers
+
+**Card in a reader, or the pedal over USB?** Both. Over USB the **internal memory**
+and writing are available as well; about 1.3 MB/s flows there, so a card reader is
+faster. For one full backup the reader is the better choice.
+
+**Which Python do I need?** Python 3 with **Tk 8.6 or newer**. On macOS that means
+the python.org build; the built-in `/usr/bin/python3` has Tk 8.5 — the window will
+not draw, and the tool falls back to its text menu.
+
+**Why copy the card before the first write?** Because for the Stereo and the Delay
+the layout is **assumed** (it is only confirmed once someone has verified it), and
+because a backup is cheaper than a broken card. Since 1.x the tool backs up before
+every write — the extra copy by hand is belt and braces.
+
+**macOS says the starter is "from the internet"?** Once in Terminal:
+
+```bash
+xattr -d com.apple.quarantine "…/JamMan-macOS.command"
+chmod +x "…/JamMan-macOS.command"
+```
+
+**Can I go back to an older version?** Yes, but not every old release is public any
+more (the repository was tidied up). If you need a specific one: ask, and it will be
+provided again. The newest one is under `releases/latest`.
+
+**What does it cost?** Nothing. MIT licence, no account, no ads. If you feel like
+it, the "Donate" button is there — nobody has to.
+
+**Which languages?** German, English, French, Spanish, Chinese — interface,
+messages and documentation.
+
+## If something is wrong
+
+1. **Press the self test** ("Self test …" in the window). It checks the tool on your
+   own computer, without a pedal, and writes a report.
+2. **Note the version** — top right in the window, for example `3.135 (20.11.2026)`.
+3. **Send the log:** `jamman-fehler.log` sits next to the program file
+   (`.jamman/jamman-fehler.log`). It holds the messages of the last runs.
+4. **Name your system** (macOS 27.3, Windows 11, Kubuntu 24.04 …). With version and
+   system almost anything can be reproduced.
+
+## What stays on your computer
+
+```
+~/.jamman-werkzeug.cnf        settings (language, sorting, check boxes)
+~/JamMan-Sicherung/           backups the tool creates itself
+~/JamMan-Herausgabe/          folders from "Export everything …"
+.jamman/jamman-fehler.log     log; may be deleted at any time
+```
+
+**None of it lives in the system: no daemon, no autostart.** To clean up: delete the
+settings and the log, and look at the backup and export folders first — that is
+where the music is. Deleting these files does **not** touch the card itself.
+
+## What users say
+
+> "Funktioniert, top." — JamMan Stereo owner on Kubuntu, 13 November 2026
+
+> "It is awesome that you were able to build a tool that solves this for yourself
+> and other owners!" — DigiTech Support, 19 November 2026
+
+**Both are real replies with a date; none of it is paid for.**

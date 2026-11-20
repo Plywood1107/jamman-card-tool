@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.135.1 — 2026-11-20
+
+* **Four sections added to both READMEs** — the questions that otherwise arrive
+  as individual mail:
+  * **Questions and answers:** reader or USB, which Python, why copy the card
+    first, blocked `.command`, going back to an older version, price, languages.
+  * **If something is wrong:** press the self test, note the version, send
+    `jamman-fehler.log`, name the system.
+  * **What stays on your computer:** settings, backups, export folder, log — and
+    what deleting them does not touch (the card).
+  * **What users say:** two real quotes with dates (a Stereo owner, DigiTech
+    support) — no invented praise.
+* Idea from *Mac Mouse Fix*: its README answers the recurring questions in one
+  place instead of in hundreds of threads.
+
 ## 3.135 — 2026-11-20
 
 * **"Export everything …" — the card's contents without the tool.** A new command

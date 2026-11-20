@@ -569,3 +569,73 @@ Der Knopf „Spenden" im Fenster öffnet dieselbe Seite. Die Kennung ist
 
 MIT — siehe [LICENSE](LICENSE).
 Englische Anleitung: [README.md](README.md).
+
+## Fragen und Antworten
+
+**Karte in den Kartenleser oder das Pedal per USB?** Beides. Über USB sind außer
+der microSD auch der **interne Speicher** und das Schreiben erreichbar; es fließen
+dort etwa 1,3 MB/s, der Kartenleser ist also schneller. Für eine Sicherung in einem
+Rutsch ist der Leser die bessere Wahl.
+
+**Welches Python brauche ich?** Python 3 mit **Tk 8.6 oder neuer**. Auf macOS ist
+das der Build von python.org; das mitgelieferte `/usr/bin/python3` bringt Tk 8.5 —
+damit zeichnet das Fenster nicht, und das Werkzeug weicht aufs Textmenü aus.
+
+**Warum vor dem ersten Schreiben die Karte kopieren?** Weil das Werkzeug bei
+Stereo und Delay den Aufbau **angenommen** hat (belegt ist er erst, wenn jemand ihn
+bestätigt hat), und weil eine Sicherung billiger ist als eine kaputte Karte. Seit
+1.x sichert das Werkzeug vor jedem Schreiben selbst — die zusätzliche Kopie von Hand
+ist der Gürtel zum Hosenträger.
+
+**macOS sagt, die Startdatei sei „aus dem Internet"?** Einmal im Terminal:
+
+```bash
+xattr -d com.apple.quarantine "…/JamMan-macOS.command"
+chmod +x "…/JamMan-macOS.command"
+```
+
+**Kann ich auf eine ältere Fassung zurück?** Ja, aber die alten Fassungen liegen
+nicht mehr alle öffentlich (das Repository wurde aufgeräumt). Wer eine bestimmte
+braucht: melden, sie wird wieder bereitgestellt. Die jeweils neueste steht unter
+`releases/latest`.
+
+**Was kostet es?** Nichts. MIT-Lizenz, kein Konto, keine Werbung. Wer mag, kann
+über den Knopf „Spenden" etwas dalassen — müssen tut das niemand.
+
+**Welche Sprachen?** Deutsch, Englisch, Französisch, Spanisch, Chinesisch —
+Oberfläche, Meldungen und Anleitung.
+
+## Wenn etwas nicht stimmt
+
+1. **Selbsttest drücken** („Selbsttest …" im Fenster). Er prüft das Werkzeug auf
+   dem eigenen Rechner, ohne Pedal, und schreibt einen Bericht.
+2. **Die Fassung notieren** — sie steht oben rechts im Fenster, zum Beispiel
+   `3.135 (20.11.2026)`.
+3. **Das Protokoll mitschicken:** `jamman-fehler.log` liegt bei der Programmdatei
+   (`.jamman/jamman-fehler.log`). Dort stehen die Meldungen der letzten Läufe.
+4. **Betriebssystem dazusagen** (macOS 27.3, Windows 11, Kubuntu 24.04 …). Mit
+   Fassung und System läßt sich fast alles nachstellen.
+
+## Was auf dem Rechner bleibt
+
+```
+~/.jamman-werkzeug.cnf        Einstellungen (Sprache, Sortierung, Häkchen)
+~/JamMan-Sicherung/           Sicherungen, die das Werkzeug selbst anlegt
+~/JamMan-Herausgabe/          Ordner aus „Alles herausgeben …"
+.jamman/jamman-fehler.log     Protokoll; darf jederzeit gelöscht werden
+```
+
+**Nichts davon liegt im System, es gibt keinen Dienst und keinen Autostart.** Wer
+aufräumen will: Einstellungen und Protokoll löschen, Sicherungen und
+Herausgabe-Ordner vorher ansehen — dort steckt die Musik. Die Karte selbst wird
+durch das Löschen dieser Dateien **nicht** angefaßt.
+
+## Was Nutzer sagen
+
+> „Funktioniert, top." — Nutzer eines JamMan Stereo unter Kubuntu, 13.11.2026
+
+> „It is awesome that you were able to build a tool that solves this for yourself
+> and other owners!" — DigiTech Support, 19.11.2026
+
+**Beides sind echte Rückmeldungen mit Datum; nichts davon ist bezahlt oder
+gekauft.**
