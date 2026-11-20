@@ -27,6 +27,32 @@ Stereo-Karte und seit 13.11.2026 **von einem Nutzer an einem echten
 JamMan Stereo (Kubuntu) bestätigt** ("Funktioniert, top.") — trotzdem
 vor dem ersten Schreiben die Karte kopieren.
 
+**Wenn das Werkzeug einmal nicht mehr läuft.** Eine Karte soll niemanden
+festhalten: `jamman.py herausgeben --karte <pfad> --ziel <ordner>` (oder im Fenster
+„Sicherungen verwalten …" → „Alles herausgeben …") kopiert jede Tonspur als
+gewöhnliche WAV-Datei, benannt nach Platz und Patch-Namen, dazu `karte.csv` mit
+Platz, Name, Länge, Stoppart, Wiedergabe, Tempo und Rhythmus und ein
+`LIESMICH.txt`. Diese Dateien brauchen das Werkzeug nicht — sie lassen sich in
+jedes andere Programm und auf jedes andere Gerät mitnehmen. Die Karte wird dabei
+nur gelesen.
+
+**Was das Werkzeug nicht braucht:** kein Administratorpaßwort, keine Installation,
+keine Notarisierung, keinen Netzzugang außer der Update-Prüfung. Es ist ein
+Python-Skript, das die Karte liest und schreibt — nachlesbar, weil der Quelltext
+offenliegt (MIT).
+
+**Wenn macOS die Startdatei blockiert:** Bei `JamMan-macOS.command` kann macOS
+sagen, die Datei sei „aus dem Internet" und nicht signiert. Dann einmal im
+Terminal:
+
+```bash
+xattr -d com.apple.quarantine "…/JamMan-macOS.command"
+chmod +x "…/JamMan-macOS.command"
+```
+
+Danach startet sie per Doppelklick. Wer das nicht möchte, startet das Skript
+direkt: `python3 .jamman/jamman.py` (Python mit Tk 8.6 oder neuer, siehe unten).
+
 **Hintergrund:** Das offizielle Programm *JamManager XT* (Version 2.0 von
 2012) stürzt auf aktuellen macOS-Versionen ab, sobald das Pedal erkannt
 wird (`Tcl_Panic` in `TkpInit`), und wird nicht mehr gepflegt. Dieses

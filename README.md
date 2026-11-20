@@ -23,6 +23,29 @@ time. Stereo support was tested with a rebuilt card and, since
 13 November 2026, **confirmed by a user on a real JamMan Stereo (Kubuntu)** —
 copy the card before writing to it for the first time.
 
+**If the tool ever stops working.** A card should not hold anyone hostage:
+`jamman.py herausgeben --karte <path> --ziel <folder>` (or in the window "Manage
+backups …" → "Export everything …") copies every track as an ordinary WAV file,
+named after its slot and patch name, plus `karte.csv` with slot, name, length,
+stop mode, playback, tempo and rhythm and a `LIESMICH.txt`. Those files do not
+need this tool — they work in any other program and on any other device. The card
+itself is only read.
+
+**What the tool does not need:** no administrator password, no installation, no
+notarisation, no network access beyond the update check. It is a Python script
+that reads and writes the card — open for inspection, because the source is (MIT).
+
+**If macOS blocks the starter:** for `JamMan-macOS.command` macOS may say the file
+is "from the internet" and unsigned. Then once in Terminal:
+
+```bash
+xattr -d com.apple.quarantine "…/JamMan-macOS.command"
+chmod +x "…/JamMan-macOS.command"
+```
+
+After that a double click works. If you prefer not to, run the script directly:
+`python3 .jamman/jamman.py` (Python with Tk 8.6 or newer, see below).
+
 The official DigiTech *JamManager XT* (version 2.0, 2012) crashes on recent
 macOS releases as soon as the pedal is connected:
 

@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.134.1 (20.11.2026)"
+FASSUNG = "3.135 (20.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -1038,6 +1038,117 @@ def kartenordner_in(p):
             if e.lower() == wunsch.lower() and os.path.isdir(os.path.join(p, e)):
                 return e
     return None
+
+
+def _dateiname_sicher(name, ersatz="-"):
+    """Einen Patch-Namen in einen Dateinamen verwandeln, der überall geht."""
+    verboten = '\\:*?"<>|'
+    sauber = ""
+    for zeichen in str(name):
+        if zeichen in "/\\:":
+            sauber += " - "
+        elif zeichen in verboten:
+            sauber += ersatz
+        else:
+            sauber += zeichen
+    sauber = " ".join(sauber.split())
+    return sauber[:60] or "ohne-Namen"
+
+
+def herausgeben(basis, ziel=None, melden=None):
+    """Eine Karte so herausgeben, daß sie ohne dieses Werkzeug lesbar bleibt.
+
+    Anlaß (20.11.2026): Retroactive sagt seinen Nutzern, wann Schluß ist und wie
+    sie umsteigen. Für eine JamMan-Karte heißt das: die Tonspuren mit ihren
+    Namen als gewöhnliche WAV-Dateien, dazu eine Liste mit allem, was in der
+    Karte steht. Dann ist der Inhalt auch dann zu gebrauchen, wenn dieses
+    Werkzeug einmal nicht mehr läuft oder ein Pedal stirbt.
+
+    Geschrieben wird NICHTS auf der Karte — nur gelesen und kopiert.
+    Rückgabe: (ordner, anzahl_wav, anzahl_ohne_ton)
+    """
+    import csv
+    import shutil
+
+    if not ziel:
+        ziel = os.path.join(os.path.expanduser("~"), "JamMan-Herausgabe",
+                            datetime.now().strftime("%Y-%m-%d_%H-%M"))
+    os.makedirs(ziel, exist_ok=True)
+    zeilen = []
+    anzahl = 0
+    ohne_ton = 0
+    vergeben = set()
+    for nummer, name, pfad in patches(basis):
+        wav = phrase_wav(pfad)
+        stop, rhy, loop, rueck, bpm = patch_einstellungen(pfad)
+        dauer = wav_info(wav)[0] if wav else 0
+        datei = ""
+        if wav and os.path.exists(wav):
+            stamm = "%02d - %s" % (nummer, _dateiname_sicher(patch_name(pfad)))
+            datei = stamm + os.path.splitext(wav)[1].lower()
+            zaehler = 2
+            while datei.lower() in vergeben:
+                datei = "%s (%d)%s" % (stamm, zaehler, os.path.splitext(wav)[1].lower())
+                zaehler += 1
+            vergeben.add(datei.lower())
+            shutil.copy2(wav, os.path.join(ziel, datei))
+            anzahl += 1
+        else:
+            ohne_ton += 1
+        zeilen.append([nummer, patch_name(pfad), datei,
+                       sekunden(dauer) if wav else "",
+                       T(stop), T(loop) + (" ↺" if rueck else ""),
+                       ("%d" % round(bpm)) if bpm else "", T(rhy)])
+        if melden:
+            try:
+                melden(nummer, name)
+            except Exception:
+                pass
+
+    kopf = [T("Platz"), T("Name"), T("Datei"), T("Dauer"), T("Stoppart"),
+            T("Wiedergabe"), T("Tempo (BPM)"), T("Rhythmus")]
+    with open(os.path.join(ziel, "karte.csv"), "w", encoding="utf-8-sig",
+              newline="") as f:
+        schreiber = csv.writer(f, delimiter=";")
+        schreiber.writerow(kopf)
+        schreiber.writerows(zeilen)
+
+    with open(os.path.join(ziel, "LIESMICH.txt"), "w", encoding="utf-8") as f:
+        f.write(T("Herausgabe einer JamMan-Karte") + "\n")
+        f.write("=" * 40 + "\n\n")
+        f.write(T("Gerät: %s") % (UNTERORDNER or "?") + "\n")
+        f.write(T("Aufgenommen: %s") % datetime.now().strftime("%d.%m.%Y %H:%M") + "\n")
+        f.write(T("Werkzeug: %s") % FASSUNG + "\n\n")
+        f.write(T("In diesem Ordner liegen %d Tonspuren als gewöhnliche "
+                  "WAV-Dateien, benannt nach ihrem Platz und ihrem Namen in der "
+                  "Karte. %d Plätze hatten keinen Ton.") % (anzahl, ohne_ton) + "\n\n")
+        f.write(T("karte.csv enthält zu jeder Spur: Platz, Name, Datei, Dauer, "
+                  "Stoppart, Wiedergabe, Tempo und Rhythmus. Semikolon als "
+                  "Trennzeichen, damit Excel und LibreOffice sie direkt öffnen.") + "\n\n")
+        f.write(T("Diese Dateien brauchen das Werkzeug nicht: ein WAV ist ein WAV, "
+                  "und die Liste ist Text. Wer später ein anderes Gerät oder "
+                  "Programm benutzt, kann damit weiterarbeiten. Die Karte selbst "
+                  "wurde nur gelesen, nicht verändert.") + "\n")
+    return ziel, anzahl, ohne_ton
+
+
+def _pruefe_herausgabe(basis, temp):
+    """Herausgabe auf der Testkarte prüfen: Dateien und Liste müssen stimmen."""
+    ordner, anzahl, _ohne = herausgeben(basis, os.path.join(temp, "herausgabe"))
+    wavs = [n for n in os.listdir(ordner) if n.lower().endswith(".wav")]
+    if len(wavs) != anzahl:
+        raise SystemExit(T("Herausgabe: %d WAV-Dateien gezählt, %d erwartet")
+                         % (len(wavs), anzahl))
+    liste = os.path.join(ordner, "karte.csv")
+    if not os.path.exists(liste):
+        raise SystemExit(T("Herausgabe: karte.csv fehlt"))
+    with open(liste, encoding="utf-8-sig") as f:
+        zeilen = [z for z in f.read().splitlines() if z.strip()]
+    if len(zeilen) != anzahl + 1:
+        raise SystemExit(T("Herausgabe: %d Zeilen in der Liste, %d erwartet")
+                         % (len(zeilen), anzahl + 1))
+    if not os.path.exists(os.path.join(ordner, "LIESMICH.txt")):
+        raise SystemExit(T("Herausgabe: LIESMICH.txt fehlt"))
 
 
 def struktur_bericht(basis):
@@ -2658,6 +2769,7 @@ BEFEHL_ALIAS = {
 BEFEHLE = {
     "liste": ("List patches", "Patches auflisten"),
     "struktur": ("Report the card structure", "Kartenaufbau melden"),
+    "herausgeben": ("Export the card contents", "Karte herausgeben"),
     "namensform": ("Normalise folder names", "Ordnernamen angleichen"),
     "sichern": ("Back up the card", "Karte sichern"),
     "aufspielen": ("Import an audio file as a patch", "Audiodatei als Patch aufspielen"),
@@ -2716,6 +2828,44 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Herausgeben':
+         'Export',
+        'Alles herausgeben …':
+         'Export everything …',
+        'Wohin herausgeben?':
+         'Export to where?',
+        'Erst eine Karte öffnen — dann läßt sie sich herausgeben.':
+         'Open a card first — then it can be exported.',
+        'Herausgegeben nach: %s':
+         'Exported to: %s',
+        '%d Tonspuren als WAV, %d Plätze ohne Ton, dazu karte.csv und LIESMICH.txt.':
+         '%d tracks as WAV, %d slots without audio, plus karte.csv and LIESMICH.txt.',
+        'Die Karte wurde nur gelesen. Die Dateien brauchen dieses Werkzeug nicht: ein WAV ist ein WAV, und die Liste ist Text.':
+         'The card was only read. The files do not need this tool: a WAV is a WAV, and the list is plain text.',
+        'Herausgabe einer JamMan-Karte':
+         'Export of a JamMan card',
+        'Datei':
+         'File',
+        'Gerät: %s':
+         'Device: %s',
+        'Aufgenommen: %s':
+         'Recorded: %s',
+        'Werkzeug: %s':
+         'Tool: %s',
+        'In diesem Ordner liegen %d Tonspuren als gewöhnliche WAV-Dateien, benannt nach ihrem Platz und ihrem Namen in der Karte. %d Plätze hatten keinen Ton.':
+         'This folder holds %d tracks as ordinary WAV files, named after their slot and their name on the card. %d slots had no audio.',
+        'karte.csv enthält zu jeder Spur: Platz, Name, Datei, Dauer, Stoppart, Wiedergabe, Tempo und Rhythmus. Semikolon als Trennzeichen, damit Excel und LibreOffice sie direkt öffnen.':
+         'karte.csv lists for every track: slot, name, file, length, stop mode, playback, tempo and rhythm. Semicolon separated so Excel and LibreOffice open it directly.',
+        'Diese Dateien brauchen das Werkzeug nicht: ein WAV ist ein WAV, und die Liste ist Text. Wer später ein anderes Gerät oder Programm benutzt, kann damit weiterarbeiten. Die Karte selbst wurde nur gelesen, nicht verändert.':
+         'These files do not need the tool: a WAV is a WAV, and the list is plain text. Whoever moves to another device or program later can keep working with them. The card itself was only read, never changed.',
+        'Herausgabe: %d WAV-Dateien gezählt, %d erwartet':
+         'Export: %d WAV files counted, %d expected',
+        'Herausgabe: karte.csv fehlt':
+         'Export: karte.csv is missing',
+        'Herausgabe: %d Zeilen in der Liste, %d erwartet':
+         'Export: %d lines in the list, %d expected',
+        'Herausgabe: LIESMICH.txt fehlt':
+         'Export: LIESMICH.txt is missing',
         'Nur-Lesen-Modus: „%s“ ist ein unbekanntes Gerät (%s). Der Kartenaufbau ist nicht belegt, deshalb wird nichts geschrieben. Lesen ist erlaubt (liste). Mit „jamman.py struktur <karte>“ entsteht ein Bericht, den Sie weitergeben können.':
          'Read-only mode: “%s” is an unknown device (%s). The card layout is not verified, so nothing is written. Reading is allowed (liste). “jamman.py struktur <card>” writes a report you can pass on.',
         'Speicherkarte des %s':
@@ -4116,6 +4266,44 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Herausgeben':
+         'Exporter',
+        'Alles herausgeben …':
+         'Tout exporter …',
+        'Wohin herausgeben?':
+         'Exporter vers où ?',
+        'Erst eine Karte öffnen — dann läßt sie sich herausgeben.':
+         "Ouvrez d'abord une carte — ensuite elle peut être exportée.",
+        'Herausgegeben nach: %s':
+         'Exporté vers : %s',
+        '%d Tonspuren als WAV, %d Plätze ohne Ton, dazu karte.csv und LIESMICH.txt.':
+         '%d pistes en WAV, %d emplacements sans son, plus karte.csv et LIESMICH.txt.',
+        'Die Karte wurde nur gelesen. Die Dateien brauchen dieses Werkzeug nicht: ein WAV ist ein WAV, und die Liste ist Text.':
+         "La carte a seulement été lue. Les fichiers n'ont pas besoin de cet outil : un WAV reste un WAV, et la liste est du texte.",
+        'Herausgabe einer JamMan-Karte':
+         "Export d'une carte JamMan",
+        'Datei':
+         'Fichier',
+        'Gerät: %s':
+         'Appareil : %s',
+        'Aufgenommen: %s':
+         'Enregistré : %s',
+        'Werkzeug: %s':
+         'Outil : %s',
+        'In diesem Ordner liegen %d Tonspuren als gewöhnliche WAV-Dateien, benannt nach ihrem Platz und ihrem Namen in der Karte. %d Plätze hatten keinen Ton.':
+         "Ce dossier contient %d pistes en fichiers WAV ordinaires, nommées d'après leur emplacement et leur nom sur la carte. %d emplacements n'avaient pas de son.",
+        'karte.csv enthält zu jeder Spur: Platz, Name, Datei, Dauer, Stoppart, Wiedergabe, Tempo und Rhythmus. Semikolon als Trennzeichen, damit Excel und LibreOffice sie direkt öffnen.':
+         "karte.csv donne pour chaque piste : emplacement, nom, fichier, durée, mode d'arrêt, lecture, tempo et rythme. Séparé par des points-virgules pour qu'Excel et LibreOffice l'ouvrent directement.",
+        'Diese Dateien brauchen das Werkzeug nicht: ein WAV ist ein WAV, und die Liste ist Text. Wer später ein anderes Gerät oder Programm benutzt, kann damit weiterarbeiten. Die Karte selbst wurde nur gelesen, nicht verändert.':
+         "Ces fichiers n'ont pas besoin de l'outil : un WAV reste un WAV, et la liste est du texte. Qui passe plus tard à un autre appareil ou logiciel peut continuer avec. La carte elle-même a seulement été lue, jamais modifiée.",
+        'Herausgabe: %d WAV-Dateien gezählt, %d erwartet':
+         'Export : %d fichiers WAV comptés, %d attendus',
+        'Herausgabe: karte.csv fehlt':
+         'Export : karte.csv manque',
+        'Herausgabe: %d Zeilen in der Liste, %d erwartet':
+         'Export : %d lignes dans la liste, %d attendues',
+        'Herausgabe: LIESMICH.txt fehlt':
+         'Export : LIESMICH.txt manque',
         'Nur-Lesen-Modus: „%s“ ist ein unbekanntes Gerät (%s). Der Kartenaufbau ist nicht belegt, deshalb wird nichts geschrieben. Lesen ist erlaubt (liste). Mit „jamman.py struktur <karte>“ entsteht ein Bericht, den Sie weitergeben können.':
          "Mode lecture seule : « %s » est un appareil inconnu (%s). La structure de la carte n'est pas vérifiée, donc rien n'est écrit. La lecture est permise (liste). « jamman.py struktur <carte> » crée un rapport que vous pouvez transmettre.",
         'Speicherkarte des %s':
@@ -5424,6 +5612,44 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Herausgeben':
+         'Exportar',
+        'Alles herausgeben …':
+         'Exportarlo todo …',
+        'Wohin herausgeben?':
+         '¿Dónde exportar?',
+        'Erst eine Karte öffnen — dann läßt sie sich herausgeben.':
+         'Abre primero una tarjeta — entonces se puede exportar.',
+        'Herausgegeben nach: %s':
+         'Exportado a: %s',
+        '%d Tonspuren als WAV, %d Plätze ohne Ton, dazu karte.csv und LIESMICH.txt.':
+         '%d pistas en WAV, %d posiciones sin sonido, además karte.csv y LIESMICH.txt.',
+        'Die Karte wurde nur gelesen. Die Dateien brauchen dieses Werkzeug nicht: ein WAV ist ein WAV, und die Liste ist Text.':
+         'La tarjeta solo se leyó. Los archivos no necesitan esta herramienta: un WAV es un WAV y la lista es texto.',
+        'Herausgabe einer JamMan-Karte':
+         'Exportación de una tarjeta JamMan',
+        'Datei':
+         'Archivo',
+        'Gerät: %s':
+         'Dispositivo: %s',
+        'Aufgenommen: %s':
+         'Registrado: %s',
+        'Werkzeug: %s':
+         'Herramienta: %s',
+        'In diesem Ordner liegen %d Tonspuren als gewöhnliche WAV-Dateien, benannt nach ihrem Platz und ihrem Namen in der Karte. %d Plätze hatten keinen Ton.':
+         'Esta carpeta contiene %d pistas como archivos WAV normales, nombradas según su posición y su nombre en la tarjeta. %d posiciones no tenían sonido.',
+        'karte.csv enthält zu jeder Spur: Platz, Name, Datei, Dauer, Stoppart, Wiedergabe, Tempo und Rhythmus. Semikolon als Trennzeichen, damit Excel und LibreOffice sie direkt öffnen.':
+         'karte.csv indica por pista: posición, nombre, archivo, duración, modo de parada, reproducción, tempo y ritmo. Separado por puntos y coma para que Excel y LibreOffice lo abran directamente.',
+        'Diese Dateien brauchen das Werkzeug nicht: ein WAV ist ein WAV, und die Liste ist Text. Wer später ein anderes Gerät oder Programm benutzt, kann damit weiterarbeiten. Die Karte selbst wurde nur gelesen, nicht verändert.':
+         'Estos archivos no necesitan la herramienta: un WAV es un WAV y la lista es texto. Quien pase después a otro dispositivo o programa puede seguir trabajando con ellos. La tarjeta solo se leyó, nunca se modificó.',
+        'Herausgabe: %d WAV-Dateien gezählt, %d erwartet':
+         'Exportación: %d archivos WAV contados, %d esperados',
+        'Herausgabe: karte.csv fehlt':
+         'Exportación: falta karte.csv',
+        'Herausgabe: %d Zeilen in der Liste, %d erwartet':
+         'Exportación: %d líneas en la lista, %d esperadas',
+        'Herausgabe: LIESMICH.txt fehlt':
+         'Exportación: falta LIESMICH.txt',
         'Nur-Lesen-Modus: „%s“ ist ein unbekanntes Gerät (%s). Der Kartenaufbau ist nicht belegt, deshalb wird nichts geschrieben. Lesen ist erlaubt (liste). Mit „jamman.py struktur <karte>“ entsteht ein Bericht, den Sie weitergeben können.':
          'Modo de solo lectura: «%s» es un dispositivo desconocido (%s). La estructura de la tarjeta no está verificada, por eso no se escribe nada. La lectura está permitida (liste). «jamman.py struktur <tarjeta>» crea un informe que puedes enviar.',
         'Speicherkarte des %s':
@@ -6732,6 +6958,44 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Herausgeben':
+         '导出',
+        'Alles herausgeben …':
+         '全部导出 …',
+        'Wohin herausgeben?':
+         '导出到哪里？',
+        'Erst eine Karte öffnen — dann läßt sie sich herausgeben.':
+         '请先打开存储卡——然后才能导出。',
+        'Herausgegeben nach: %s':
+         '已导出到：%s',
+        '%d Tonspuren als WAV, %d Plätze ohne Ton, dazu karte.csv und LIESMICH.txt.':
+         '%d 条音轨为 WAV，%d 个位置无音频，另含 karte.csv 和 LIESMICH.txt。',
+        'Die Karte wurde nur gelesen. Die Dateien brauchen dieses Werkzeug nicht: ein WAV ist ein WAV, und die Liste ist Text.':
+         '仅读取了存储卡。这些文件不需要本工具：WAV 就是 WAV，清单是纯文本。',
+        'Herausgabe einer JamMan-Karte':
+         'JamMan 存储卡导出',
+        'Datei':
+         '文件',
+        'Gerät: %s':
+         '设备：%s',
+        'Aufgenommen: %s':
+         '记录时间：%s',
+        'Werkzeug: %s':
+         '工具：%s',
+        'In diesem Ordner liegen %d Tonspuren als gewöhnliche WAV-Dateien, benannt nach ihrem Platz und ihrem Namen in der Karte. %d Plätze hatten keinen Ton.':
+         '此文件夹包含 %d 条音轨，均为普通 WAV 文件，按位置和卡片中的名称命名。%d 个位置没有音频。',
+        'karte.csv enthält zu jeder Spur: Platz, Name, Datei, Dauer, Stoppart, Wiedergabe, Tempo und Rhythmus. Semikolon als Trennzeichen, damit Excel und LibreOffice sie direkt öffnen.':
+         'karte.csv 列出每条音轨：位置、名称、文件、时长、停止方式、播放、速度和节奏。以分号分隔，Excel 和 LibreOffice 可直接打开。',
+        'Diese Dateien brauchen das Werkzeug nicht: ein WAV ist ein WAV, und die Liste ist Text. Wer später ein anderes Gerät oder Programm benutzt, kann damit weiterarbeiten. Die Karte selbst wurde nur gelesen, nicht verändert.':
+         '这些文件不需要本工具：WAV 就是 WAV，清单是纯文本。日后改用其他设备或程序也能继续使用。存储卡本身仅被读取，未被修改。',
+        'Herausgabe: %d WAV-Dateien gezählt, %d erwartet':
+         '导出：计得 %d 个 WAV 文件，预期 %d 个',
+        'Herausgabe: karte.csv fehlt':
+         '导出：缺少 karte.csv',
+        'Herausgabe: %d Zeilen in der Liste, %d erwartet':
+         '导出：清单有 %d 行，预期 %d 行',
+        'Herausgabe: LIESMICH.txt fehlt':
+         '导出：缺少 LIESMICH.txt',
         'Nur-Lesen-Modus: „%s“ ist ein unbekanntes Gerät (%s). Der Kartenaufbau ist nicht belegt, deshalb wird nichts geschrieben. Lesen ist erlaubt (liste). Mit „jamman.py struktur <karte>“ entsteht ein Bericht, den Sie weitergeben können.':
          '只读模式：“%s”是未知设备（%s）。存储卡结构尚未确认，因此不会写入。允许读取（liste）。用“jamman.py struktur <卡>”可生成可转交的报告。',
         'Speicherkarte des %s':
@@ -9121,6 +9385,7 @@ def funktionstest(sprachen=None, still=False):
         ("aendern", lambda: befehl_aendern(basis, 1, True, None, None, "single",
                                            None, None, 0.5, -2.0, False, True)),
         ("normieren", lambda: befehl_alle_normieren(basis, True)),
+        ("herausgeben", lambda: _pruefe_herausgabe(basis, temp)),
     ]
     for name, befehl in probe:
         try:
@@ -11402,7 +11667,7 @@ def fenster_pegelprotokolle(ordner, haupfenster):
     return wahl["pfad"]
 
 
-def fenster_aufraeumen(ziel, haupfenster, sichern=None):
+def fenster_aufraeumen(ziel, haupfenster, sichern=None, karte=None):
     """Sicherungen im Zielordner ansehen und alte löschen.
 
     Anlaß (16.11.2026): Mit jedem Hole-Lauf wächst der Zielordner; nach
@@ -11433,6 +11698,36 @@ def fenster_aufraeumen(ziel, haupfenster, sichern=None):
         f.attributes("-topmost", True)
     except Exception:
         pass
+
+    # Herausgeben: die Karte in etwas verwandeln, das ohne dieses Werkzeug
+    # lesbar bleibt (20.11.2026).
+    def herausgeben_jetzt():
+        import tkinter.filedialog as fdialog
+        basis = karte
+        if not basis:
+            messagebox.showinfo(T("Herausgeben"),
+                                T("Erst eine Karte öffnen — dann läßt sie sich "
+                                  "herausgeben."))
+            return
+        ziel_ordner = fdialog.askdirectory(parent=haupfenster,
+                                            title=T("Wohin herausgeben?"),
+                                            mustexist=False)
+        if not ziel_ordner:
+            return
+        try:
+            ordner, anzahl, ohne = herausgeben(basis, ziel_ordner)
+        except Exception as fehler:
+            messagebox.showerror(T("Herausgeben"), str(fehler))
+            return
+        messagebox.showinfo(
+            T("Herausgeben"),
+            T("Herausgegeben nach: %s") % ordner + "\n\n"
+            + T("%d Tonspuren als WAV, %d Plätze ohne Ton, dazu karte.csv "
+                "und LIESMICH.txt.") % (anzahl, ohne) + "\n\n"
+            + T("Die Karte wurde nur gelesen. Die Dateien brauchen dieses "
+                "Werkzeug nicht: ein WAV ist ein WAV, und die Liste ist Text."))
+    tk.Button(f, text=T("Alles herausgeben …"),
+              command=herausgeben_jetzt).pack(pady=(6, 2))
 
     tk.Label(f, text=T("Sicherungen im Zielordner"), bg=FARBE_HINTERGRUND,
              fg=FARBE_SCHRIFT, font=schrift(12, fest=True)).pack(pady=(12, 2))
@@ -13717,7 +14012,8 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
         (T("Speicherabbild aufnehmen …"), speicherabbild_aufnehmen),
         (T("Speicherabbilder vergleichen …"), speicherabbilder_vergleichen_gui),
         (T("Sicherungen aufräumen …"),
-         lambda: fenster_aufraeumen(stand.get("ziel") or "", f)),
+         lambda: fenster_aufraeumen(stand.get("ziel") or "", f,
+                                   karte=stand.get("basis"))),
     ])
     menue(reihe2, T("Schreiben"), [
         (T("Patch-Ordner aufs Pedal …"), aufs_pedal),
@@ -15486,7 +15782,7 @@ def gui(karte):
         if frage_ja_nein(fenster, T("Sicherungen aufräumen"),
                          T("Alte Sicherungen in diesem Ordner ansehen und "
                            "löschen?")):
-            fenster_aufraeumen(ziel, fenster)
+            fenster_aufraeumen(ziel, fenster, karte=zustand.get("basis"))
 
     def umbenennen():
         """Namen des gewählten Patches ändern."""
@@ -16635,7 +16931,8 @@ def main():
     # Nur-Lesen-Modus (20.11.2026): Unbekanntes Gerät — lesende Befehle gehen,
     # schreibende nicht. Klare Meldung statt stiller Fehlschlag.
     if NUR_LESEN:
-        lesend = ("liste", "struktur", "wav_info", "pruefen", "diagnose")
+        lesend = ("liste", "struktur", "herausgeben", "wav_info",
+                  "pruefen", "diagnose")
         if a.befehl not in lesend:
             raise SystemExit(
                 T("Nur-Lesen-Modus: „%s“ ist ein unbekanntes Gerät (%s). "
@@ -16645,6 +16942,11 @@ def main():
                   "weitergeben können.") % (a.karte, UNTERORDNER))
     if a.befehl == "liste":
         befehl_liste(basis)
+    elif a.befehl == "herausgeben":
+        ordner, anzahl, ohne = herausgeben(basis, a.ziel)
+        print(T("Herausgegeben nach: %s") % ordner)
+        print(T("%d Tonspuren als WAV, %d Plätze ohne Ton, dazu karte.csv "
+                "und LIESMICH.txt.") % (anzahl, ohne))
     elif a.befehl == "struktur":
         ziel, anzahl = struktur_bericht(basis)
         print(T("Bericht geschrieben: %s") % ziel)

@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.135 — 2026-11-20
+
+* **"Export everything …" — the card's contents without the tool.** A new command
+  (`jamman.py herausgeben --karte <path> --ziel <folder>`) and a button in the
+  backup window copy every track as an ordinary WAV file, named after its slot and
+  patch name, plus `karte.csv` (slot, name, file, length, stop mode, playback,
+  tempo, rhythm) and a `LIESMICH.txt` explaining it. Those files need no tool: a
+  WAV is a WAV, and the list is text. Nothing is written to the card.
+* **Why:** a card should not hold anyone hostage. If this tool ever stops working,
+  or a pedal dies, the music is still there and still usable. (The idea came from
+  looking at *Retroactive*, which tells its users when the end is near and how to
+  move on.)
+* README de/en: what the tool does **not** need (no admin password, no
+  installation, no notarisation), and what to do if macOS blocks the `.command`
+  starter (`xattr`, `chmod`).
+* The self test now checks the export on its test card: file count, CSV rows,
+  LIESMICH.
+
 ## 3.134.1 — 2026-11-20
 
 * **The Delay card layout is confirmed, not assumed.** Plywood1107 sent the real
