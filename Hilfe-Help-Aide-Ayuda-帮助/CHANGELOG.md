@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.133.3 — 2026-11-20
+
+* **The list columns are aligned in every language.** The widths were written
+  into the code and fitted German words; French "immédiatement" or Spanish
+  "fundido" pushed the following columns out of line, and the header used
+  different widths than the rows (8 vs 12 characters). Widths are now computed
+  per language from the longest actual value, and Chinese characters count
+  double (they are twice as wide in a monospace font).
+* **The self test checks the column layout** in all five languages: it builds
+  header and rows with the longest values each language can produce and reports
+  an incomplete structure. It cannot judge taste, but it can see a broken table.
+
 ## 3.133.2 — 2026-11-20
 
 * **Sorting actually sorts now.** The menu compared the German labels

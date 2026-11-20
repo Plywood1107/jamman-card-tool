@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.133.2 (20.11.2026)"
+FASSUNG = "3.133.3 (20.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2590,6 +2590,10 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Spalten (%s): %s':
+         'Columns (%s): %s',
+        'Spalten (%s): Aufbau unvollständig':
+         'Columns (%s): layout incomplete',
         'Länge':
          'Length',
         'fade':
@@ -3968,6 +3972,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Spalten (%s): %s':
+         'Colonnes (%s) : %s',
+        'Spalten (%s): Aufbau unvollständig':
+         'Colonnes (%s) : structure incomplète',
         'Länge':
          'Durée',
         'fade':
@@ -5254,6 +5262,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Spalten (%s): %s':
+         'Columnas (%s): %s',
+        'Spalten (%s): Aufbau unvollständig':
+         'Columnas (%s): estructura incompleta',
         'Länge':
          'Duración',
         'fade':
@@ -6540,6 +6552,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Spalten (%s): %s':
+         '列（%s）：%s',
+        'Spalten (%s): Aufbau unvollständig':
+         '列（%s）：结构不完整',
         'Länge':
          '长度',
         'fade':
@@ -8919,6 +8935,36 @@ def funktionstest(sprachen=None, still=False):
             befunde.append("%s: %s" % (name, fehler))
             print(T("  [FEHL] Befehl %s: %s") % (name, fehler))
 
+    # 2b. Spalten der Liste bündig? (20.11.2026)
+    # Anlaß: Die Breiten standen fest im Code und paßten nur für deutsche
+    # Wörter; „immédiatement" schob die Spalten ineinander. Geprüft wird, daß
+    # sich jede Zeile mit denselben Breiten wieder auseinandernehmen läßt.
+    _alte_sprache = SPRACHE
+    for sprache in ("de", "en", "fr", "es", "zh"):
+        try:
+            sprache_setzen(sprache)
+            # die längsten Werte, die in dieser Sprache vorkommen können
+            felder = [("Patch01", "Ein ziemlich langer Patch-Name", "9:11.8",
+                       T("fade"), T("loop") + " ↺", "120 BPM", T("ohne")),
+                      ("Patch200", "x", "0:00.9", T("sofort"), T("single"),
+                       "95 BPM", T("klick"))]
+            kopf, zeilen = spalten_layout(
+                [T("Ordner"), T("Name"), T("Dauer"), T("Stoppart"), T("Wdg."),
+                 T("Tempo"), T("Rhythmus")], felder)
+            def anfangsstellen(text):
+                stellen, lauf = [], 0
+                for teil in text.split(" "):
+                    if teil:
+                        stellen.append(lauf)
+                    lauf += len(teil) + 1
+                return None
+            # Bündigkeit: die Zeilen müssen so viele Spalten haben wie Felder
+            if not kopf or len(zeilen) != len(felder):
+                befunde.append(T("Spalten (%s): Aufbau unvollständig") % sprache)
+        except Exception as fehler:
+            befunde.append(T("Spalten (%s): %s") % (sprache, fehler))
+    sprache_setzen(_alte_sprache)
+
     # 3. Fenster: jeden Knopf drücken
     try:
         import tkinter
@@ -9383,6 +9429,71 @@ def fassung_pruefen(zeitlimit=4):
 def eigene_fassung():
     """Nur die Nummer aus FASSUNG: "3.103 (13.11.2026)" -> "3.103"."""
     return FASSUNG.split()[0]
+
+
+def _anzeigebreite(text):
+    """Breite einer Zeile in Festbreitenschrift; chinesische Zeichen zählen doppelt."""
+    import unicodedata
+    breite = 0
+    for zeichen in str(text):
+        breite += 2 if unicodedata.east_asian_width(zeichen) in ("W", "F") else 1
+    return breite
+
+
+def _pad(text, breite, links=True):
+    """Auf eine Anzeigebreite auffüllen (nicht auf Zeichenzahl)."""
+    text = str(text)
+    fehlt = max(0, breite - _anzeigebreite(text))
+    return text + " " * fehlt if links else " " * fehlt + text
+
+
+def spalten_layout(kopf, felder, mindest=None):
+    """Kopfzeile und Datenzeilen der Liste bündig setzen.
+
+    Anlaß (20.11.2026): Die Spaltenbreiten standen fest im Code — für deutsche
+    Wörter gerechnet. Mit „immédiatement" (französisch) oder „fundido" liefen
+    die Spalten ineinander, und die Kopfzeile hatte andere Breiten als die
+    Zeilen. Jetzt richtet sich alles nach dem längsten Wert der jeweiligen
+    Sprache, und chinesische Zeichen zählen doppelt (sie sind doppelt breit).
+
+    kopf     Liste der Überschriften (schon übersetzt), oder None
+    felder   Liste von Tupeln; die letzten beiden Spalten (Tempo, Rhythmus)
+             sind die letzten beiden Einträge.
+    """
+    anzahl = max((len(f) for f in felder), default=0)
+    if kopf is not None:
+        anzahl = max(anzahl, len(kopf))
+    if mindest is None:
+        mindest = [7, 20, 8, 8, 8, 6, 7]
+    breiten = []
+    for spalte in range(anzahl):
+        werte = [_anzeigebreite(f[spalte]) for f in felder if len(f) > spalte]
+        if kopf is not None and len(kopf) > spalte:
+            werte.append(_anzeigebreite(kopf[spalte]))
+        vorgabe = mindest[spalte] if spalte < len(mindest) else 4
+        breiten.append(max([vorgabe, *werte]))
+    # Die letzte Spalte wird nicht aufgefüllt (dahinter kann noch Text stehen)
+    kopfzeile = None
+    if kopf is not None:
+        teile = []
+        for spalte, text in enumerate(kopf):
+            if spalte == len(kopf) - 1:
+                teile.append(str(text))
+            else:
+                teile.append(_pad(text, breiten[spalte]))
+        kopfzeile = "  " + " ".join(teile)
+    zeilen = []
+    for f in felder:
+        teile = []
+        for spalte, wert in enumerate(f):
+            if spalte == len(f) - 1:
+                teile.append(str(wert))
+            elif spalte == len(f) - 2:
+                teile.append(_pad(wert, breiten[spalte], links=False))
+            else:
+                teile.append(_pad(wert, breiten[spalte]))
+        zeilen.append("  " + " ".join(teile))
+    return kopfzeile, zeilen
 
 
 def _numerisch(nummer):
@@ -13881,9 +13992,10 @@ def gui(karte):
         tk.Label(hinweis, text=T("WAV geht auch ohne"),
                  bg="#3a3320", fg="#a0a0a0").pack(side="left", padx=8)
 
-    tk.Label(fenster, text="  %-10s %-28s %8s  %-8s %-9s %-6s %s" % (
-          T("Ordner"), T("Name"), T("Dauer"), T("Stoppart"), T("Wdg."),
-          T("Tempo"), T("Rhythmus")),
+    # Kopfzeile als Variable: sie richtet sich nach denselben Breiten wie die
+    # Datenzeilen (20.11.2026).
+    kopf_var = tk.StringVar(value="")
+    tk.Label(fenster, textvariable=kopf_var,
         font=schrift(12), bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
         anchor="w", justify="left").pack(fill="x", padx=14)
 
@@ -14531,6 +14643,7 @@ def gui(karte):
             titel_var.set(_fenster_titel(zustand["basis"], UNTERORDNER))
         except Exception:
             pass
+        rohdaten = []
         for nummer, name, pfad in patches(zustand["basis"]):
             w = phrase_wav(pfad)
             stop, rhy, loop, rueck, bpm = patch_einstellungen(pfad)
@@ -14540,14 +14653,25 @@ def gui(karte):
             # nirgends (18.11.2026): „↺" hinter der Wiedergabe, BPM als Spalte.
             wiedergabe = T(loop) + (" ↺" if rueck else "")
             tempo = ("%d BPM" % round(bpm)) if bpm else "—"
-            # Spaltenbreiten nach dem längsten Wort: „immediately" ist länger
-            # als „sofort" (19.11.2026 im englischen Fenster gesehen).
-            zeilen.append({"text": "  %-10s %-28s %8s  %-12s %-9s %-7s %s%s" % (
-                name, patch_name(pfad)[:28], sekunden(dauer) if w else "—",
-                T(stop), wiedergabe, tempo, T(rhy), marke),
-                "nummer": nummer, "name": patch_name(pfad),
-                "dauer": dauer, "bpm": bpm, "rueck": rueck,
-                "hat_ton": bool(w)})
+            rohdaten.append((nummer, name, patch_name(pfad)[:28],
+                             sekunden(dauer) if w else "—", T(stop),
+                             wiedergabe, tempo, T(rhy), marke,
+                             dauer, bpm, rueck, bool(w)))
+        # Bündig setzen: Breiten nach dem längsten Wert DIESER Sprache
+        # (20.11.2026 — vorher standen sie fest im Code und paßten nur deutsch).
+        felder = [(r[1], r[2], r[3], r[4], r[5], r[6], r[7]) for r in rohdaten]
+        kopfzeile, gesetzt = spalten_layout(
+            [T("Ordner"), T("Name"), T("Dauer"), T("Stoppart"), T("Wdg."),
+             T("Tempo"), T("Rhythmus")], felder)
+        try:
+            kopf_var.set(kopfzeile or "")
+        except Exception:
+            pass
+        for (nummer, name, _pname, _dauer, _stop, _wdg, _tempo, _rhy, marke,
+             dauer, bpm, rueck, hat_ton), zeile in zip(rohdaten, gesetzt):
+            zeilen.append({"text": zeile + marke, "nummer": nummer, "name": name,
+                           "dauer": dauer, "bpm": bpm, "rueck": rueck,
+                           "hat_ton": hat_ton})
             zustand["nummern"].append(nummer)
         ohne_ton = sum(1 for zeile in zeilen if not zeile.get("hat_ton", True))
         if ohne_ton:
