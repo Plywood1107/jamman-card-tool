@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Anleitung und Fragen
+    url: https://www.julius-k.de/tool/
+    about: Die häufigsten Fragen stehen im Abschnitt „Fragen und Antworten" der Anleitung.
+  - name: Neueste Fassung
+    url: https://github.com/Suilui1/jamman-card-tool/releases/latest
+    about: Wer eine ältere Fassung braucht, findet hier die aktuelle.

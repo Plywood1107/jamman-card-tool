@@ -534,7 +534,13 @@ der Beschreibung, wofür das Werkzeug gedacht ist.
 
 ---
 
+**Die Belege dazu liegen im Repository unter `Belege/`** (nicht im Paket) — die XML-Struktur des Delay und die Stereo-Bestätigung, mit Datum und Herkunft.
+
 ## Sprachen
+
+**Übersetzungskorrekturen sind willkommen** — Französisch, Spanisch und Chinesisch
+sind von mir, nicht von Muttersprachlern. Ein Satz mit der besseren Formulierung
+genügt; ich baue ihn ein und nenne die Quelle.
 
 Das Werkzeug spricht Deutsch, Englisch, Französisch, Spanisch und
 Chinesisch. Drei Wege führen zur Sprache:

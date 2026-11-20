@@ -543,7 +543,13 @@ to describe what this is for.
 
 ---
 
+**The evidence sits in `Belege/` in the repository** (not in the package) — the Delay's XML structure and the Stereo confirmation, with date and source.
+
 ## Languages
+
+**Translation fixes are welcome** — French, Spanish and Chinese are mine, not a
+native speaker's. One sentence with a better wording is enough; I put it in and
+credit it.
 
 German, English, French, Spanish and Chinese. Three ways to pick one:
 
@@ -562,12 +568,6 @@ Corrections are welcome: the texts are a dictionary near the top of
 A missing entry falls back to English, then to German, so a half-finished
 translation never leaves empty labels.
 
-## License
-
-MIT — see [LICENSE](LICENSE).
-
-German documentation: [README.de.md](README.de.md).
-
 ## Support
 
 The tool is free. If you find it useful you may contribute something:
@@ -576,6 +576,12 @@ The tool is free. If you find it useful you may contribute something:
 
 The "Donate" button in the window opens the same page. The identifier is
 public; no account details are in it.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+German documentation: [README.de.md](README.de.md).
 
 ## Questions and answers
 

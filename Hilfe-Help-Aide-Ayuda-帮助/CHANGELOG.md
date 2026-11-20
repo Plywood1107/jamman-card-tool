@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.135.2 — 2026-11-20
+
+* **Issue forms in the repository.** Two templates: *report a bug* (version,
+  system, device, what happened, log excerpt — required fields) and *contribute a
+  card structure* (for an unknown pedal). Plus a config that points to the FAQ
+  first. What we otherwise ask in every mail is now asked by the form.
+* **`Belege/` in the repository.** The evidence behind "confirmed, not assumed":
+  the real Delay `patch.xml` and `phrase.xml` from issue #2, and the Stereo
+  confirmation — with date, source and what they do *not* prove.
+* **`werkzeuge/readme_pruefen.py`.** Compares the structure of
+  `README.de.md` and `README.md` through a translation table of section titles.
+  It found two sections in the wrong order (Support/Licence) — aligned now.
+  Runs as part of `alles_pruefen`.
+* READMEs: a sentence that translation fixes are welcome.
+
 ## 3.135.1 — 2026-11-20
 
 * **Four sections added to both READMEs** — the questions that otherwise arrive

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<JamManPatch xmlns="http://schemas.digitech.com/JamMan/Patch" device="JamManDelay" version="1">
+  <PatchName>Rock</PatchName>
+  <RhythmType>Silence</RhythmType>
+  <StopMode>StopInstantly</StopMode>
+  <SettingsVersion>0</SettingsVersion>
+  <ID>bc3ab668-1dd2-11b2-bac8-fd6e1ab2266b</ID>
+  <Metadata><Author>DigiTech</Author></Metadata>
+</JamManPatch>

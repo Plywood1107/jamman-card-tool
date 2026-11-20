@@ -1,0 +1,68 @@
+name: Fehler melden
+description: Etwas funktioniert nicht wie erwartet (Fassung, System, Protokoll)
+title: "[Fehler] "
+labels: ["meldung"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Danke, daß Sie sich die Zeit nehmen.** Die drei Felder unten sind das,
+        was zum Nachstellen nötig ist — mit ihnen geht es meist in einem Schritt.
+        *(Thanks — version, system and log are what is needed to reproduce it.)*
+  - type: input
+    id: fassung
+    attributes:
+      label: Fassung
+      description: Oben rechts im Fenster, z. B. „3.135.1 (20.11.2026)"
+      placeholder: 3.135.1 (20.11.2026)
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: Betriebssystem
+      options:
+        - macOS (Version bitte ins Feld „Sonstiges")
+        - Windows 10
+        - Windows 11
+        - Linux (Distribution bitte ins Feld „Sonstiges")
+        - Sonstiges
+    validations:
+      required: true
+  - type: dropdown
+    id: geraet
+    attributes:
+      label: Gerät
+      options:
+        - JamMan Solo XT
+        - JamMan Stereo
+        - JamMan Delay
+        - JamMan Solo HD
+        - anderes / unbekannt
+        - kein Pedal (nur Karte im Rechner)
+    validations:
+      required: true
+  - type: textarea
+    id: was
+    attributes:
+      label: Was passiert, was sollte passieren?
+      description: Zwei, drei Sätze genügen. Bei „Knopf tut nichts" bitte dazuschreiben, was vorher markiert war.
+    validations:
+      required: true
+  - type: textarea
+    id: protokoll
+    attributes:
+      label: Auszug aus jamman-fehler.log
+      description: |
+        Die Datei liegt neben dem Programm: `.jamman/jamman-fehler.log`.
+        Die letzten Zeilen genügen. Kein Inhalt? Dann bitte den Selbsttest
+        („Selbsttest …" im Fenster) laufen lassen und dessen Bericht einfügen.
+      render: text
+  - type: checkboxes
+    id: geprueft
+    attributes:
+      label: Vorher schon versucht
+      options:
+        - label: Die Anleitung gelesen (Abschnitt „Fragen und Antworten")
+        - label: Den Selbsttest laufen lassen
+        - label: Eine Sicherung der Karte liegt vor

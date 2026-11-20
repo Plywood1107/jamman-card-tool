@@ -1,0 +1,43 @@
+name: Kartenstruktur beitragen
+description: Ein Gerät belegen, das das Werkzeug noch nicht kennt
+title: "[Struktur] "
+labels: ["meldung", "beleg"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Damit kann ein unbekanntes Pedal belegt werden, ohne daß jemand ein
+        Gerät kauft.** Am einfachsten im Werkzeug: Karte öffnen →
+        „Sicherungen verwalten …" → „Alles herausgeben …"; oder auf der
+        Kommandozeile `jamman.py struktur --karte <Pfad>`.
+        **Enthalten sind nur Ordnernamen und XML-Gerüst — keine Musik, keine
+        Patch-Namen.** *(Folder names and XML only, no audio, no patch names.)*
+  - type: input
+    id: geraet
+    attributes:
+      label: Gerät
+      description: Was auf dem Pedal steht (z. B. „JamMan Solo HD")
+      placeholder: JamMan Solo HD
+    validations:
+      required: true
+  - type: input
+    id: ordner
+    attributes:
+      label: Wie heißt der Geräteordner auf der Karte?
+      description: Der Ordner, in dem die Patch-Ordner liegen
+      placeholder: JamManHD
+    validations:
+      required: true
+  - type: textarea
+    id: inhalt
+    attributes:
+      label: Strukturbericht
+      description: Inhalt der Datei LIESMICH.txt aus dem Bericht einfügen — oder das ZIP anhängen.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: erfahrung
+    attributes:
+      label: Was ist am Gerät sonst aufgefallen?
+      description: Andere Anzahl Plätze, andere Bedienelemente, Tempo-Grenzen — alles hilft.
