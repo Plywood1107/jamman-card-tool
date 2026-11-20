@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.133.2 — 2026-11-20
+
+* **Sorting actually sorts now.** The menu compared the German labels
+  ("Name", "Dauer") against the internal keys ("name", "dauer"), so neither
+  branch was ever reached — the list always stayed in folder order. Found while
+  fixing the labels for the Chinese window.
+* **The sorting menu shows translated labels.** It displayed the raw keys
+  ("ordner", "laenge") in every language; in Chinese that read "order". The
+  fourth option "Länge" was a second name for the duration and is gone — three
+  modes remain: folder, name, duration.
+* **List values translated:** "fade", "loop" and "single" stayed German/English
+  in all languages; they now read 淡出 / 循环 / 单次 (and fondu / boucle /
+  unique, fundido / bucle / único). Seen in the Chinese window.
+
 ## 3.133.1 — 2026-11-20
 
 * **Evidence for the Delay folder name.** Plywood1107 queried the pedal over USB

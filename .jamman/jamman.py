@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.133.1 (20.11.2026)"
+FASSUNG = "3.133.2 (20.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2590,6 +2590,14 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Länge':
+         'Length',
+        'fade':
+         'fade',
+        'loop':
+         'loop',
+        'single':
+         'single',
         "Fehler: auf '%s' liegt kein unterstützter JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.":
          "  Error: '%s' contains no supported JamMan device folder (%s). That is not a JamMan card.",
         'beim Start automatisch nach Updates sehen':
@@ -3960,6 +3968,14 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Länge':
+         'Durée',
+        'fade':
+         'fondu',
+        'loop':
+         'boucle',
+        'single':
+         'unique',
         "Fehler: auf '%s' liegt kein unterstützter JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.":
          "  Erreur : '%s' ne contient aucun dossier d'appareil JamMan pris en charge (%s). Ce n'est pas une carte JamMan.",
         'beim Start automatisch nach Updates sehen':
@@ -5238,6 +5254,14 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Länge':
+         'Duración',
+        'fade':
+         'fundido',
+        'loop':
+         'bucle',
+        'single':
+         'único',
         "Fehler: auf '%s' liegt kein unterstützter JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.":
          "  Error: '%s' no contiene una carpeta de dispositivo JamMan compatible (%s). No es una tarjeta JamMan.",
         'beim Start automatisch nach Updates sehen':
@@ -6516,6 +6540,14 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Länge':
+         '长度',
+        'fade':
+         '淡出',
+        'loop':
+         '循环',
+        'single':
+         '单次',
         "Fehler: auf '%s' liegt kein unterstützter JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.":
          "  错误：'%s' 中没有受支持的 JamMan 设备文件夹（%s）。这不是 JamMan 存储卡。",
         'beim Start automatisch nach Updates sehen':
@@ -8970,7 +9002,12 @@ def funktionstest(sprachen=None, still=False):
                     if True:
                         # Kurz warten, damit das Fenster seine Nachmessung
                         # (nach 200 ms) noch machen kann, bevor gemessen wird.
-                        for _ in range(6):
+                        # Zwei Messungen mit Abstand: Ein einzelner Blick
+                        # traf das Fenster mitten im Nachmessen und meldete
+                        # eine Abschneidung, die eine Zehntelsekunde später weg
+                        # war (20.11.2026 hat das eine Veröffentlichung
+                        # angehalten).
+                        for _ in range(4):
                             self.update()
                             time.sleep(0.05)
                         enge = []
@@ -9016,6 +9053,28 @@ def funktionstest(sprachen=None, still=False):
                         sichtbarkeit(self)
                         if unsichtbar:
                             enge.extend(unsichtbar)
+                        if enge:
+                            # Gegenprobe: bleibt es nach kurzer Zeit bestehen?
+                            for _ in range(6):
+                                self.update()
+                                time.sleep(0.05)
+                            zweiter = []
+                            def nochmal(w):
+                                if w.winfo_class() in ("Button", "Checkbutton",
+                                                       "Radiobutton", "Label",
+                                                       "Menubutton"):
+                                    try:
+                                        text = str(w.cget("text")).strip()
+                                        if (w.winfo_ismapped() and text
+                                                and w.winfo_width() < w.winfo_reqwidth() - 1):
+                                            zweiter.append(text.splitlines()[0][:28])
+                                    except Exception:
+                                        pass
+                                for kind in w.winfo_children():
+                                    nochmal(kind)
+                            nochmal(self)
+                            if not zweiter:
+                                enge = []
                         if enge:
                             fehler_liste.append(
                                 T("abgeschnittene Beschriftung: %s")
@@ -13846,15 +13905,20 @@ def gui(karte):
     tk.Label(such_zeile, text="   " + T("Sortierung") + ": ",
              bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
              font=schrift(11)).pack(side="left")
-    SORTIERUNG = [("Ordner", "ordner"), ("Name", "name"),
-                  ("Dauer", "dauer"), ("Länge", "laenge")]
+    # Drei Sortierungen, mehr braucht es nicht (20.11.2026): „Länge" war ein
+    # zweiter Name für die Dauer und wurde nie erreicht.
+    SORTIERUNG = [("Ordner", "ordner"), ("Name", "name"), ("Dauer", "dauer")]
     # Zuletzt benutzte Sortierung (19.11.2026).
     _sortierung = einstellung_lesen("sortierung") or "ordner"
-    if _sortierung not in ("ordner", "name", "dauer", "laenge"):
+    if _sortierung not in ("ordner", "name", "dauer"):
         _sortierung = "ordner"
-    sort_var = tk.StringVar(value=_sortierung)
-    sort_menue = tk.OptionMenu(such_zeile, sort_var,
-                               *[b for b, _ in SORTIERUNG])
+    # Beschriftung übersetzen, Schlüssel behalten (20.11.2026): Vorher stand im
+    # Menü der rohe Schlüssel — „ordner", „laenge" — und war damit in jeder
+    # Sprache falsch (chinesisch zeigte „order").
+    _beschriftung = {T(a): b for a, b in SORTIERUNG}
+    _zeige = {b: T(a) for a, b in SORTIERUNG}
+    sort_var = tk.StringVar(value=_zeige[_sortierung])
+    sort_menue = tk.OptionMenu(such_zeile, sort_var, *list(_beschriftung))
     sort_menue.config(bg=FARBE_LISTE, fg=FARBE_SCHRIFT, relief="flat",
                       highlightthickness=0)
     sort_menue.pack(side="left")
@@ -13883,7 +13947,8 @@ def gui(karte):
     def sortierung_wechseln(*_):
         zeilen_anwenden()
         try:
-            einstellung_schreiben("sortierung", sort_var.get())
+            einstellung_schreiben("sortierung",
+                                  _beschriftung.get(sort_var.get(), "ordner"))
         except Exception:
             pass
     sort_var.trace_add("write", sortierung_wechseln)
@@ -14090,7 +14155,7 @@ def gui(karte):
                     pass
             return
         muster = such_var.get().strip().lower()
-        art = sort_var.get()
+        art = _beschriftung.get(sort_var.get(), "ordner")
         # Nenner ist die Zahl der Patches, nicht der Zeilen: Hinweiszeilen
         # zählten sonst mit („1 von 12" bei 11 Patches, 19.11.2026).
         _anzahl_patches = sum(1 for z in alle if z.get("nummer") is not None)
@@ -14105,13 +14170,13 @@ def gui(karte):
                           or str(z.get("nummer", "")).startswith(muster)]
             else:
                 zeilen = [z for z in zeilen if muster in z["text"].lower()]
-        if art == "Name":
+        # Verglichen wird mit dem SCHLÜSSEL, nicht mit der Beschriftung
+        # (20.11.2026): vorher stand hier „Name"/„Dauer" — beides erreichte nie
+        # einen Zweig, die Liste blieb in Ordner-Reihenfolge.
+        if art == "name":
             zeilen.sort(key=lambda z: (z.get("name") or "").lower())
-        elif art == "Dauer":
+        elif art == "dauer":
             zeilen.sort(key=lambda z: -(z.get("dauer") or 0))
-        elif art == "Länge":
-            zeilen.sort(key=lambda z: (z.get("name") or "").lower(),
-                        reverse=True)
         rest = [] if muster else hinweise
         anzeige = zeilen + rest
         if muster:
@@ -14473,7 +14538,7 @@ def gui(karte):
             marke = "  ← über 10 min" if dauer > MAX_LOOP_SEKUNDEN else ""
             # Rückwärts und Tempo gehörten schon immer ins Pedal, standen aber
             # nirgends (18.11.2026): „↺" hinter der Wiedergabe, BPM als Spalte.
-            wiedergabe = loop + (" ↺" if rueck else "")
+            wiedergabe = T(loop) + (" ↺" if rueck else "")
             tempo = ("%d BPM" % round(bpm)) if bpm else "—"
             # Spaltenbreiten nach dem längsten Wort: „immediately" ist länger
             # als „sofort" (19.11.2026 im englischen Fenster gesehen).
