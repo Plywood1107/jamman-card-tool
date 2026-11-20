@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""JamMan Solo XT — manage the pedal's SD card from a normal computer.
+"""JamMan Solo XT and compatible pedals — manage the SD card from a computer.
 
 Replacement for DigiTech "JamManager XT" (2012), which crashes on
 recent macOS releases as soon as the pedal is detected, and which is no
@@ -37,7 +37,8 @@ the output is German too. See README.md for details.
 
 --- deutsch ---
 Ersetzt „JamManager XT" von DigiTech auf macOS, Windows und Linux.
-Arbeitet direkt auf der Speicherkarte des JamMan Solo XT. Ohne
+Arbeitet direkt auf der Speicherkarte des JamMan Solo XT und kompatibler
+Pedale. Ohne
 --schreiben wird nichts verändert. Vor jedem Schreibvorgang wird nach
 ~/JamMan-Sicherung gesichert.
 """
@@ -160,7 +161,7 @@ def karten_diagnose():
 
 
 def karten_kandidaten():
-    """Alle Laufwerke mit einem JamManSoloXT-Ordner, das wahrscheinlichste zuerst.
+    """Alle Laufwerke mit einem JamManSoloXT- oder anderen Geräteordner, das wahrscheinlichste zuerst.
 
     Anlass 10.11.2026: Auf einer Sicherungsplatte lag ebenfalls ein Ordner
     JamManSoloXT mit 23 alten Patches. Nach dem Alphabet ("2TB-1" vor
@@ -227,7 +228,7 @@ def standard_karte():
     """Wo liegt die Karte?
 
     macOS    /Volumes/JAMMAN
-    Windows  erstes Laufwerk mit einem Ordner JamManSoloXT
+    Windows  erstes Laufwerk mit einem JamManSoloXT- oder anderen Geräteordner
     Linux    /media/<benutzer>/<name> oder /run/media/<benutzer>/<name>
     """
     if MAC:
@@ -978,7 +979,8 @@ UNTERORDNER = "JamManSoloXT"
 # Solo XT und Stereo sind darunter gleich aufgebaut (Patch01 … / PhraseA /
 # patch.xml). Belegt am 12.11.2026: ein Nutzer im Bassic-Forum hat den
 # Stereo erreicht, indem er im Skript „SoloXT" durch „Stereo" ersetzte.
-KARTENORDNER = ("JamManSoloXT", "JamManStereo")
+# Für den Delay wird derselbe Aufbau angenommen.
+KARTENORDNER = ("JamManSoloXT", "JamManStereo", "JamManDelay")
 
 
 def schrift(groesse, fest=False, titel=False):
@@ -1014,8 +1016,9 @@ def kartenordner_in(p):
 def karte_pruefen(pfad):
     """Gibt den Ordner des Geräts zurück oder bricht mit klarer Meldung ab.
 
-    Der Ordner heißt je nach Gerät "JamManSoloXT" oder "JamManStereo";
-    darunter ist der Aufbau gleich. Welcher gefunden wurde, steht danach
+    Der Ordner heißt je nach Gerät "JamManSoloXT", "JamManStereo" oder
+    "JamManDelay"; darunter wird derselbe Aufbau vorausgesetzt. Welcher
+    gefunden wurde, steht danach
     in UNTERORDNER - alle späteren Pfade bauen darauf auf.
     """
     global UNTERORDNER
@@ -1031,8 +1034,9 @@ def karte_pruefen(pfad):
     if gefunden:
         UNTERORDNER = gefunden
         return os.path.join(p, gefunden)
-    raise SystemExit(T("Fehler: auf '%s' liegt kein Ordner '%s' oder '%s'. "
-                         "Das ist keine JamMan-Karte.") % (p, KARTENORDNER[0], KARTENORDNER[1]))
+    raise SystemExit(T("Fehler: auf '%s' liegt kein unterstützter "
+                       "JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.")
+                     % (p, ", ".join(KARTENORDNER)))
 
 
 def ist_ordner(pfad):
@@ -3135,6 +3139,7 @@ TEXTE = {
         'Speicherkarte': 'Memory card',
         'Kopie vom Pedal': 'copy from the pedal',
         'Speicherkarte des JamMan Stereo': 'Memory card of the JamMan Stereo',
+        'Speicherkarte des JamMan Delay': 'Memory card of the JamMan Delay',
         'Im Pedal steckt keine Karte.': 'There is no card in the pedal.',
         'Karte einlegen und dann „Karte wählen“ oder „Neu laden“ drücken.':
          'Insert the card, then press “Choose card” or “Reload”.',
@@ -3397,7 +3402,7 @@ TEXTE = {
         "Karte auswerfen, in den JamMan stecken — der Patch ist weg.":
             "Eject the card, put it into the JamMan — the patch is gone.",
         "Neue Reihenfolge:": "New order:",
-        "JamMan Solo XT — Speicherkarte verwalten": "JamMan Solo XT — manage the memory card",
+        "JamMan Solo XT, Stereo und Delay — Speicherkarte verwalten": "JamMan Solo XT, Stereo and Delay — manage the memory card",
         "Pythons auf diesem Rechner:": "Pythons on this machine:",
         "Geprüfte Orte:": "Places checked:",
         "Laufwerke mit JamManSoloXT:": "Drives with JamManSoloXT:",
@@ -3607,7 +3612,7 @@ TEXTE = {
         "                Achtung: %d Werte liegen an der Grenze.": "                Note: %d values sit at the limit.",
         "  Hinweis: unbekanntes WAV-Format 0x%04X - nicht angefasst.": "    Note: unknown WAV format 0x%04X — left untouched.",
         "Fehler: '%s' ist kein Ordner. Ist die Karte eingelegt?": "  Error: '%s' is not a folder. Is the card inserted?",
-        "Fehler: auf '%s' liegt kein Ordner '%s' oder '%s'. Das ist keine JamMan-Karte.": "  Error: '%s' contains no folder '%s' or '%s'. That is not a JamMan card.",
+        "Fehler: auf '%s' liegt kein unterstützter JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.": "  Error: '%s' contains no supported JamMan device folder (%s). That is not a JamMan card.",
         "  %d Apple-Dateien entfernt (._* und .DS_Store).": "    %d Apple files removed (._* and .DS_Store).",
         "  Keine Patches auf der Karte.": "    No patches on the card.",
         "  %-10s %-34s %8s  %s": "    %-10s %-34s %8s  %s",
@@ -3703,7 +3708,7 @@ TEXTE = {
         "  Neue Reihenfolge:": "    New order:",
         "    Platz %d:  %-10s  %s%s": "      slot %d:  %-10s  %s%s",
         "  Verschoben. Sicherung: %s": "    Moved. Backup: %s",
-        "  JamMan Solo XT — Speicherkarte verwalten": "    JamMan Solo XT — manage the memory card",
+        "  JamMan Solo XT, Stereo und Delay — Speicherkarte verwalten": "    JamMan Solo XT, Stereo and Delay — manage the memory card",
         "  Keine Karte gefunden unter %s.": "    No card found under %s.",
         "  Karte: %s": "    Card: %s",
         "  1  Patches auflisten": "    1  List patches",
@@ -4501,6 +4506,7 @@ TEXTE = {
         'Speicherkarte': 'Carte mémoire',
         'Kopie vom Pedal': 'copie de la pédale',
         'Speicherkarte des JamMan Stereo': 'Carte mémoire du JamMan Stereo',
+        'Speicherkarte des JamMan Delay': 'Carte mémoire du JamMan Delay',
         'Im Pedal steckt keine Karte.': 'Aucune carte dans la pédale.',
         'Karte einlegen und dann „Karte wählen“ oder „Neu laden“ drücken.':
          'Insérez la carte, puis appuyez sur « Choisir la carte » ou « Recharger ».',
@@ -4734,7 +4740,7 @@ TEXTE = {
         'Tauschen:': 'Échange :',
         'Karte auswerfen, in den JamMan stecken — der Patch ist weg.': 'Éjecter la carte, la mettre dans le JamMan — le patch a disparu.',
         'Neue Reihenfolge:': 'Nouvel ordre :',
-        'JamMan Solo XT — Speicherkarte verwalten': 'JamMan Solo XT — gérer la carte mémoire',
+        'JamMan Solo XT, Stereo und Delay — Speicherkarte verwalten': 'JamMan Solo XT, Stereo et Delay — gérer la carte mémoire',
         'Pythons auf diesem Rechner:': 'Pythons sur cette machine :',
         'Geprüfte Orte:': 'Emplacements vérifiés :',
         'Laufwerke mit JamManSoloXT:': 'Lecteurs avec JamManSoloXT :',
@@ -4905,7 +4911,7 @@ TEXTE = {
         "                Achtung: %d Werte liegen an der Grenze.": "                Attention : %d valeurs sont à la limite.",
         "  Hinweis: unbekanntes WAV-Format 0x%04X - nicht angefasst.": "    Remarque : format WAV inconnu 0x%04X — non modifié.",
         "Fehler: '%s' ist kein Ordner. Ist die Karte eingelegt?": "  Erreur : '%s' n'est pas un dossier. La carte est-elle insérée ?",
-        "Fehler: auf '%s' liegt kein Ordner '%s' oder '%s'. Das ist keine JamMan-Karte.": "  Erreur : '%s' ne contient pas de dossier '%s' ni '%s'. Ce n'est pas une carte JamMan.",
+        "Fehler: auf '%s' liegt kein unterstützter JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.": "  Erreur : '%s' ne contient aucun dossier d'appareil JamMan pris en charge (%s). Ce n'est pas une carte JamMan.",
         "  %d Apple-Dateien entfernt (._* und .DS_Store).": "    %d fichiers Apple supprimés (._* et .DS_Store).",
         "  Keine Patches auf der Karte.": "    Aucun patch sur la carte.",
         "  %-10s %-34s %8s  %s": "    %-10s %-34s %8s  %s",
@@ -5001,7 +5007,7 @@ TEXTE = {
         "  Neue Reihenfolge:": "    Nouvel ordre :",
         "    Platz %d:  %-10s  %s%s": "      place %d :  %-10s  %s%s",
         "  Verschoben. Sicherung: %s": "    Déplacé. Sauvegarde : %s",
-        "  JamMan Solo XT — Speicherkarte verwalten": "    JamMan Solo XT — gérer la carte mémoire",
+        "  JamMan Solo XT, Stereo und Delay — Speicherkarte verwalten": "    JamMan Solo XT, Stereo et Delay — gérer la carte mémoire",
         "  Keine Karte gefunden unter %s.": "    Aucune carte trouvée sous %s.",
         "  Karte: %s": "    Carte : %s",
         "  1  Patches auflisten": "    1  Lister les patches",
@@ -5759,6 +5765,7 @@ TEXTE = {
         'Speicherkarte': 'Tarjeta de memoria',
         'Kopie vom Pedal': 'copia del pedal',
         'Speicherkarte des JamMan Stereo': 'Tarjeta de memoria del JamMan Stereo',
+        'Speicherkarte des JamMan Delay': 'Tarjeta de memoria del JamMan Delay',
         'Im Pedal steckt keine Karte.': 'No hay tarjeta en el pedal.',
         'Karte einlegen und dann „Karte wählen“ oder „Neu laden“ drücken.':
          'Inserta la tarjeta y pulsa «Elegir tarjeta» o «Recargar».',
@@ -5992,7 +5999,7 @@ TEXTE = {
         'Tauschen:': 'Intercambiar:',
         'Karte auswerfen, in den JamMan stecken — der Patch ist weg.': 'Expulsa la tarjeta y pónla en el JamMan — el patch desaparece.',
         'Neue Reihenfolge:': 'Nuevo orden:',
-        'JamMan Solo XT — Speicherkarte verwalten': 'JamMan Solo XT — gestionar la tarjeta de memoria',
+        'JamMan Solo XT, Stereo und Delay — Speicherkarte verwalten': 'JamMan Solo XT, Stereo y Delay — gestionar la tarjeta de memoria',
         'Pythons auf diesem Rechner:': 'Pythons en este equipo:',
         'Geprüfte Orte:': 'Lugares comprobados:',
         'Laufwerke mit JamManSoloXT:': 'Unidades con JamManSoloXT:',
@@ -6163,7 +6170,7 @@ TEXTE = {
         "                Achtung: %d Werte liegen an der Grenze.": "                Atención: %d valores están en el límite.",
         "  Hinweis: unbekanntes WAV-Format 0x%04X - nicht angefasst.": "    Nota: formato WAV desconocido 0x%04X — sin tocar.",
         "Fehler: '%s' ist kein Ordner. Ist die Karte eingelegt?": "  Error: '%s' no es una carpeta. ¿Está insertada la tarjeta?",
-        "Fehler: auf '%s' liegt kein Ordner '%s' oder '%s'. Das ist keine JamMan-Karte.": "  Error: '%s' no contiene la carpeta '%s' ni '%s'. No es una tarjeta JamMan.",
+        "Fehler: auf '%s' liegt kein unterstützter JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.": "  Error: '%s' no contiene una carpeta de dispositivo JamMan compatible (%s). No es una tarjeta JamMan.",
         "  %d Apple-Dateien entfernt (._* und .DS_Store).": "    %d archivos Apple eliminados (._* y .DS_Store).",
         "  Keine Patches auf der Karte.": "    No hay patches en la tarjeta.",
         "  %-10s %-34s %8s  %s": "    %-10s %-34s %8s  %s",
@@ -6259,7 +6266,7 @@ TEXTE = {
         "  Neue Reihenfolge:": "    Nuevo orden:",
         "    Platz %d:  %-10s  %s%s": "      plaza %d:  %-10s  %s%s",
         "  Verschoben. Sicherung: %s": "    Movido. Copia: %s",
-        "  JamMan Solo XT — Speicherkarte verwalten": "    JamMan Solo XT — gestionar la tarjeta",
+        "  JamMan Solo XT, Stereo und Delay — Speicherkarte verwalten": "    JamMan Solo XT, Stereo y Delay — gestionar la tarjeta",
         "  Keine Karte gefunden unter %s.": "    No se encontró tarjeta en %s.",
         "  Karte: %s": "    Tarjeta: %s",
         "  1  Patches auflisten": "    1  Listar patches",
@@ -7017,6 +7024,7 @@ TEXTE = {
         'Speicherkarte': '存储卡',
         'Kopie vom Pedal': '来自踏板的副本',
         'Speicherkarte des JamMan Stereo': 'JamMan Stereo 的存储卡',
+        'Speicherkarte des JamMan Delay': 'JamMan Delay 的存储卡',
         'Im Pedal steckt keine Karte.': '踏板中没有卡片。',
         'Karte einlegen und dann „Karte wählen“ oder „Neu laden“ drücken.':
          '请插入卡片，然后按“选择卡片”或“重新载入”。',
@@ -7250,7 +7258,7 @@ TEXTE = {
         'Tauschen:': '交换：',
         'Karte auswerfen, in den JamMan stecken — der Patch ist weg.': '弹出存储卡并插入 JamMan — 该音色已消失。',
         'Neue Reihenfolge:': '新的顺序：',
-        'JamMan Solo XT — Speicherkarte verwalten': 'JamMan Solo XT — 管理存储卡',
+        'JamMan Solo XT, Stereo und Delay — Speicherkarte verwalten': 'JamMan Solo XT、Stereo 和 Delay — 管理存储卡',
         'Pythons auf diesem Rechner:': '本机上的 Python：',
         'Geprüfte Orte:': '已检查的位置：',
         'Laufwerke mit JamManSoloXT:': '含 JamManSoloXT 的驱动器：',
@@ -7421,7 +7429,7 @@ TEXTE = {
         "                Achtung: %d Werte liegen an der Grenze.": "                注意：%d 个值达到上限。",
         "  Hinweis: unbekanntes WAV-Format 0x%04X - nicht angefasst.": "    提示：未知的 WAV 格式 0x%04X — 未处理。",
         "Fehler: '%s' ist kein Ordner. Ist die Karte eingelegt?": "  错误：'%s' 不是文件夹。卡片插好了吗？",
-        "Fehler: auf '%s' liegt kein Ordner '%s' oder '%s'. Das ist keine JamMan-Karte.": "  错误：'%s' 中没有文件夹 '%s' 或 '%s'。这不是 JamMan 存储卡。",
+        "Fehler: auf '%s' liegt kein unterstützter JamMan-Geräteordner (%s). Das ist keine JamMan-Karte.": "  错误：'%s' 中没有受支持的 JamMan 设备文件夹（%s）。这不是 JamMan 存储卡。",
         "  %d Apple-Dateien entfernt (._* und .DS_Store).": "    已删除 %d 个 Apple 文件（._* 和 .DS_Store）。",
         "  Keine Patches auf der Karte.": "    卡上没有音色。",
         "  %-10s %-34s %8s  %s": "    %-10s %-34s %8s  %s",
@@ -7517,7 +7525,7 @@ TEXTE = {
         "  Neue Reihenfolge:": "    新顺序：",
         "    Platz %d:  %-10s  %s%s": "      位置 %d：  %-10s  %s%s",
         "  Verschoben. Sicherung: %s": "    已移动。备份：%s",
-        "  JamMan Solo XT — Speicherkarte verwalten": "    JamMan Solo XT — 管理存储卡",
+        "  JamMan Solo XT, Stereo und Delay — Speicherkarte verwalten": "    JamMan Solo XT、Stereo 和 Delay — 管理存储卡",
         "  Keine Karte gefunden unter %s.": "    在 %s 下未找到存储卡。",
         "  Karte: %s": "    存储卡：%s",
         "  1  Patches auflisten": "    1  列出音色",
@@ -8367,7 +8375,7 @@ def menu(karte):
     läuft dort ohne Einschränkung.
     """
     print()
-    print(T("  JamMan Solo XT — Speicherkarte verwalten"))
+    print(T("  JamMan Solo XT, Stereo und Delay — Speicherkarte verwalten"))
     while True:
         basis = None
         try:
@@ -12962,6 +12970,8 @@ def _fenster_titel(basis, unterordner=""):
         return T("Interner Speicher") + " — " + T("Kopie vom Pedal")
     if "/karte/" in pfad:
         return T("Speicherkarte") + " — " + T("Kopie vom Pedal")
+    if "delay" in (unterordner or "").lower():
+        return T("Speicherkarte des JamMan Delay")
     if "stereo" in (unterordner or "").lower():
         return T("Speicherkarte des JamMan Stereo")
     return T("Speicherkarte des JamMan Solo XT")
@@ -15366,7 +15376,7 @@ def main():
         elif arg.startswith("--sprache="):
             sprache_setzen(arg.split("=", 1)[1])
     p = argparse.ArgumentParser(
-        description=T("JamMan Solo XT — Speicherkarte verwalten"),
+        description=T("JamMan Solo XT, Stereo und Delay — Speicherkarte verwalten"),
         epilog=befehlsliste(),
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--version", action="version", version="JamMan Card Tool " + FASSUNG)

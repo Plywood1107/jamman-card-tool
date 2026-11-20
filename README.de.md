@@ -2,17 +2,19 @@
 
 Für Speicherkarte und internen Speicher — auch über USB.
 
-Die Speicherkarte des **DigiTech JamMan Solo XT und Stereo** von macOS,
+Die Speicherkarte des **DigiTech JamMan Solo XT, Stereo und Delay** von macOS,
 Windows oder Linux aus verwalten — ohne JamManager XT.
 
 *English version: [README.md](README.md) · Seite mit Bildern:
 https://www.julius-k.de/tool/*
 
-Karten des **JamMan Stereo** werden ebenfalls erkannt: gleicher Aufbau,
-nur heißt der Geräteordner `JamManStereo`. Geprüft mit einer nachgebauten
-Stereo-Karte und seit 13.11.2026 **von einem Nutzer an einem echten
-JamMan Stereo (Kubuntu) bestätigt** ("Funktioniert, top.") — trotzdem
-vor dem ersten Schreiben die Karte kopieren.
+Karten des **JamMan Stereo** und **JamMan Delay** werden über ihre
+Geräteordner `JamManStereo` und `JamManDelay` erkannt. Der Solo XT bleibt
+das Standardgerät; beim Delay wird derselbe Kartenaufbau angenommen. Die
+Stereo-Unterstützung wurde mit einer nachgebauten Karte geprüft und seit
+13.11.2026 **von einem Nutzer an einem echten JamMan Stereo (Kubuntu)
+bestätigt** ("Funktioniert, top.") — trotzdem vor dem ersten Schreiben die
+Karte kopieren.
 
 **Hintergrund:** Das offizielle Programm *JamManager XT* (Version 2.0 von
 2012) stürzt auf aktuellen macOS-Versionen ab, sobald das Pedal erkannt
