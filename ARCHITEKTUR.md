@@ -109,7 +109,3 @@ GitHub Actions           ruff + Selbsttest unter xvfb bei jedem Push
 
 **Alles andere ist lesbar, wenn es nötig ist — die Reihenfolge oben ist die
 sinnvollste.**
-
-<!-- Name geprüft -->
-
-<!-- Absenderadresse: suilui@julius-k.de (20.11.2026) -->
