@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.135.3 (20.11.2026)"
+FASSUNG = "3.136 (21.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2162,7 +2162,8 @@ def abspielen_ab(pfad, von=0.0, bis=None):
     return abspielen_datei(zwischer), zwischer, von
 
 
-def finde_schnittpunkte(pfad, anzahl, fenster=90.0, min_pause=0.25):
+def finde_schnittpunkte(pfad, anzahl, fenster=90.0, min_pause=0.25,
+                        schwelle=0.35, alle_pausen=False):
     """Sucht musikalisch brauchbare Schnittstellen.
 
     Vorgehen: Hüllkurve in 50-ms-Schritten, mittlerer Pegel bestimmen,
@@ -2200,7 +2201,7 @@ def finde_schnittpunkte(pfad, anzahl, fenster=90.0, min_pause=0.25):
         return [], ["Aufnahme zu kurz"]
     peg = sorted(v for _, v in h)
     mittel = peg[len(peg)//2]
-    ruhig = [(tm, v) for tm, v in h if v < mittel * 0.35]
+    ruhig = [(tm, v) for tm, v in h if v < mittel * schwelle]
 
     # Gruppen ruhiger Stellen bilden
     gruppen = []
@@ -2211,6 +2212,13 @@ def finde_schnittpunkte(pfad, anzahl, fenster=90.0, min_pause=0.25):
             gruppen.append([(tm, v)])
     pausen = [(g[0][0], g[-1][0] + laenge) for g in gruppen
               if (g[-1][0] + laenge) - g[0][0] >= min_pause]
+
+    if alle_pausen:
+        # Alle gefundenen Pausen als Schnittstellen: die Anzahl der Teile
+        # ergibt sich aus der Aufnahme. Geschnitten wird am Ende der Pause.
+        return ([bis for _, bis in pausen],
+                ["Ende einer Pause"] * len(pausen),
+                [(von, bis) for von, bis in pausen])
 
     punkte, gruende, paare = [], [], []
     for teil in range(1, anzahl):
@@ -2230,7 +2238,7 @@ def finde_schnittpunkte(pfad, anzahl, fenster=90.0, min_pause=0.25):
     return punkte, gruende, paare
 
 
-def schneide_bereich(quelle, ziel, von_sekunden, bis_sekunden):
+def schneide_bereich(quelle, ziel, von_sekunden, bis_sekunden, fade_ms=0.0):
     """Kopiert einen Zeitbereich einer WAV-Datei in eine neue Datei.
 
     Sample-genau: es wird nichts hinzugefügt und nichts weggelassen.
@@ -2268,6 +2276,22 @@ def schneide_bereich(quelle, ziel, von_sekunden, bis_sekunden):
             return False
         f.seek(start + anfang)
         daten = f.read(ende - anfang)
+    if fade_ms and fade_ms > 0 and daten:
+        # Kurze Rampe an Anfang und Ende: verhindert Knackser, wenn der
+        # Schnitt nicht auf einem Nulldurchgang liegt (21.11.2026).
+        import array as _array
+        rahmen = len(daten) // block
+        n = int(rate * (fade_ms / 1000.0))
+        if n > 0 and rahmen > 2 * n:
+            a = _array.array("h")
+            a.frombytes(daten)
+            for k in range(n):
+                faktor = k / float(n)
+                for ch in range(kanaele):
+                    a[k * kanaele + ch] = int(a[k * kanaele + ch] * faktor)
+                    j = rahmen - 1 - k
+                    a[j * kanaele + ch] = int(a[j * kanaele + ch] * faktor)
+            daten = a.tobytes()
     with open(ziel, "wb") as z:
         kopf = b"RIFF" + struct.pack("<I", 36 + len(daten)) + b"WAVE"
         kopf += b"fmt " + struct.pack("<IHHIIHH", 16, 1, kanaele, rate,
@@ -2279,7 +2303,8 @@ def schneide_bereich(quelle, ziel, von_sekunden, bis_sekunden):
 
 def befehl_teilen(basis, wav, name, schreiben, teile=None, laenge=None,
                   wurzel=None, stopp=None, wiedergabe=None, sinnvoll=True,
-                  ohne_pause=True):
+                  ohne_pause=True, marker=None, schwelle=0.35,
+                  min_pause=0.25, fade_naht=0.0, alle_pausen=False):
     """Eine Datei in mehrere Patches aufteilen.
 
     Gedacht für Aufnahmen über 10 Minuten, die das Pedal sonst nicht
@@ -2289,15 +2314,20 @@ def befehl_teilen(basis, wav, name, schreiben, teile=None, laenge=None,
     dauer = wav_info(wav)[0]
     if dauer <= 0:
         raise SystemExit(T("Fehler: '%s' ist keine lesbare Audiodatei.") % wav)
-    if laenge:
+    nur_schnittstellen = bool(marker) or alle_pausen
+    if laenge and not nur_schnittstellen:
         anzahl = max(1, math.ceil(dauer / float(laenge)))
         stueck = float(laenge)
-    elif teile:
+    elif teile and not nur_schnittstellen:
         anzahl = max(1, int(teile))
         stueck = dauer / float(anzahl)
+    elif nur_schnittstellen:
+        # Die Teile ergeben sich aus Marken oder Pausen - unten.
+        anzahl = 1
+        stueck = dauer
     else:
         raise SystemExit(T("Fehler: --teile N oder --laenge SEKUNDEN angeben."))
-    if stueck > MAX_LOOP_SEKUNDEN:
+    if stueck > MAX_LOOP_SEKUNDEN and not nur_schnittstellen:
         raise SystemExit(T("Fehler: %.1f Minuten pro Teil sind zu lang "
                          "(Grenze %d Minuten).") % (stueck / 60.0, MAX_LOOP_SEKUNDEN //
                                                    60))
@@ -2315,10 +2345,29 @@ def befehl_teilen(basis, wav, name, schreiben, teile=None, laenge=None,
     dauer = wav_info(ganz)[0]
 
     mitteilen = []
-    if sinnvoll and anzahl > 1:
-        print(T("  Suche musikalisch brauchbare Schnittstellen …"))
-        punkte, gruende, paare = finde_schnittpunkte(ganz, anzahl,
-                                                     fenster=max(90.0, stueck/4))
+    marken = sorted(float(m) for m in marker) if marker else []
+    if marken:
+        punkte = [m for m in marken if 0.0 < m < dauer]
+        anzahl = len(punkte) + 1
+        gruende = ["Marke"] * len(punkte)
+        paare = [None] * len(punkte)
+        print("  " + T("Es wird an %d gesetzten Marken geschnitten.") % len(punkte))
+    elif alle_pausen:
+        punkte, gruende, paare = finde_schnittpunkte(
+            ganz, 0, fenster=max(90.0, stueck / 4), min_pause=min_pause,
+            schwelle=schwelle, alle_pausen=True)
+        anzahl = len(punkte) + 1
+        print("  " + T("Es wird an allen %d gefundenen Pausen geschnitten.")
+              % len(punkte))
+    else:
+        punkte = None
+    if punkte is not None or (sinnvoll and anzahl > 1):
+        if punkte is None:
+            print(T("  Suche musikalisch brauchbare Schnittstellen …"))
+            punkte, gruende, paare = finde_schnittpunkte(ganz, anzahl,
+                                                         fenster=max(90.0, stueck/4),
+                                                         min_pause=min_pause,
+                                                         schwelle=schwelle)
         if len(punkte) != anzahl - 1:
             print(T("  Hinweis: keine brauchbaren Pausen gefunden (%s) -")
                   % (gruende[0] if gruende else "kein Ergebnis"))
@@ -2337,7 +2386,8 @@ def befehl_teilen(basis, wav, name, schreiben, teile=None, laenge=None,
                 bis = dauer if i == anzahl - 1 else (
                     paare[i][0] if paare[i] else punkte[i])
                 mitteilen.append((von, bis))
-            print(T("  Pause an der Naht wird herausgenommen"))
+            if any(p is not None for p in paare):
+                print(T("  Pause an der Naht wird herausgenommen"))
         else:
             for i in range(anzahl):
                 mitteilen.append((grenzen[i], min(dauer, grenzen[i+1])))
@@ -2365,7 +2415,7 @@ def befehl_teilen(basis, wav, name, schreiben, teile=None, laenge=None,
     try:
         for i, (von, bis) in enumerate(mitteilen, start=1):
             teil = os.path.join(zwischer, "teil%d.wav" % i)
-            if not schneide_bereich(ganz, teil, von, bis):
+            if not schneide_bereich(ganz, teil, von, bis, fade_naht):
                 raise SystemExit(T("Fehler: Teil %d ließ sich nicht schneiden." )% i)
             befehl_aufspielen(basis, teil, "%s %d/%d" % (name, i, anzahl),
                               True, stopp, None, wiedergabe)
@@ -2828,6 +2878,68 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'Dauer und Einstellungen kommen aus Dateigröße und WAV-Kopf — der Ton selbst wird dafür nicht übertragen.':
+         'Duration and settings appear only after fetching — over USB only the name is read.',
+        'Marken außerhalb der Datei wurden verworfen.':
+         'Markers outside the file were dropped.',
+        '%d Teile: %s':
+         '%d parts: %s',
+        '%d Teile, Schnitt an Pausen gesucht':
+         '%d parts, cuts looked for at pauses',
+        '%d Teile, gleichmäßig geschnitten':
+         '%d parts, split evenly',
+        'in %d Patches geteilt':
+         'split into %d patches',
+        'Marken':
+         'Markers',
+        'Teilen':
+         'Split',
+        'Alle Marken löschen':
+         'Clear all markers',
+        'Alle Pausen als Marken':
+         'All pauses as markers',
+        'Pausen gefunden: %d':
+         'Pauses found: %d',
+        'Keine Pause gefunden.':
+         'No pause found.',
+        'Wellenform nicht lesbar.':
+         'Waveform cannot be read.',
+        '%s   •   Klick setzt eine Marke, Rechtsklick entfernt sie':
+         '%s   •   click sets a marker, right click removes it',
+        'Schwelle %':
+         'Threshold %',
+        'Pause s':
+         'Pause s',
+        'Fade ms':
+         'Fade ms',
+        'Marken bitte als Zahlen mit Komma, z. B. 60, 120.':
+         'Enter markers as numbers separated by commas, e.g. 60, 120.',
+        'Schwelle, Pause und Fade bitte als Zahlen eintragen.':
+         'Enter threshold, pause and fade as numbers.',
+        'Schwelle bitte als Zahl zwischen 1 und 99.':
+         'Threshold must be a number between 1 and 99.',
+        'Pause bitte als Zahl zwischen 0,01 und 30 Sekunden.':
+         'Pause must be a number between 0.01 and 30 seconds.',
+        'Fade bitte als Zahl zwischen 0 und 50.':
+         'Fade must be a number between 0 and 50.',
+        'Es wird an %d gesetzten Marken geschnitten.':
+         'Cutting at %d markers.',
+        'Es wird an allen %d gefundenen Pausen geschnitten.':
+         'Cutting at all %d pauses found.',
+        'Schnittpunkt in Sekunden (mehrfach möglich)':
+         'cut point in seconds (repeatable)',
+        'an jeder gefundenen Pause trennen':
+         'split at every pause found',
+        'Ruhepegel für die Pausenerkennung in Prozent (Vorgabe 35)':
+         'silence level for pause detection (default 35 %)',
+        'kürzeste Pause, an der geschnitten wird (Vorgabe 0,25 s)':
+         'shortest pause to cut at (default 0.25 s)',
+        'Fade an jeder Naht in Millisekunden (Vorgabe 0)':
+         'fade at every seam in milliseconds (default 0)',
+        'Ende einer Pause':
+         'end of a pause',
+        'Marke':
+         'marker',
         'Herausgeben':
          'Export',
         'Alles herausgeben …':
@@ -4266,6 +4378,68 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'Dauer und Einstellungen kommen aus Dateigröße und WAV-Kopf — der Ton selbst wird dafür nicht übertragen.':
+         "La durée et les réglages n'apparaissent qu'après le transfert — par USB, seul le nom est lu.",
+        'Marken außerhalb der Datei wurden verworfen.':
+         'Les marques hors du fichier ont été écartées.',
+        '%d Teile: %s':
+         '%d parties : %s',
+        '%d Teile, Schnitt an Pausen gesucht':
+         '%d parties, coupes cherchées aux pauses',
+        '%d Teile, gleichmäßig geschnitten':
+         '%d parties, coupe régulière',
+        'in %d Patches geteilt':
+         'divisé en %d patches',
+        'Marken':
+         'Marques',
+        'Teilen':
+         'Séparer',
+        'Alle Marken löschen':
+         'Effacer toutes les marques',
+        'Alle Pausen als Marken':
+         'Toutes les pauses comme marques',
+        'Pausen gefunden: %d':
+         'Pauses trouvées : %d',
+        'Keine Pause gefunden.':
+         'Aucune pause trouvée.',
+        'Wellenform nicht lesbar.':
+         "Forme d'onde illisible.",
+        '%s   •   Klick setzt eine Marke, Rechtsklick entfernt sie':
+         "%s   •   un clic pose une marque, un clic droit l'enlève",
+        'Schwelle %':
+         'Seuil %',
+        'Pause s':
+         'Pause s',
+        'Fade ms':
+         'Fondu ms',
+        'Marken bitte als Zahlen mit Komma, z. B. 60, 120.':
+         'Entrez les marques comme nombres séparés par des virgules, p. ex. 60, 120.',
+        'Schwelle, Pause und Fade bitte als Zahlen eintragen.':
+         'Entrez seuil, pause et fondu comme nombres.',
+        'Schwelle bitte als Zahl zwischen 1 und 99.':
+         'Le seuil doit être un nombre entre 1 et 99.',
+        'Pause bitte als Zahl zwischen 0,01 und 30 Sekunden.':
+         'La pause doit être un nombre entre 0,01 et 30 secondes.',
+        'Fade bitte als Zahl zwischen 0 und 50.':
+         'Le fondu doit être un nombre entre 0 et 50.',
+        'Es wird an %d gesetzten Marken geschnitten.':
+         'Coupe à %d marques.',
+        'Es wird an allen %d gefundenen Pausen geschnitten.':
+         'Coupe à toutes les %d pauses trouvées.',
+        'Schnittpunkt in Sekunden (mehrfach möglich)':
+         'point de coupe en secondes (répétable)',
+        'an jeder gefundenen Pause trennen':
+         'couper à chaque pause trouvée',
+        'Ruhepegel für die Pausenerkennung in Prozent (Vorgabe 35)':
+         'niveau de silence pour la détection des pauses (défaut 35 %)',
+        'kürzeste Pause, an der geschnitten wird (Vorgabe 0,25 s)':
+         'pause la plus courte où couper (défaut 0,25 s)',
+        'Fade an jeder Naht in Millisekunden (Vorgabe 0)':
+         'fondu à chaque raccord en millisecondes (défaut 0)',
+        'Ende einer Pause':
+         "fin d'une pause",
+        'Marke':
+         'marque',
         'Herausgeben':
          'Exporter',
         'Alles herausgeben …':
@@ -5612,6 +5786,68 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'Dauer und Einstellungen kommen aus Dateigröße und WAV-Kopf — der Ton selbst wird dafür nicht übertragen.':
+         'La duración y los ajustes solo aparecen tras traerlos — por USB solo se lee el nombre.',
+        'Marken außerhalb der Datei wurden verworfen.':
+         'Se descartaron las marcas fuera del archivo.',
+        '%d Teile: %s':
+         '%d partes: %s',
+        '%d Teile, Schnitt an Pausen gesucht':
+         '%d partes, cortes buscados en las pausas',
+        '%d Teile, gleichmäßig geschnitten':
+         '%d partes, corte regular',
+        'in %d Patches geteilt':
+         'dividido en %d patches',
+        'Marken':
+         'Marcas',
+        'Teilen':
+         'Dividir',
+        'Alle Marken löschen':
+         'Borrar todas las marcas',
+        'Alle Pausen als Marken':
+         'Todas las pausas como marcas',
+        'Pausen gefunden: %d':
+         'Pausas encontradas: %d',
+        'Keine Pause gefunden.':
+         'Ninguna pausa encontrada.',
+        'Wellenform nicht lesbar.':
+         'No se puede leer la forma de onda.',
+        '%s   •   Klick setzt eine Marke, Rechtsklick entfernt sie':
+         '%s   •   un clic pone una marca, clic derecho la quita',
+        'Schwelle %':
+         'Umbral %',
+        'Pause s':
+         'Pausa s',
+        'Fade ms':
+         'Fundido ms',
+        'Marken bitte als Zahlen mit Komma, z. B. 60, 120.':
+         'Introduce las marcas como números separados por comas, p. ej. 60, 120.',
+        'Schwelle, Pause und Fade bitte als Zahlen eintragen.':
+         'Introduce umbral, pausa y fundido como números.',
+        'Schwelle bitte als Zahl zwischen 1 und 99.':
+         'El umbral debe ser un número entre 1 y 99.',
+        'Pause bitte als Zahl zwischen 0,01 und 30 Sekunden.':
+         'La pausa debe ser un número entre 0,01 y 30 segundos.',
+        'Fade bitte als Zahl zwischen 0 und 50.':
+         'El fundido debe ser un número entre 0 y 50.',
+        'Es wird an %d gesetzten Marken geschnitten.':
+         'Se corta en %d marcas.',
+        'Es wird an allen %d gefundenen Pausen geschnitten.':
+         'Se corta en todas las %d pausas encontradas.',
+        'Schnittpunkt in Sekunden (mehrfach möglich)':
+         'punto de corte en segundos (repetible)',
+        'an jeder gefundenen Pause trennen':
+         'cortar en cada pausa encontrada',
+        'Ruhepegel für die Pausenerkennung in Prozent (Vorgabe 35)':
+         'nivel de silencio para detectar pausas (por defecto 35 %)',
+        'kürzeste Pause, an der geschnitten wird (Vorgabe 0,25 s)':
+         'pausa más corta donde cortar (por defecto 0,25 s)',
+        'Fade an jeder Naht in Millisekunden (Vorgabe 0)':
+         'fundido en cada unión en milisegundos (por defecto 0)',
+        'Ende einer Pause':
+         'final de una pausa',
+        'Marke':
+         'marca',
         'Herausgeben':
          'Exportar',
         'Alles herausgeben …':
@@ -6958,6 +7194,68 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'Dauer und Einstellungen kommen aus Dateigröße und WAV-Kopf — der Ton selbst wird dafür nicht übertragen.':
+         '时长和设置只在取回后显示——通过 USB 只读取名称。',
+        'Marken außerhalb der Datei wurden verworfen.':
+         '文件范围外的标记已丢弃。',
+        '%d Teile: %s':
+         '%d 段：%s',
+        '%d Teile, Schnitt an Pausen gesucht':
+         '%d 段，在停顿处寻找切分点',
+        '%d Teile, gleichmäßig geschnitten':
+         '%d 段，平均切分',
+        'in %d Patches geteilt':
+         '已分成 %d 个音色',
+        'Marken':
+         '标记',
+        'Teilen':
+         '切分',
+        'Alle Marken löschen':
+         '清除所有标记',
+        'Alle Pausen als Marken':
+         '将所有停顿设为标记',
+        'Pausen gefunden: %d':
+         '找到 %d 处停顿',
+        'Keine Pause gefunden.':
+         '没有找到停顿。',
+        'Wellenform nicht lesbar.':
+         '无法读取波形。',
+        '%s   •   Klick setzt eine Marke, Rechtsklick entfernt sie':
+         '%s   •   单击设置标记，右键删除标记',
+        'Schwelle %':
+         '阈值 %',
+        'Pause s':
+         '停顿 秒',
+        'Fade ms':
+         '淡变 毫秒',
+        'Marken bitte als Zahlen mit Komma, z. B. 60, 120.':
+         '请用逗号分隔的数字填写标记，例如 60, 120。',
+        'Schwelle, Pause und Fade bitte als Zahlen eintragen.':
+         '阈值、停顿和淡变请填写数字。',
+        'Schwelle bitte als Zahl zwischen 1 und 99.':
+         '阈值必须是 1 到 99 之间的数字。',
+        'Pause bitte als Zahl zwischen 0,01 und 30 Sekunden.':
+         '停顿必须是 0.01 到 30 秒之间的数字。',
+        'Fade bitte als Zahl zwischen 0 und 50.':
+         '淡变必须是 0 到 50 之间的数字。',
+        'Es wird an %d gesetzten Marken geschnitten.':
+         '在 %d 个标记处切分。',
+        'Es wird an allen %d gefundenen Pausen geschnitten.':
+         '在所有找到的 %d 处停顿切开。',
+        'Schnittpunkt in Sekunden (mehrfach möglich)':
+         '切分点（秒，可多次给出）',
+        'an jeder gefundenen Pause trennen':
+         '在每个找到的停顿处切开',
+        'Ruhepegel für die Pausenerkennung in Prozent (Vorgabe 35)':
+         '停顿识别的静音电平（默认 35 %）',
+        'kürzeste Pause, an der geschnitten wird (Vorgabe 0,25 s)':
+         '可切开的最短停顿（默认 0,25 秒）',
+        'Fade an jeder Naht in Millisekunden (Vorgabe 0)':
+         '每处接缝的淡变（毫秒，默认 0）',
+        'Ende einer Pause':
+         '停顿结束',
+        'Marke':
+         '标记',
         'Herausgeben':
          '导出',
         'Alles herausgeben …':
@@ -10371,6 +10669,40 @@ def _greenglass():
     return modul
 
 
+def _dauer_aus_wav(kopf, groesse):
+    """Dauer aus WAV-Kopf und Dateigröße (21.11.2026).
+
+    Liefert Sekunden oder 0, wenn der Kopf nicht zu lesen ist. Rechnet mit
+    den Angaben aus dem Kopf - nicht mit einer Annahme über 44,1 kHz, damit
+    auch ältere Aufnahmen stimmen.
+    """
+    if not kopf or len(kopf) < 44 or kopf[0:4] != b"RIFF" or kopf[8:12] != b"WAVE":
+        return 0.0
+    pos = 12
+    rate = kanaele = bits = 0
+    daten_start = daten_laenge = 0
+    while pos + 8 <= len(kopf):
+        kennung = kopf[pos:pos + 4]
+        laenge = struct.unpack("<I", kopf[pos + 4:pos + 8])[0]
+        if kennung == b"fmt " and pos + 8 + 16 <= len(kopf):
+            _, kanaele, rate, _, block, bits = struct.unpack(
+                "<HHIIHH", kopf[pos + 8:pos + 24])
+        elif kennung == b"data":
+            daten_start = pos + 8
+            daten_laenge = laenge
+            break
+        pos += 8 + laenge + (laenge % 2)
+    if not rate or not kanaele or not bits:
+        return 0.0
+    block = kanaele * (bits // 8)
+    if not block:
+        return 0.0
+    nutzbar = daten_laenge or max(0, groesse - daten_start)
+    if nutzbar <= 0:
+        return 0.0
+    return nutzbar / float(block * rate)
+
+
 def _pedal_lesen(g, speicher, fortschritt=None):
     """Patches eines Speichers holen: [(platz, name, groesse)] — nur lesend.
 
@@ -10388,15 +10720,42 @@ def _pedal_lesen(g, speicher, fortschritt=None):
     for i, d in enumerate(ordner, 1):
         name = ""
         groesse = 0
+        dauer = 0.0
+        stop, rhy, loop = "—", "—", "—"
         try:
             xml = g.lies_datei(basis + d + "/patch.xml").decode("utf-8", "replace")
             import re as _re
             m = _re.search(r"<PatchName>(.*?)</PatchName>", xml)
             if m:
                 name = m.group(1)
+            m = _re.search(r"<StopMode>([^<]*)", xml)
+            if m:
+                stop = {"FadeOut": T("fade"), "StopInstantly": T("sofort"),
+                        "StopAtEndOfLoop": T("ende")}.get(m.group(1), m.group(1))
+            m = _re.search(r"<RhythmType>([^<]*)", xml)
+            if m:
+                rhy = {"Silence": T("ohne"), "StudioKickAndHighHat": T("klick")}.get(
+                    m.group(1), m.group(1))
         except Exception:
             pass
-        ergebnis.append((d, name, groesse))
+        # Größe und WAV-Kopf: zusammen ein paar Millisekunden, daraus die Dauer.
+        try:
+            wav = basis + d + "/PhraseA/phrase.wav"
+            info = g.info(wav)
+            groesse = info.get("groesse") or 0
+            if groesse:
+                kopf = g.lies_datei(wav, hoechstens=4096)
+                dauer = _dauer_aus_wav(kopf, groesse)
+        except Exception:
+            pass
+        try:
+            ph = g.lies_datei(basis + d + "/PhraseA/phrase.xml", hoechstens=2048)
+            m = _re.search(r"<IsLoop>([^<]*)", ph.decode("utf-8", "replace"))
+            if m:
+                loop = "loop" if m.group(1).strip() == "1" else "single"
+        except Exception:
+            pass
+        ergebnis.append((d, name, groesse, dauer, stop, rhy, loop))
         if fortschritt and (i % 5 == 0 or i == len(ordner)):
             fortschritt(i, len(ordner), list(ergebnis))
     return basis, ergebnis
@@ -11083,7 +11442,7 @@ def _setlist_speichern(patchliste, indizes, ziel_datei, geraetename=""):
         if geraetename:
             fp.write("# Gerät: %s\n" % geraetename)
         for i in indizes:
-            platz, name, _ = patchliste[i]
+            platz, name = patchliste[i][0], patchliste[i][1]
             fp.write("%s\t%s\n" % (platz, name or ""))
     return True
 
@@ -11128,6 +11487,301 @@ def _geraet_schliessen():
 
 _USB_FENSTER = {"fenster": None}
 
+
+def teilen_fenster(datei, haupfenster, teile=2, schwelle=35.0, min_pause=0.25,
+                   fade_naht=0.0, an_pausen=True):
+    """Wellenform-Fenster zum Aufteilen einer Datei — der eine Ort dafür.
+
+    Marken mit der Maus setzen (Klick) oder eintippen; beides gilt gleichzeitig.
+    Ohne Marken teilt es in N Teile, an Pausen oder gleichmäßig.
+
+    Rückgabe: {"marken", "teile", "pausen", "schwelle", "pause", "fade"}
+    oder None, wenn abgebrochen wurde.
+    """
+    import tkinter as tk
+    from tkinter import messagebox
+
+    pruef = wav_info(datei)
+    wav = datei
+    zwischer = None
+    if not (datei.lower().endswith(".wav") and pruef[1] == 44100 and pruef[3] == 16):
+        zwischer = tempfile.mkdtemp(prefix="jamman-teilen-")
+        ziel = os.path.join(zwischer, "ganz.wav")
+        if not wandle_nach_44k(datei, ziel):
+            shutil.rmtree(zwischer, ignore_errors=True)
+            messagebox.showerror(T("Fehler"), T("Wellenform nicht lesbar."),
+                                 parent=haupfenster)
+            return None
+        wav = ziel
+    werte, dauer, _ = wellenform(wav, 900)
+    if not werte or dauer <= 0:
+        if zwischer:
+            shutil.rmtree(zwischer, ignore_errors=True)
+        messagebox.showerror(T("Fehler"), T("Wellenform nicht lesbar."),
+                             parent=haupfenster)
+        return None
+
+    f = tk.Toplevel(haupfenster)
+    f.title(T("Datei teilen"))
+    f.configure(bg=FARBE_HINTERGRUND)
+    f.geometry("960x390+%d+%d" % (haupfenster.winfo_rootx() + 40,
+                                  haupfenster.winfo_rooty() + 40))
+    try:
+        f.attributes("-topmost", True)
+    except Exception:
+        pass
+
+    tk.Label(f, text=os.path.basename(datei), bg=FARBE_HINTERGRUND,
+             fg=FARBE_SCHRIFT, font=schrift(12, fest=True)).pack(pady=(10, 0))
+    kopf = T("%s   •   Klick setzt eine Marke, Rechtsklick entfernt sie")
+    tk.Label(f, text=kopf % sekunden(dauer), bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE, font=schrift(9)).pack(pady=(0, 6))
+
+    breite, hoehe = 900, 150
+    leinwand = tk.Canvas(f, width=breite, height=hoehe, bg="#101820",
+                         highlightthickness=0)
+    leinwand.pack(padx=16)
+
+    zust = {"marken": [], "welle": werte, "dauer": dauer,
+            "breite": breite, "hoehe": hoehe}
+
+    def zeit_zu_x(zeit):
+        return zust["breite"] * (zeit / zust["dauer"])
+
+    def x_zu_zeit(x):
+        return max(0.0, min(zust["dauer"], zust["dauer"] * x / float(zust["breite"])))
+
+    def grenzen():
+        """Teilgrenzen für die Vorschau - ohne Marken nicht bestimmbar."""
+        marken = sorted(zust["marken"])
+        if marken:
+            return [0.0, *marken, zust["dauer"]]
+        return None
+
+    def sperren(nach):
+        """Ohne Marken gilt Teile/Pausen, mit Marken sind sie gegenstandslos."""
+        zustand_feld = "disabled" if nach else "normal"
+        for feld in (teile_eingabe,):
+            feld.config(state=zustand_feld)
+        pausen_haken.config(state=zustand_feld)
+
+    def vorschau():
+        teile_liste = grenzen()
+        sperren(bool(teile_liste))
+        if teile_liste:
+            stuecke = ["%s–%s" % (sekunden(a), sekunden(b))
+                       for a, b in zip(teile_liste, teile_liste[1:])]
+            vorschau_var.set(T("%d Teile: %s") % (len(stuecke), "  ·  ".join(stuecke)))
+            return
+        try:
+            an = int(teile_var.get().strip() or "2")
+        except ValueError:
+            vorschau_var.set(T("Bei Teile bitte eine ganze Zahl eintragen."))
+            return
+        if an < 2 or an > 60:
+            vorschau_var.set(T("Bitte 2 bis 60 Teile angeben."))
+            return
+        if pausen_var.get():
+            vorschau_var.set(T("%d Teile, Schnitt an Pausen gesucht") % an)
+        else:
+            vorschau_var.set(T("%d Teile, gleichmäßig geschnitten") % an)
+
+    def zeichne():
+        leinwand.delete("all")
+        b, h = zust["breite"], zust["hoehe"]
+        unten_leiste = 18
+        hw = h - unten_leiste
+        mitte = hw // 2
+        schritt = b / float(max(1, len(zust["welle"])))
+        for i, wert in enumerate(zust["welle"]):
+            x = i * schritt
+            k = max(1, int(wert * (hw / 2 - 6)))
+            leinwand.create_line(x, mitte - k, x, mitte + k, fill="#5a9fd4")
+        leinwand.create_line(0, mitte, b, mitte, fill="#333333")
+        leinwand.create_rectangle(0, hw, b, h, fill="#0a1016", outline="")
+        for k in range(9):
+            x = b * k / 8.0
+            leinwand.create_line(x, hw, x, hw + 4, fill="#556677")
+            if k == 8:
+                leinwand.create_text(b - 4, hw + 2, anchor="ne", fill="#c8d8e8",
+                                     font=schrift(8), text=sekunden(zust["dauer"]))
+            else:
+                leinwand.create_text(x + 3, hw + 2, anchor="nw", fill="#c8d8e8",
+                                     font=schrift(8),
+                                     text=sekunden(zust["dauer"] * k / 8.0))
+        for nr, zeit in enumerate(sorted(zust["marken"]), start=1):
+            x = zeit_zu_x(zeit)
+            leinwand.create_line(x, 0, x, hw, fill="#e05a5a", width=2)
+            leinwand.create_text(x + 3, 8, anchor="nw", fill="#ffd27f",
+                                 text="%d" % nr, font=schrift(9, fest=True))
+        marken_var.set(", ".join("%.2f" % m for m in sorted(zust["marken"])))
+        vorschau()
+
+    def klick(e):
+        zust["marken"].append(x_zu_zeit(e.x))
+        zeichne()
+
+    def rechtsklick(e):
+        if not zust["marken"]:
+            return
+        zeit = x_zu_zeit(e.x)
+        naechste = min(zust["marken"], key=lambda m: abs(m - zeit))
+        if abs(zeit_zu_x(naechste) - e.x) <= 12:
+            zust["marken"].remove(naechste)
+            zeichne()
+
+    leinwand.bind("<Button-1>", klick)
+    leinwand.bind("<Button-2>", rechtsklick)      # macOS: rechte Taste
+    leinwand.bind("<Button-3>", rechtsklick)
+
+    mitte_rahmen = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    mitte_rahmen.pack(fill="x", padx=16, pady=(8, 0))
+    tk.Label(mitte_rahmen, text=T("Marken"), bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE).pack(side="left")
+    marken_var = tk.StringVar()
+    marken_feld = tk.Entry(mitte_rahmen, textvariable=marken_var, width=30,
+                           bg="#ffffff", fg="#000000", insertbackground="#000000",
+                           relief="solid", borderwidth=1)
+    marken_feld.pack(side="left", padx=(6, 10))
+
+    def marken_aus_feld(_e=None):
+        roh = marken_var.get().replace(";", ",")
+        neu = []
+        for stueck in roh.split(","):
+            stueck = stueck.strip().replace(",", ".")
+            if not stueck:
+                continue
+            try:
+                neu.append(float(stueck))
+            except ValueError:
+                status_var.set(T("Marken bitte als Zahlen mit Komma, z. B. 60, 120."))
+                return
+        drin = [m for m in neu if 0.0 < m < zust["dauer"]]
+        if len(drin) != len(neu):
+            status_var.set(T("Marken außerhalb der Datei wurden verworfen."))
+        else:
+            status_var.set("")
+        zust["marken"] = drin
+        zeichne()
+
+    marken_feld.bind("<Return>", marken_aus_feld)
+    marken_feld.bind("<FocusOut>", marken_aus_feld)
+
+    def alle_weg():
+        zust["marken"] = []
+        status_var.set("")
+        zeichne()
+
+    def pausen_suchen():
+        try:
+            sch = float(schwelle_var.get().replace(",", ".") or "35")
+            pa = float(pause_var.get().replace(",", ".") or "0.25")
+        except ValueError:
+            status_var.set(T("Schwelle, Pause und Fade bitte als Zahlen eintragen."))
+            return
+        punkte, _, _ = finde_schnittpunkte(wav, 0, min_pause=pa,
+                                           schwelle=sch / 100.0,
+                                           alle_pausen=True)
+        zust["marken"] = list(punkte)
+        if punkte:
+            status_var.set(T("Pausen gefunden: %d") % len(punkte))
+        else:
+            status_var.set(T("Keine Pause gefunden."))
+        zeichne()
+
+    tk.Button(mitte_rahmen, text=T("Alle Marken löschen"), command=alle_weg,
+              relief="solid", borderwidth=1).pack(side="left", padx=(0, 6))
+    tk.Button(mitte_rahmen, text=T("Alle Pausen als Marken"), command=pausen_suchen,
+              relief="solid", borderwidth=1).pack(side="left")
+
+    unten = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    unten.pack(fill="x", padx=16, pady=(8, 0))
+    pausen_var = tk.BooleanVar(value=bool(an_pausen))
+    pausen_haken = tk.Checkbutton(unten, text=T("an Pausen schneiden"),
+                                  variable=pausen_var,
+                                  bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+                                  activebackground=FARBE_HINTERGRUND,
+                                  activeforeground=FARBE_SCHRIFT,
+                                  selectcolor=FARBE_HINTERGRUND,
+                                  command=vorschau)
+    pausen_haken.pack(side="left", padx=(0, 12))
+    tk.Label(unten, text=T("Teile"), bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE).pack(side="left")
+    teile_var = tk.StringVar(value=str(teile))
+    teile_eingabe = tk.Entry(unten, textvariable=teile_var, width=4, justify="center",
+                             bg="#ffffff", fg="#000000", insertbackground="#000000",
+                             relief="solid", borderwidth=1)
+    teile_eingabe.pack(side="left", padx=(4, 10))
+    teile_eingabe.bind("<KeyRelease>", lambda e: vorschau())
+    tk.Label(unten, text=T("Schwelle %"), bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE).pack(side="left")
+    schwelle_var = tk.StringVar(value=("%g" % schwelle))
+    tk.Entry(unten, textvariable=schwelle_var, width=4, justify="center",
+             bg="#ffffff", fg="#000000", insertbackground="#000000",
+             relief="solid", borderwidth=1).pack(side="left", padx=(4, 10))
+    tk.Label(unten, text=T("Pause s"), bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE).pack(side="left")
+    pause_var = tk.StringVar(value=("%g" % min_pause))
+    tk.Entry(unten, textvariable=pause_var, width=5, justify="center",
+             bg="#ffffff", fg="#000000", insertbackground="#000000",
+             relief="solid", borderwidth=1).pack(side="left", padx=(4, 10))
+    tk.Label(unten, text=T("Fade ms"), bg=FARBE_HINTERGRUND,
+             fg=FARBE_LEISE).pack(side="left")
+    fade_var = tk.StringVar(value=("%g" % fade_naht))
+    tk.Entry(unten, textvariable=fade_var, width=4, justify="center",
+             bg="#ffffff", fg="#000000", insertbackground="#000000",
+             relief="solid", borderwidth=1).pack(side="left")
+
+    vorschau_var = tk.StringVar(value="")
+    tk.Label(f, textvariable=vorschau_var, bg=FARBE_HINTERGRUND, fg=FARBE_TON,
+             font=schrift(9), wraplength=900, justify="left").pack(pady=(8, 0))
+
+    status_var = tk.StringVar(value="")
+    tk.Label(f, textvariable=status_var, bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
+             font=schrift(9)).pack(pady=(2, 0))
+
+    ergebnis = {"wert": None}
+
+    def fertig():
+        try:
+            sch = float(schwelle_var.get().replace(",", ".") or "35")
+            pa = float(pause_var.get().replace(",", ".") or "0.25")
+            fa = float(fade_var.get().replace(",", ".") or "0")
+            an = int(teile_var.get().strip() or "2")
+        except ValueError:
+            status_var.set(T("Schwelle, Pause und Fade bitte als Zahlen eintragen."))
+            return
+        if not (1.0 <= sch <= 99.0):
+            status_var.set(T("Schwelle bitte als Zahl zwischen 1 und 99."))
+            return
+        if not (0.01 <= pa <= 30.0):
+            status_var.set(T("Pause bitte als Zahl zwischen 0,01 und 30 Sekunden."))
+            return
+        if not (0.0 <= fa <= 50.0):
+            status_var.set(T("Fade bitte als Zahl zwischen 0 und 50."))
+            return
+        marken_aus_feld()
+        if not zust["marken"]:
+            if not (2 <= an <= 60):
+                status_var.set(T("Bitte 2 bis 60 Teile angeben."))
+                return
+        ergebnis["wert"] = {"marken": sorted(zust["marken"]), "teile": an,
+                            "schwelle": sch, "pause": pa, "fade": fa,
+                            "pausen": bool(pausen_var.get())}
+        f.destroy()
+
+    knoepfe = tk.Frame(f, bg=FARBE_HINTERGRUND)
+    knoepfe.pack(pady=(10, 12))
+    tk.Button(knoepfe, text=T("Abbrechen"), command=f.destroy, relief="solid",
+              borderwidth=1, width=14).pack(side="left", padx=(0, 8))
+    tk.Button(knoepfe, text=T("Teilen"), command=fertig, relief="solid",
+              borderwidth=1, width=14).pack(side="left")
+
+    zeichne()
+    f.wait_window()
+    if zwischer:
+        shutil.rmtree(zwischer, ignore_errors=True)
+    return ergebnis["wert"]
 
 def usb_fenster(haupfenster, oeffne_karte=None):
     """Fenster „Pedal über USB": Speicher wählen, Patches ansehen, sichern.
@@ -12846,10 +13500,15 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
 
     def anzeigen(patchliste):
         liste.delete(0, "end")
-        for platz, name, groesse in patchliste:
-            groesse_txt = ("%.1f MB" % (groesse / 1048576.0)) if groesse else "—"
-            liste.insert("end", "%s  ·  %s  ·  %s" %
-                         (platz, name or T("(ohne Namen)"), groesse_txt))
+        for eintrag in patchliste:
+            platz, name = eintrag[0], eintrag[1]
+            dauer = eintrag[3] if len(eintrag) > 3 else 0.0
+            stop = eintrag[4] if len(eintrag) > 4 else "—"
+            loop = eintrag[6] if len(eintrag) > 6 else "—"
+            dauer_txt = sekunden(dauer) if dauer else "—"
+            liste.insert("end", "%-8s · %-28s · %8s · %-6s · %s" %
+                         (platz, (name or T("(ohne Namen)"))[:28],
+                          dauer_txt, stop, loop))
         # Ohne Gerät gibt es keinen Namen — das passiert, wenn die Verbindung
         # scheitert, die Liste aber trotzdem aufgebaut wird (Rückmeldung
         # 18.11.2026: AttributeError 'NoneType' object has no attribute 'kopf').
@@ -12974,6 +13633,7 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
                     stand["laeuft"] = False
         except queue.Empty:
             pass
+        holen_zustand()
         try:
             if not stand["zu"] and f.winfo_exists():
                 stand["nach"] = f.after(150, abholen)
@@ -13004,9 +13664,16 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
         except Exception as e:
             if not stand.get("patchliste"):
                 meldungen.put(("liste", []))
-            meldungen.put(("text", str(e) if "Karte" in str(e)
-                           else T("Kein JamMan gefunden — Pedal einschalten und Kabel prüfen.")
-                           + " " + str(e)))
+            # Doppelte Meldung vermeiden: der Fehlertext enthält den Hinweis
+            # oft schon selbst (21.11.2026: „… prüfen. kein JamMan gefunden …").
+            text = str(e).strip()
+            if text[:1].islower():
+                text = text[:1].upper() + text[1:]
+            hinweis = T("Kein JamMan gefunden — Pedal einschalten und Kabel prüfen.")
+            if "Karte" in text or "jamman" in text.lower():
+                meldungen.put(("text", text))
+            else:
+                meldungen.put(("text", hinweis + " " + text))
         finally:
             meldungen.put(("fertig", None))
 
@@ -13017,11 +13684,17 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
         if wahl.get() == "sd":
             hinweis.config(text=T("Über USB fließen etwa 1,3 MB/s. Für eine ganze "
                                   "Karte ist ein Kartenleser viel schneller. "
-                                  "Schreiben verändert die Karte — vorher wird gesichert."))
+                                  "Schreiben verändert die Karte — vorher wird gesichert.")
+                           + " " + T("Dauer und Einstellungen kommen aus Dateigröße "
+                                     "und WAV-Kopf — der Ton selbst wird dafür nicht "
+                                     "übertragen."))
         else:
             hinweis.config(text=T("Lesen und Schreiben über USB. Vor jedem "
                                   "Überschreiben wird der alte Platz auf den Rechner "
-                                  "gesichert."))
+                                  "gesichert.")
+                           + " " + T("Dauer und Einstellungen kommen aus Dateigröße "
+                                     "und WAV-Kopf — der Ton selbst wird dafür nicht "
+                                     "übertragen."))
 
     def anstossen():
         hinweis_setzen()
@@ -13052,7 +13725,7 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
             ziel_anzeigen()
         geraetename = os.path.basename(stand["basis"].rstrip("/")) or "JamManSoloXT"
         wurzel = _hol_wurzel(ziel, geraetename, wahl.get())
-        platzliste = [platz for platz, _, _ in stand["patchliste"]]
+        platzliste = [eintrag[0] for eintrag in stand["patchliste"]]
 
         def arbeit():
             import time as _zeit
@@ -13973,8 +14646,21 @@ def _usb_fenster_bauen(haupfenster, g_modul, oeffne_karte=None):
     reihe1 = tk.Frame(f, bg=FARBE_HINTERGRUND)
     reihe1.pack(fill="x", padx=14, pady=(0, 4))
     tk.Button(reihe1, text=T("Neu laden"), command=anstossen).pack(side="left")
-    tk.Button(reihe1, text=T("Ins Hauptfenster holen …"),
-              command=alles_holen).pack(side="left", padx=8)
+    knopf_holen = tk.Button(reihe1, text=T("Ins Hauptfenster holen …"),
+                            command=alles_holen)
+    knopf_holen.pack(side="left", padx=8)
+
+    def holen_zustand():
+        """Holen geht erst, wenn wirklich ein Pedal antwortet (21.11.2026).
+
+        Vorher war der Knopf immer bedienbar und antwortete nur mit einem
+        Hinweis; jetzt sieht man am Knopf, ob eine Verbindung steht.
+        """
+        bereit = stand.get("geraet") is not None and not stand.get("laeuft")
+        try:
+            knopf_holen.config(state="normal" if bereit else "disabled")
+        except Exception:
+            pass
     tk.Button(reihe1, text=T("Schließen"), command=schliessen).pack(side="right")
 
     def geschuetzt(befehl):
@@ -15894,43 +16580,34 @@ def gui(karte):
             messagebox.showerror(T("Fehler"), str(e))
 
     def datei_teilen():
-        """Eine Datei in mehrere Patches aufteilen."""
+        """Eine Datei aufteilen - alle Einstellungen stehen im Wellenform-Fenster."""
         if not zustand["basis"]:
             messagebox.showinfo(T("Hinweis"), T("Erst eine Karte wählen."))
-            return
-        try:
-            anzahl = int(teile_eingabe.get().strip() or "2")
-        except ValueError:
-            messagebox.showerror(T("Fehler"), T("Bei Teile bitte eine ganze Zahl eintragen."))
-            return
-        if not (2 <= anzahl <= 60):
-            messagebox.showerror(T("Fehler"), T("Bitte 2 bis 60 Teile angeben."))
             return
         datei = datei_waehlen(fenster, T("Audiodatei zum Teilen auswählen"),
                               "*.wav *.aif *.aiff *.aifc *.caf *.mp3 *.m4a *.aac *.flac *.ogg *.opus")
         if not datei:
             return
-        dauer = wav_info(datei)[0]
-        if dauer <= 0:
+        if wav_info(datei)[0] <= 0:
             messagebox.showerror(T("Fehler"), T("Die Datei ist nicht lesbar."))
             return
-        art = ("an Pausen geschnitten" if sinnvoll_var.get()
-               else "gleichmäßig geschnitten")
-        if not frage_ja_nein(fenster, "Datei teilen",
-                "%s\n\n%s wird in %d Teile geteilt (%s).\n"
-                "Jeder Teil landet auf einem freien Platz.\n\nFortfahren?"
-                % (os.path.basename(datei), sekunden(dauer), anzahl, art)):
+        gewaehlt = teilen_fenster(datei, fenster)
+        if not gewaehlt:
             return
-        def melde(text):
-            status_var.set(text)
-            fenster.update_idletasks(); fenster.update()
+        marken = gewaehlt["marken"]
+        anzahl = len(marken) + 1 if marken else gewaehlt["teile"]
         try:
             befehl_teilen(zustand["basis"], datei,
                           os.path.splitext(os.path.basename(datei))[0],
                           True, anzahl, None, None, None, None,
-                          sinnvoll=sinnvoll_var.get())
+                          sinnvoll=gewaehlt["pausen"],
+                          marker=marken or None,
+                          schwelle=gewaehlt["schwelle"] / 100.0,
+                          min_pause=gewaehlt["pause"],
+                          fade_naht=gewaehlt["fade"],
+                          alle_pausen=False)
             neu_laden()
-            status_var.set("in %d Patches geteilt" % anzahl)
+            status_var.set(T("in %d Patches geteilt") % anzahl)
         except SystemExit as e:
             messagebox.showerror(T("Fehler"), str(e))
 
@@ -16318,18 +16995,36 @@ def gui(karte):
     schreibend = ("Umbenennen", "Platz ändern", "Tauschen", "Löschen",
                   "Datei teilen", "▲ nach oben", "▼ nach unten",
                   "Einstellungen anwenden", "Beschreibung …",
-                  "Datei aufspielen", "Anhören", "Alle normieren",
+                  "Datei aufspielen", "Alle normieren",
                   "Lücken schließen", "Zurücknehmen (letzter Schritt)",
                   "Pegeländerung zurücknehmen …", "Karte auswerfen")
+    # 21.11.2026: „Datei teilen" braucht KEINEN gewählten Patch - die Datei wird
+    # im Fenster ausgesucht. Vorher war der Knopf ohne Auswahl gesperrt, obwohl
+    # Teilen nichts mit dem gewählten Platz zu tun hat.
+    # „Anhören" ist aus der Liste der schreibenden Knöpfe genommen: Abspielen
+    # ändert nichts, es darf auch im Nur-Lesen-Modus gehen.
     braucht_auswahl = ("Anhören", "Umbenennen", "Platz ändern", "Tauschen",
-                       "Löschen", "Datei teilen", "▲ nach oben", "▼ nach unten",
+                       "Löschen", "▲ nach oben", "▼ nach unten",
                        "Einstellungen anwenden", "Beschreibung …",
                        # 19.11.2026: „Zurücknehmen" und „Beschreibung …" brauchten
                        # ebenfalls einen gewählten Patch, blieben aber anklickbar
                        # und antworteten mit „Erst einen Patch wählen".
                        "Zurücknehmen (letzter Schritt)")
 
+    # Ohne Karte sind auch diese Knöpfe sinnlos — sie würden nur melden
+    # „Erst eine Karte wählen" (21.11.2026).
+    braucht_karte = ("Neu laden", "Datei aufspielen", "Datei teilen",
+                     "Alle normieren", "Lücken schließen", "Karte auswerfen",
+                     "Pegeländerung zurücknehmen …", "Zurücknehmen (letzter Schritt)",
+                     "Anhören", "Stopp")
+
     def knopf_zustand():
+        if not zustand.get("basis"):
+            for name in braucht_karte:
+                k = knopf_refs.get(name)
+                if k is not None:
+                    k.config(state="disabled")
+            return
         hat = bool(liste_auswahl())
         for name in braucht_auswahl:
             k = knopf_refs.get(name)
@@ -16368,19 +17063,6 @@ def gui(karte):
                    activeforeground=FARBE_SCHRIFT,
                    selectcolor=FARBE_HINTERGRUND).pack(side="left", padx=(0, 16))
     begrenzen_var = tk.BooleanVar(value=True)
-    tk.Label(wahl2, text=T("Teile"), bg=FARBE_HINTERGRUND,
-             fg=FARBE_LEISE).pack(side="left", padx=(16, 4))
-    teile_eingabe = tk.Entry(wahl2, width=4, justify="center",
-                             bg="#ffffff", fg="#000000", insertbackground="#000000",
-                             relief="solid", borderwidth=1)
-    teile_eingabe.insert(0, "2")
-    teile_eingabe.pack(side="left")
-    sinnvoll_var = tk.BooleanVar(value=True)
-    tk.Checkbutton(wahl2, text=T("an Pausen schneiden"), variable=sinnvoll_var,
-                   bg=FARBE_HINTERGRUND, fg=FARBE_LEISE,
-                   activebackground=FARBE_HINTERGRUND,
-                   activeforeground=FARBE_SCHRIFT,
-                   selectcolor=FARBE_HINTERGRUND).pack(side="left", padx=(8, 0))
     tk.Checkbutton(wahl2, text=T("Anhebung höchstens auf 0 dB"),
                    variable=begrenzen_var, bg=FARBE_HINTERGRUND,
                    fg=FARBE_LEISE, activebackground=FARBE_HINTERGRUND,
@@ -16785,6 +17467,16 @@ def main():
                    help=T("beim Teilen gleichmäßig schneiden statt an Pausen"))
     p.add_argument("--teile", type=int, metavar="N",
                    help=T("Datei in N gleich lange Patches aufteilen"))
+    p.add_argument("--marker", type=float, action="append", metavar="SEK",
+                   help=T("Schnittpunkt in Sekunden (mehrfach möglich)"))
+    p.add_argument("--alle-pausen", action="store_true",
+                   help=T("an jeder gefundenen Pause trennen"))
+    p.add_argument("--schwelle", type=float, default=35.0, metavar="PROZENT",
+                   help=T("Ruhepegel für die Pausenerkennung in Prozent (Vorgabe 35)"))
+    p.add_argument("--min-pause", type=float, default=0.25, metavar="SEK",
+                   help=T("kürzeste Pause, an der geschnitten wird (Vorgabe 0,25 s)"))
+    p.add_argument("--fade-naht", type=float, default=0.0, metavar="MS",
+                   help=T("Fade an jeder Naht in Millisekunden (Vorgabe 0)"))
     p.add_argument("--laenge", type=float, metavar="SEKUNDEN",
                    help=T("zu lange Datei auf diese Länge kürzen"))
     p.add_argument("--trotzdem", action="store_true",
@@ -16978,7 +17670,10 @@ def main():
         befehl_teilen(basis, a.wav, a.name or os.path.splitext(os.path.basename(a.wav))[0],
                       a.schreiben, a.teile, a.laenge, a.sicherung,
                       a.stopp, a.wiedergabe, sinnvoll=not a.einfach,
-                      ohne_pause=not a.mit_pause)
+                      ohne_pause=not a.mit_pause, marker=a.marker,
+                      schwelle=max(0.01, min(0.99, a.schwelle / 100.0)),
+                      min_pause=a.min_pause, fade_naht=a.fade_naht,
+                      alle_pausen=a.alle_pausen)
     elif a.befehl == "pegel-umkehren":
         if not a.protokoll:
             raise SystemExit(T("Fehler: --protokoll fehlt."))

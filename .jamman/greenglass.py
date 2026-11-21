@@ -397,16 +397,22 @@ class JamManUSB:
             ergebnis[feld] = "%04d-%02d-%02d %02d:%02d" % (jahr, monat, tag, stunde, minute)
         return ergebnis
 
-    def lies_datei(self, pfad, stopp=None):
+    def lies_datei(self, pfad, stopp=None, hoechstens=None):
         """Eine Datei aus dem Pedal holen (nur lesen).
 
         stopp: Funktion ohne Argumente; gibt sie True zurück, bricht der
         Lesevorgang beim nächsten Stück ab. Ohne diese Prüfung lief ein
         Kopiervorgang bis zum Ende der Datei weiter, auch wenn „Abbrechen"
         gedrückt war (16.11.2026).
+
+        hoechstens: nur so viele Bytes lesen (21.11.2026). Damit holt das
+        Werkzeug den WAV-Kopf, ohne eine 70-MB-Aufnahme zu übertragen —
+        daraus läßt sich die Dauer in Millisekunden ausrechnen.
         """
         _, r = self.port.anfrage(MSG_FILE_OPEN, _gstr(pfad) + bytes([LESEN, 1]))
         handle, groesse = r.i64(), r.i64()
+        if hoechstens is not None and hoechstens > 0:
+            groesse = min(groesse, int(hoechstens))
         daten = b""
         try:
             while len(daten) < groesse:

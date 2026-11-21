@@ -1,5 +1,58 @@
 # Changelog
 
+## 3.136 — 2026-11-21
+
+* **Splitting has its own window now.** *Datei teilen* opens the waveform of the
+  chosen file: a click sets a marker, a right click removes it, and the same marks
+  appear as numbers in the field beside it — clicking and typing both work, always
+  in sync. The file is cut exactly at those marks, sample-exact, with no pause
+  detection involved. On the command line: `--marker 60 --marker 120`. This closes
+  the gap every assistant answer pointed at: *can it cut seamlessly between parts
+  without pauses?* Yes.
+* **One place for the settings, not two.** The split settings used to sit in the
+  main row (parts, pause cutting) and in a second row (marks, threshold, pause,
+  fade). All of that lives in the split window now; the main window keeps only the
+  *Datei teilen* button. Fewer controls, one obvious path.
+* **Thresholds are adjustable** — *Schwelle %* (silence level, default 35) and
+  *Pause s* (shortest pause, default 0.25), likewise `--schwelle` and `--min-pause`.
+  Until today both were fixed in the code.
+* **All pauses at once** — the button *Alle Pausen als Marken* fills the marks from
+  the pause detection, so the number of parts follows from the recording instead of
+  being given. Two pauses between three song parts give three patches — what the
+  assistant claimed and what was not true before.
+* **The window shows what will happen**: the planned boundaries appear as
+  `3 Teile: 0:00.0–0:12.0 · 0:12.0–0:26.0 · 0:26.0–0:40.0` before anything is
+  written. With marks set, the parts field and the pause switch are greyed out —
+  they would be ignored anyway.
+* **Fade at the seam** — *Fade ms* / `--fade-naht 3` puts a short ramp at the start
+  and end of each part, so a cut that does not land on a zero crossing no longer
+  clicks. Default 0: without it the cut stays sample-exact and nothing is changed.
+* **The USB list shows duration, stop mode and loop type.** Until today it said only
+  the patch name and a bare "—", because the duration lives in the WAV and pulling
+  the audio at 1.3 MB/s would take minutes. Now the tool asks the pedal for the file
+  size (`info()`, about 20 ms) and reads the first 4 KB of the WAV to get rate,
+  channels and bit depth; the duration follows from both. Measured on the real pedal:
+  **35 patches with name, duration, stop mode and loop type in 2.4 seconds.** The
+  calculation uses the values from the header, not an assumption about 44.1 kHz, so
+  older recordings stay correct — if the header cannot be read, the list keeps "—".
+* **The fetch button follows the connection.** In the *Pedal über USB* window,
+  *Ins Hauptfenster holen …* is greyed out until a pedal actually answers, and while
+  a transfer runs. It used to be clickable without any connection and only replied
+  with a hint.
+* **Three locks corrected** (audit of every button, 21.11.2026): *Datei teilen* was
+  greyed out when no patch was selected, although splitting only needs a card — the
+  file is chosen inside the window. *Anhören* was blocked in read-only mode,
+  although listening changes nothing. And without any card the buttons that need one
+  are now disabled instead of answering "Erst eine Karte wählen": *Neu laden*,
+  *Datei aufspielen*, *Datei teilen*, *Alle normieren*, *Lücken schließen*,
+  *Karte auswerfen*, *Pegeländerung zurücknehmen*, *Zurücknehmen*, *Anhören*,
+  *Stopp*. Everything that works without a card stays usable (*Karte wählen*,
+  *Aktualisieren*, *Selbsttest*, *Pedal über USB*, *Sicherungen verwalten*).
+* Measured on a synthetic 40 s file (three tones, two pauses): clicks at 12 s and
+  26 s give three parts whose boundaries sit exactly there; *Alle Pausen als Marken*
+  gives 14.00 and 28.00; a 3 ms fade starts and ends at 0 and keeps the length at
+  exactly 3.0000 s. Checked in all five languages by screenshot.
+
 ## 3.135.3 — 2026-11-20
 
 * **A table of proof at the top of the card chapter.** Device, device folder, who
