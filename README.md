@@ -195,6 +195,18 @@ old folder aside. From 3.118 on the tool updates itself again.
 
 ## Starting it
 
+**The shortest way is the shortcut on the desktop:**
+
+| System | What you click |
+|---|---|
+| macOS | `JamMan Card Tool.app` (desktop, Dock or `/Applications`) |
+| Windows | `JamMan Card Tool` — the shortcut on the desktop |
+| Linux | `jamman-card-tool` — desktop or application menu |
+
+If it is missing, a double-click creates it: `Verknuepfung-macOS.command`,
+`Verknuepfung-Windows.bat` or `Verknuepfung-Linux.sh`. And without a shortcut
+the three starters in the folder always work.
+
 The package keeps only a few things in plain sight: the three starters (one per
 system), this guide, the licence and two folders.
 
