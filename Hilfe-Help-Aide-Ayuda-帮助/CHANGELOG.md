@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.136.11 — 2026-11-22
+
+* **The guide now starts where a normal user starts: with the shortcut.** The
+  “Starting it” section opens with a table — `JamMan Card Tool.app` on macOS
+  (desktop, Dock or `/Applications`), the desktop shortcut on Windows,
+  `jamman-card-tool` on Linux — and only then explains the three starter scripts
+  and the two creators. Both languages, same structure.
+* **The first start on macOS needs one extra step, and that is now written
+  down.** The bundle is not signed, so macOS may refuse to open it: right-click
+  → Open → Open again. Without that sentence a normal user would give up.
+* Three fixes arrived in the same series (desktop starters on all systems, the
+  icon shipped as `jamman.icns`, `aktualisieren` no longer crashing) — the guide
+  now mentions them where they matter.
+
 ## 3.136.10 — 2026-11-22
 
 * **`aktualisieren` crashed when called from the command line.** The progress
