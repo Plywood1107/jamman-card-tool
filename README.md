@@ -407,7 +407,7 @@ Or use "Code" → "Download ZIP" on the project page.
 
 * **Python 3** with tkinter (only for the window; the `menu` command needs no tkinter)
 
-**Runs on Intel and on Apple Silicon.** The tool is plain Python with no compiled
+**Runs on Intel and on ARM (Apple Silicon).** The tool is plain Python with no compiled
 parts: the same on an Intel Mac (x86_64) as on an M1 through M4 (arm64). The
 bundled `JamMan Card Tool.app` is just a start script with an icon — there is no
 processor dependency, nothing to choose, no second build.

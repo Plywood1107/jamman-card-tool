@@ -411,7 +411,7 @@ Oder auf der Projektseite "Code" → "Download ZIP".
 
 * **Python 3** mit tkinter — tkinter nur für das Fenster; `menu` braucht es nicht
 
-**Läuft auf Intel und auf Apple Silicon.** Das Werkzeug ist reines Python, ohne
+**Läuft auf Intel und auf ARM (Apple Silicon).** Das Werkzeug ist reines Python, ohne
 übersetzte Teile: auf einem Intel-Mac (x86_64) genauso wie auf einem M1 bis M4
 (arm64). Auch das mitgelieferte Bündel `JamMan Card Tool.app` ist nur ein
 Startskript mit Symbol — es gibt keine Prozessorabhängigkeit, nichts zu wählen,
