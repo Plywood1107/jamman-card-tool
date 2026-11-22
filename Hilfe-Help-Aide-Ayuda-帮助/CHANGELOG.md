@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.136.4 — 2026-11-22
+
+* **The starter now keeps two interpreters apart.** 3.136.3 could find
+  `pythonw.exe` and use it for everything — but `pythonw` has no console, so
+  `JamMan-Windows.bat --version` printed nothing and looked broken again.
+  Console commands (`--version`, `funktionstest`, every command) use
+  `python.exe` / `py -3`; the window uses `pythonw.exe` / `pyw -3`.
+* The starter log records both: `Quelle=…` (console) and `Fenster=…` (window),
+  so the next report shows which pair was chosen.
+
 ## 3.136.3 — 2026-11-22
 
 * **Second Windows start failure, found while testing 3.136.2 on a real
