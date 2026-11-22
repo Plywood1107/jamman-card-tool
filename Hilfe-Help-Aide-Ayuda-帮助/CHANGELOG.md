@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.136.8 — 2026-11-22
+
+* **The bridge package shipped flat — and the tool tidied itself up on first
+  start.** `_aufteilung_migrieren()` (written for the transition releases
+  3.110–3.120) moves `jamman.py` and `greenglass.py` into `.jamman/`, rewrites
+  the three starters and restarts. With a flat package that happened on the very
+  first run: afterwards `python3 jamman.py` no longer existed, and anyone who
+  had written down that command was stuck. On Ubuntu this showed as
+  “Ordner aufgeräumt — das Werkzeug startet neu …” followed by a missing file.
+* The bridge package is now built in the tidy layout: `.jamman/jamman.py`,
+  `.jamman/greenglass.py`, and the starters keep their normal
+  `.jamman/jamman.py` calls. Nothing migrates, nothing moves, both release
+  assets have the same structure.
+* Checked on Ubuntu 26.04 (Python 3.14, Tk 8.6): no migration message, file
+  stays in `.jamman/`, launcher reports 3.136.8, desktop entry created with
+  icon, mode 755 and `metadata::trusted true`.
+
 ## 3.136.7 — 2026-11-22
 
 * **On Ubuntu the desktop entry showed up with a generic icon — and would not
@@ -61,7 +78,7 @@
 
 ## 3.136.4 — 2026-11-22 (withdrawn, see 3.136.5)
 
-*The releases 3.136.2 to 3.136.5 were withdrawn — each was replaced within minutes and their faults are fixed in 3.136.6 as well; the entries below stay as a record of what went wrong.*
+*The releases 3.136.2 to 3.136.6 were withdrawn — each was replaced within minutes and their faults are fixed in 3.136.7 as well; the entries below stay as a record of what went wrong.*
 
 * **The starter now keeps two interpreters apart.** 3.136.3 could find
   `pythonw.exe` and use it for everything — but `pythonw` has no console, so
