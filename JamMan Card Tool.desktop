@@ -3,6 +3,9 @@ Type=Application
 Name=JamMan Card Tool
 Comment=Speicherkarte des JamMan Solo XT verwalten
 Exec=sh -c "p=\"$1\"; p=${p#file://}; exec \"$(dirname \"$p\")\"/JamMan-Linux.sh" sh %k
-Icon=audio-x-generic
+Icon=jamman-card-tool
 Terminal=false
 Categories=AudioVideo;Audio;
+# Hinweis: Unter Ubuntu nach dem Kopieren auf den Schreibtisch
+# einmal rechts anklicken und 'Zulassen, dass gestartet wird' waehlen.
+# Das Symbol erscheint, nachdem Verknuepfung-Linux.sh einmal lief.

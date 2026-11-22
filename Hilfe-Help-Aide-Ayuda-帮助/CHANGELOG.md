@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.136.7 — 2026-11-22
+
+* **On Ubuntu the desktop entry showed up with a generic icon — and would not
+  start.** Two causes: a relative icon path does not work in a `.desktop` file,
+  and GNOME only launches an entry that is marked executable and trusted.
+* `Verknuepfung-Linux.sh` now puts the icon where the desktop looks for it
+  (`~/.local/share/icons/hicolor/<size>/apps/jamman-card-tool.png`, resized with
+  ImageMagick where available), refreshes the icon caches, and writes
+  `Icon=jamman-card-tool`. The desktop copy keeps mode 755 and gets
+  `metadata::trusted true` via `gio` where available.
+* The shipped `JamMan Card Tool.desktop` uses the same icon name and carries the
+  GNOME hint in a comment; both READMEs now describe “Allow Launching”.
+* Checked with an isolated `HOME`: icon at
+  `~/.local/share/icons/hicolor/256x256/apps/jamman-card-tool.png`, entry in
+  `~/.local/share/applications` and on the desktop, mode 755, `Exec` and `Path`
+  absolute. `sh -n` without findings.
+
 ## 3.136.6 — 2026-11-22
 
 * **The starter is now simply there on macOS and Linux.** Until 3.136.5 the
@@ -44,7 +61,7 @@
 
 ## 3.136.4 — 2026-11-22 (withdrawn, see 3.136.5)
 
-*The releases 3.136.2, 3.136.3 and 3.136.4 were withdrawn — each was replaced within minutes and their faults are fixed in 3.136.5 as well; the entries below stay as a record of what went wrong.*
+*The releases 3.136.2 to 3.136.5 were withdrawn — each was replaced within minutes and their faults are fixed in 3.136.6 as well; the entries below stay as a record of what went wrong.*
 
 * **The starter now keeps two interpreters apart.** 3.136.3 could find
   `pythonw.exe` and use it for everything — but `pythonw` has no console, so

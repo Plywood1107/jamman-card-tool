@@ -264,6 +264,12 @@ Eintrag `JamMan Card Tool.desktop`. Unter Windows läuft der Start über
 `wscript` und `starte-jamman.vbs` — dadurch blitzt kein Konsolenfenster auf. Unter macOS läßt sich das Bündel ins Dock
 ziehen oder nach `/Programme` verschieben; es startet `JamMan-macOS.command`.
 
+**Ubuntu und andere GNOME-Systeme** starten eine `.desktop`-Datei erst, wenn sie
+alt ausführbar markiert ist: auf dem Schreibtisch einmal mit der rechten
+Maustaste anklicken und „Zulassen, dass gestartet wird“ wählen. Wer
+`Verknuepfung-Linux.sh` einmal ausführt, bekommt Eintrag, Symbol und Rechte in
+einem Zug.
+
 Wird der Werkzeugordner später verschoben, muß die Verknüpfung einmal neu
 angelegt werden — der Pfad steht fest darin.
 

@@ -264,6 +264,11 @@ small starter creates a shortcut with its own icon:
 `starte-jamman.vbs`, so no console window flashes up. On macOS the bundle can be dragged into the Dock or
 moved to `/Applications`; it starts `JamMan-macOS.command`.
 
+**Ubuntu and other GNOME systems** only launch a `.desktop` file once it is
+marked executable: right-click it on the desktop and choose “Allow Launching”.
+Running `Verknuepfung-Linux.sh` once gives you entry, icon and permissions in a
+single go.
+
 If the tool folder is moved later, the shortcut has to be created once more —
 the path is baked into it.
 
