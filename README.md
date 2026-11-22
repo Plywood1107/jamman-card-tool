@@ -257,8 +257,11 @@ small starter creates a shortcut with its own icon:
 | macOS | `Verknuepfung-macOS.command` | “JamMan Card Tool.app” on the desktop (with icon) |
 | Linux | `Verknuepfung-Linux.sh` | entry in the application menu and on the desktop |
 
-On Windows the start goes through `wscript` and `starte-jamman.vbs`, so no
-console window flashes up. On macOS the bundle can be dragged into the Dock or
+**On macOS and Linux the starter is already in the package:** the ready bundle
+`JamMan Card Tool.app` (put next to the program files or moved to
+`/Applications` — it finds the tool folder by itself) and the entry
+`JamMan Card Tool.desktop`. On Windows the start goes through `wscript` and
+`starte-jamman.vbs`, so no console window flashes up. On macOS the bundle can be dragged into the Dock or
 moved to `/Applications`; it starts `JamMan-macOS.command`.
 
 If the tool folder is moved later, the shortcut has to be created once more —

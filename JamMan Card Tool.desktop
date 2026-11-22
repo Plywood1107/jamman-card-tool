@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=JamMan Card Tool
+Comment=Speicherkarte des JamMan Solo XT verwalten
+Exec=sh -c "p=\"$1\"; p=${p#file://}; exec \"$(dirname \"$p\")\"/JamMan-Linux.sh" sh %k
+Icon=audio-x-generic
+Terminal=false
+Categories=AudioVideo;Audio;

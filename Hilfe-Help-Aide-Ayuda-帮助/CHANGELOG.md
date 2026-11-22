@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.136.6 — 2026-11-22
+
+* **The starter is now simply there on macOS and Linux.** Until 3.136.5 the
+  package only carried programs that *create* a shortcut. Now it also contains
+  the result:
+  * `JamMan Card Tool.app` — a ready bundle. It works out the tool folder from
+    its own location (`Contents/MacOS/start` goes two levels up, one more across),
+    so it can be moved into `/Applications` or the Dock and still starts the tool
+    next to it. If the program files are missing, it says so on the console and
+    in an alert, and exits with 1.
+  * `JamMan Card Tool.desktop` — a ready Linux entry that finds its own folder
+    through `%k` (including a `file://` prefix and spaces in the path).
+* Windows keeps `Verknuepfung-Windows.bat`: a `.lnk` stores an absolute path and
+  cannot be relative, so one double-click is unavoidable there.
+* Checked: the bundle inside the extracted package starts
+  `…/JamMan-macOS.command` from the right folder; copied somewhere else it
+  reports the missing program files instead of doing nothing; the `%k` shell
+  part resolves paths with spaces and with a `file://` prefix. Package builds to
+  22 files, 431 kB.
+
 ## 3.136.5 — 2026-11-22
 
 * **A shortcut for the desktop, on all three systems.** Two clicks were too
@@ -22,9 +42,9 @@
   at the folder it was created from. On Windows 10 the shortcut was created and
   the chain logged (`Quelle=…python.exe Fenster=…pythonw.exe`).
 
-## 3.136.4 — 2026-11-22
+## 3.136.4 — 2026-11-22 (withdrawn, see 3.136.5)
 
-*The releases 3.136.2 and 3.136.3 were withdrawn — both were replaced within minutes and their faults are fixed here as well; their entries below stay as a record of what went wrong.*
+*The releases 3.136.2, 3.136.3 and 3.136.4 were withdrawn — each was replaced within minutes and their faults are fixed in 3.136.5 as well; the entries below stay as a record of what went wrong.*
 
 * **The starter now keeps two interpreters apart.** 3.136.3 could find
   `pythonw.exe` and use it for everything — but `pythonw` has no console, so

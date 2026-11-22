@@ -1,0 +1,14 @@
+#!/bin/bash
+# Startet das Werkzeug aus dem Ordner, in dem dieses Buendel liegt.
+# Das Buendel kennt seinen eigenen Standort — der Werkzeugordner ist der
+# Ordner darueber. Deshalb laesst es sich verschieben, ohne zu brechen,
+# solange es neben den Programmdateien bleibt (22.11.2026).
+HIER="$(cd "$(dirname "$0")/../.." && pwd)"
+ORDNER="$(dirname "$HIER")"
+if [ ! -x "$ORDNER/JamMan-macOS.command" ]; then
+    echo "Die Programmdateien liegen nicht neben dem Buendel: $ORDNER" >&2
+    osascript -e 'display alert "JamMan Card Tool" message "Die Programmdateien liegen nicht mehr neben dem Buendel. Bitte das Buendel in den entpackten Ordner zuruecklegen." as critical' 2>/dev/null
+    exit 1
+fi
+cd "$ORDNER" || exit 1
+exec "$ORDNER/JamMan-macOS.command"

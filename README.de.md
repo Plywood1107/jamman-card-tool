@@ -257,8 +257,11 @@ legt ein kleiner Starter eine Verknüpfung mit eigenem Symbol an:
 | macOS | `Verknuepfung-macOS.command` | „JamMan Card Tool.app" auf dem Schreibtisch (mit Symbol) |
 | Linux | `Verknuepfung-Linux.sh` | Eintrag im Anwendungsmenü und auf dem Schreibtisch |
 
-Unter Windows läuft der Start über `wscript` und `starte-jamman.vbs` — dadurch
-blitzt kein Konsolenfenster auf. Unter macOS läßt sich das Bündel ins Dock
+**Auf macOS und Linux liegt der Starter schon im Paket:** das fertige Bündel
+`JamMan Card Tool.app` (neben die Programmdateien gelegt oder in den Ordner
+`/Programme` verschoben — es findet den Werkzeugordner selbst) und der
+Eintrag `JamMan Card Tool.desktop`. Unter Windows läuft der Start über
+`wscript` und `starte-jamman.vbs` — dadurch blitzt kein Konsolenfenster auf. Unter macOS läßt sich das Bündel ins Dock
 ziehen oder nach `/Programme` verschieben; es startet `JamMan-macOS.command`.
 
 Wird der Werkzeugordner später verschoben, muß die Verknüpfung einmal neu
