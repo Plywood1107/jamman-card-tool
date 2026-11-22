@@ -191,6 +191,18 @@ selbst.
 
 ## Starten
 
+**Der kürzeste Weg ist die Verknüpfung auf dem Schreibtisch:**
+
+| System | Was man anklickt |
+|---|---|
+| macOS | `JamMan Card Tool.app` (Schreibtisch, Dock oder `/Programme`) |
+| Windows | `JamMan Card Tool` — die Verknüpfung auf dem Desktop |
+| Linux | `jamman-card-tool` — Schreibtisch oder Anwendungsmenü |
+
+Fehlt sie, legt sie ein Doppelklick an: `Verknuepfung-macOS.command`,
+`Verknuepfung-Windows.bat` oder `Verknuepfung-Linux.sh`. Und ohne Verknüpfung
+gehen immer die drei Starter im Ordner.
+
 Im Paket liegen nur wenige Dinge offen: die drei Starter (je Betriebssystem
 einer), diese Anleitung, die Lizenz und zwei Ordner.
 
