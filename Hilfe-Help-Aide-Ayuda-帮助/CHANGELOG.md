@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.136.12 — 2026-11-22
+
+* **The guide now says “ARM”, not only “Apple Silicon”.** “Apple Silicon” is the
+  marketing name; anyone looking for “ARM” found nothing — as happened when the
+  hint was searched for. The sentence and the table now read “Intel and ARM
+  (Apple Silicon)”; the table already listed `arm64` for Linux.
+* Documentation only — the program is unchanged from 3.136.11. 3.136.11 was
+  withdrawn because its package still carried the older wording.
+
 ## 3.136.11 — 2026-11-22
 
 * **The guide now starts where a normal user starts: with the shortcut.** The
