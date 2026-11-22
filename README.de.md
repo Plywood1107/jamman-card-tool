@@ -427,6 +427,13 @@ keine zweite Fassung.
 | Windows | Windows 10 und 11, 64-bit; Python 3 mit Tk 8.6 |
 | Linux | x86_64 und arm64; `python3-tk` |
 
+**Python 3.8 oder neuer** genügt — das ist gemessen (`vermin` über den Quelltext,
+22.11.2026), nicht geschätzt. Getestet ist macOS 10.13 und neuer sowie Windows 10
+und 11 (64-bit). **Ältere Windows-Fassungen sind ungetestet:** Windows 8.1 und
+Windows 7 bräuchten Python 3.8, weil es die letzte Fassung ist, die dort läuft.
+Auf sehr alten Systemen können die Pfadlänge (260 Zeichen) und der Zeichensatz der
+Konsole stören.
+
 **Wenn etwas fehlt, sagt das Werkzeug es:** fehlt Python, zeigt der Starter unter
 Windows die Adresse zum Herunterladen; fehlt Tk, weicht das Werkzeug auf das
 Textmenü aus, statt still zu bleiben.

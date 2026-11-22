@@ -422,6 +422,12 @@ processor dependency, nothing to choose, no second build.
 | Windows | Windows 10 and 11, 64-bit; Python 3 with Tk 8.6 |
 | Linux | x86_64 and arm64; `python3-tk` |
 
+**Python 3.8 or newer is enough** — measured with `vermin` over the source (22 Nov
+2026), not guessed. Tested on macOS 10.13 and newer, and on Windows 10 and 11
+(64-bit). **Older Windows versions are untested:** Windows 8.1 and Windows 7 would
+need Python 3.8, the last one that runs there. On very old systems the path length
+(260 characters) and the console character set can get in the way.
+
 **If something is missing, the tool says so:** without Python the Windows starter
 shows the download address; without Tk the tool falls back to the text menu
 instead of staying silent.
