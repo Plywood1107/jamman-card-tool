@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.136.3 — 2026-11-22
+
+* **Second Windows start failure, found while testing 3.136.2 on a real
+  machine.** With Python installed, the starter chose `py -3w` as the
+  windowed interpreter — but the `py` launcher has no `-3w`: it reads that as
+  a version selector and answers "No suitable Python runtime found". No
+  window, again. The starter now prefers `pythonw` from PATH, then `pyw -3`,
+  and only then falls back to `py -3` in a console window.
+* `pythonw` (and `pyw`) are checked the same way as `python`: the store
+  placeholder below `WindowsApps` is skipped and the candidate has to answer
+  `-c "import sys"` before it is used.
+* Verified on Windows 10 with Python 3.12: the starter logs
+  `Quelle=pythonw`, `--version` prints `JamMan Card Tool 3.136.3`, and the
+  self-test runs through.
+
 ## 3.136.2 — 2026-11-22
 
 * **On Windows 10 the tool did not start at all — fixed.** The starter looked for

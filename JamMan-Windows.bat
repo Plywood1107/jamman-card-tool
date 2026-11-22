@@ -17,17 +17,41 @@ if exist "%~dp0pythonw.exe" (
     set "QUELLE=neben dem Starter"
 )
 
-rem 2) py-Launcher (nur vorhanden, wenn echtes Python installiert ist)
+rem 2) pythonw im PATH (Fensterstart), aber nicht der Store-Platzhalter
 if not defined PY (
-    py -3 -c "import sys" >nul 2>&1
-    if not errorlevel 1 (
-        set "PYW=py -3w"
-        set "PY=py -3"
-        set "QUELLE=py-Launcher"
+    for /f "delims=" %%p in ('where pythonw 2^>nul') do (
+        echo %%p | find /i "WindowsApps" >nul
+        if errorlevel 1 (
+            "%%p" -c "import sys" >nul 2>&1
+            if not errorlevel 1 (
+                set "PYW=%%p"
+                set "PY=%%p"
+                set "QUELLE=pythonw"
+            )
+        )
     )
 )
 
-rem 3) python im PATH - aber nicht der Store-Platzhalter
+rem 3) pyw (Fensterstarter des py-Launchers); "py -3w" gibt es NICHT
+if not defined PY (
+    where pyw >nul 2>&1
+    if not errorlevel 1 (
+        set "PYW=pyw -3"
+        set "PY=py -3"
+        set "QUELLE=pyw"
+    )
+)
+
+rem 4) py-Launcher im Konsolenmodus (nur als Rückfall)
+if not defined PY (
+    py -3 -c "import sys" >nul 2>&1
+    if not errorlevel 1 (
+        set "PY=py -3"
+        set "QUELLE=py-Launcher (Konsole)"
+    )
+)
+
+rem 5) python im PATH - aber nicht der Store-Platzhalter
 if not defined PY (
     for /f "delims=" %%p in ('where python 2^>nul') do (
         echo %%p | find /i "WindowsApps" >nul
