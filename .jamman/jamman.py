@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.136 (21.11.2026)"
+FASSUNG = "3.136.1 (22.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -2878,6 +2878,10 @@ TEXTE = {
     "de": {},          # Deutsch ist die Quelle
 
     "en": {
+        'DATEIEN':
+         'FILES',
+        'Funktionstest in allen fünf Sprachen':
+         'self-test in all five languages',
         'Dauer und Einstellungen kommen aus Dateigröße und WAV-Kopf — der Ton selbst wird dafür nicht übertragen.':
          'Duration and settings appear only after fetching — over USB only the name is read.',
         'Marken außerhalb der Datei wurden verworfen.':
@@ -2931,7 +2935,7 @@ TEXTE = {
         'an jeder gefundenen Pause trennen':
          'split at every pause found',
         'Ruhepegel für die Pausenerkennung in Prozent (Vorgabe 35)':
-         'silence level for pause detection (default 35 %)',
+         'silence level for pause detection (default 35)',
         'kürzeste Pause, an der geschnitten wird (Vorgabe 0,25 s)':
          'shortest pause to cut at (default 0.25 s)',
         'Fade an jeder Naht in Millisekunden (Vorgabe 0)':
@@ -4378,6 +4382,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Backup on start: %s",
     },
     "fr": {
+        'DATEIEN':
+         'FICHIERS',
+        'Funktionstest in allen fünf Sprachen':
+         'autotest dans les cinq langues',
         'Dauer und Einstellungen kommen aus Dateigröße und WAV-Kopf — der Ton selbst wird dafür nicht übertragen.':
          "La durée et les réglages n'apparaissent qu'après le transfert — par USB, seul le nom est lu.",
         'Marken außerhalb der Datei wurden verworfen.':
@@ -4431,7 +4439,7 @@ TEXTE = {
         'an jeder gefundenen Pause trennen':
          'couper à chaque pause trouvée',
         'Ruhepegel für die Pausenerkennung in Prozent (Vorgabe 35)':
-         'niveau de silence pour la détection des pauses (défaut 35 %)',
+         'niveau de silence pour la détection des pauses (défaut 35)',
         'kürzeste Pause, an der geschnitten wird (Vorgabe 0,25 s)':
          'pause la plus courte où couper (défaut 0,25 s)',
         'Fade an jeder Naht in Millisekunden (Vorgabe 0)':
@@ -5786,6 +5794,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Sauvegarde au démarrage : %s",
     },
     "es": {
+        'DATEIEN':
+         'ARCHIVOS',
+        'Funktionstest in allen fünf Sprachen':
+         'autoprueba en los cinco idiomas',
         'Dauer und Einstellungen kommen aus Dateigröße und WAV-Kopf — der Ton selbst wird dafür nicht übertragen.':
          'La duración y los ajustes solo aparecen tras traerlos — por USB solo se lee el nombre.',
         'Marken außerhalb der Datei wurden verworfen.':
@@ -5839,7 +5851,7 @@ TEXTE = {
         'an jeder gefundenen Pause trennen':
          'cortar en cada pausa encontrada',
         'Ruhepegel für die Pausenerkennung in Prozent (Vorgabe 35)':
-         'nivel de silencio para detectar pausas (por defecto 35 %)',
+         'nivel de silencio para detectar pausas (por defecto 35)',
         'kürzeste Pause, an der geschnitten wird (Vorgabe 0,25 s)':
          'pausa más corta donde cortar (por defecto 0,25 s)',
         'Fade an jeder Naht in Millisekunden (Vorgabe 0)':
@@ -7194,6 +7206,10 @@ TEXTE = {
         "Sicherung beim Start: %s": "Copia al iniciar: %s",
     },
     "zh": {
+        'DATEIEN':
+         '文件',
+        'Funktionstest in allen fünf Sprachen':
+         '五种语言的自我测试',
         'Dauer und Einstellungen kommen aus Dateigröße und WAV-Kopf — der Ton selbst wird dafür nicht übertragen.':
          '时长和设置只在取回后显示——通过 USB 只读取名称。',
         'Marken außerhalb der Datei wurden verworfen.':
@@ -7247,7 +7263,7 @@ TEXTE = {
         'an jeder gefundenen Pause trennen':
          '在每个找到的停顿处切开',
         'Ruhepegel für die Pausenerkennung in Prozent (Vorgabe 35)':
-         '停顿识别的静音电平（默认 35 %）',
+         '停顿识别的静音电平（默认 35）',
         'kürzeste Pause, an der geschnitten wird (Vorgabe 0,25 s)':
          '可切开的最短停顿（默认 0,25 秒）',
         'Fade an jeder Naht in Millisekunden (Vorgabe 0)':
@@ -17422,11 +17438,17 @@ def gui(karte):
 def main():
     # Sprache VOR dem Bau des Parsers bestimmen - die Hilfetexte werden beim
     # Anlegen übersetzt, nicht beim Ausgeben.
+    # Ohne --sprache gilt die gespeicherte Einstellung bzw. die Systemsprache.
+    # Vorher wurde die Sprache erst NACH dem Bau des Parsers gesetzt - deshalb
+    # war die Hilfe immer deutsch, auch bei JAMMAN_SPRACHE=en oder LANG=en_US
+    # (Meldung #4, 22.11.2026).
+    gewaehlt = None
     for i, arg in enumerate(sys.argv):
         if arg == "--sprache" and i + 1 < len(sys.argv):
-            sprache_setzen(sys.argv[i + 1])
+            gewaehlt = sys.argv[i + 1]
         elif arg.startswith("--sprache="):
-            sprache_setzen(arg.split("=", 1)[1])
+            gewaehlt = arg.split("=", 1)[1]
+    sprache_setzen(gewaehlt or einstellung_lesen("sprache") or sprache_aus_system())
     p = argparse.ArgumentParser(
         description=T("JamMan Solo XT — Speicherkarte verwalten"),
         epilog=befehlsliste(),
@@ -17434,11 +17456,11 @@ def main():
     p.add_argument("--version", action="version", version="JamMan Card Tool " + FASSUNG)
     # Nur für „funktionstest": alle fünf Sprachen prüfen (19.11.2026).
     p.add_argument("--alle-sprachen", action="store_true",
-                   help="Funktionstest in allen fünf Sprachen")
+                   help=T("Funktionstest in allen fünf Sprachen"))
     p.add_argument("befehl", metavar=T("BEFEHL"),
                    choices=sorted(list(BEFEHLE) + list(BEFEHL_ALIAS)),
                    help=T("was zu tun ist (Liste unten; englische Namen gehen auch)"))
-    p.add_argument("dateien", nargs="*",
+    p.add_argument("dateien", nargs="*", metavar=T("DATEIEN"),
                    help=T("Dateien für „speicherabbild“ und „vergleich“"))
     p.add_argument("--sprache", choices=sorted(SPRACHEN),
                    help=T("Sprache der Ausgabe (Vorgabe: aus dem System)"))

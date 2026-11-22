@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.136.1 — 2026-11-22
+
+* **`-h` now speaks the language you asked for.** The help texts are translated
+  when the parser is built, but the language was set *after* that — so the help
+  stayed German even with `JAMMAN_SPRACHE=en` or `LANG=en_US.UTF-8`. Now the
+  language is chosen before the parser is built: command line, then the saved
+  setting, then the system. Reported by *Plywood1107* (issue #4).
+* **Two translations broke `-h` in other languages.** The percent sign in the
+  `--schwelle` help reached argparse unescaped, which aborts with "badly formed
+  help string". English, French, Spanish and Chinese help now run through; the
+  placeholder of the `dateien` argument is translated as well (`FILES`,
+  `FICHIERS`, `ARCHIVOS`, `文件`).
+* Checked by running `-h` in all five languages with an empty settings file.
+
 ## 3.136 — 2026-11-21
 
 * **Splitting has its own window now.** *Datei teilen* opens the waveform of the
