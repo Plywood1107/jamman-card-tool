@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.136.2 — 2026-11-22
+
+* **On Windows 10 the tool did not start at all — fixed.** The starter looked for
+  `python` with `where python` and got the *Microsoft Store placeholder*
+  (`…\WindowsApps\python.exe`), a stub that opens the Store instead of running
+  Python. The starter started that stub: no window, no message, nothing. It now
+  checks every candidate (`py -3`, `python` in PATH, a Python next to the starter)
+  by actually running `-c "import sys"`, skips anything below `WindowsApps`, and
+  if nothing works it says so plainly — including that `python` may point at the
+  Store placeholder — and offers to open the download page.
+* The chosen interpreter is written to `jamman-start.log` (`Quelle=…`), so the
+  next diagnosis starts with a fact instead of a guess.
+
 ## 3.136.1 — 2026-11-22
 
 * **`-h` now speaks the language you asked for.** The help texts are translated

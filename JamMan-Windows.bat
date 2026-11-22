@@ -1,47 +1,76 @@
 @echo off
 rem JamMan Card Tool starten (Windows). Doppelklick.
 rem
-rem Startet ohne Konsolenfenster, wenn ein "pythonw" vorhanden ist.
-rem Das Eingabeaufforderungsfenster blieb sonst hinter dem Werkzeug stehen
-rem (17.11.2026). Jeder Start wird in jamman-start.log vermerkt, damit man
-rem später sieht, ob der Startversuch überhaupt stattgefunden hat.
+rem 22.11.2026: Der Microsoft-Store-Platzhalter (WindowsApps\python.exe) wurde
+rem bisher als Python erkannt - dann startete nichts, ohne Meldung. Jetzt wird
+rem jede gefundene Datei geprueft, ob sie wirklich Python ist.
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
-rem Mit Argumenten (z. B. --version) im selben Fenster starten, sonst
-rem bliebe die Ausgabe unsichtbar (19.11.2026).
+set "PYW="
+set "PY="
+set "QUELLE="
+
+rem 1) Mitgeliefertes Python neben dem Starter?
+if exist "%~dp0pythonw.exe" (
+    set "PYW=%~dp0pythonw.exe"
+    set "PY=%~dp0python.exe"
+    set "QUELLE=neben dem Starter"
+)
+
+rem 2) py-Launcher (nur vorhanden, wenn echtes Python installiert ist)
+if not defined PY (
+    py -3 -c "import sys" >nul 2>&1
+    if not errorlevel 1 (
+        set "PYW=py -3w"
+        set "PY=py -3"
+        set "QUELLE=py-Launcher"
+    )
+)
+
+rem 3) python im PATH - aber nicht der Store-Platzhalter
+if not defined PY (
+    for /f "delims=" %%p in ('where python 2^>nul') do (
+        echo %%p | find /i "WindowsApps" >nul
+        if errorlevel 1 (
+            "%%p" -c "import sys" >nul 2>&1
+            if not errorlevel 1 (
+                set "PY=%%p"
+                set "PYW=%%p"
+                set "QUELLE=%%p"
+            )
+        )
+    )
+)
+
+rem Aufruf mit Argumenten (z. B. --version) im selben Fenster
 if not "%~1"=="" (
-    python .jamman\jamman.py %*
+    if not defined PY goto :keinpython
+    %PY% .jamman\jamman.py %*
     if errorlevel 1 pause
     goto :ende
 )
 
-echo %DATE% %TIME% Startversuch >> jamman-start.log
+echo %DATE% %TIME% Startversuch Quelle=!QUELLE! >> jamman-start.log
 
-if exist "%~dp0pythonw.exe" (
-    start "" "%~dp0pythonw.exe" .jamman\jamman.py gui
+if defined PYW (
+    start "" !PYW! .jamman\jamman.py gui
     exit /b
 )
 
-where pythonw >nul 2>&1
-if not errorlevel 1 (
-    start "" pythonw .jamman\jamman.py gui
-    exit /b
-)
-
-where py >nul 2>&1
-if not errorlevel 1 (
-    start "" py -3w .jamman\jamman.py gui
-    exit /b
-)
-
-where python >nul 2>&1
-if not errorlevel 1 (
-    start "" python .jamman\jamman.py gui
-    exit /b
-)
-
+:keinpython
 echo.
 echo Python 3 wurde nicht gefunden.
-echo Bitte von https://www.python.org/downloads/ installieren
-echo (im Installer "Add python.exe to PATH" anhaken).
 echo.
-pause
+echo Falls "python" vorhanden ist: Windows zeigt damit auf den Platzhalter aus
+echo dem Microsoft Store, nicht auf Python. Bitte Python installieren:
+echo.
+echo     https://www.python.org/downloads/windows/
+echo.
+echo Im Installer "Add python.exe to PATH" anhaken.
+echo.
+choice /c JN /n /m "Downloadseite jetzt oeffnen? (J/N) "
+if errorlevel 2 goto :ende
+start "" "https://www.python.org/downloads/windows/"
+
+:ende
+endlocal
