@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.136.10 — 2026-11-22
+
+* **`aktualisieren` crashed when called from the command line.** The progress
+  callback passed by `main()` takes one argument, but `sag()` called it with
+  two: `TypeError: <lambda>() takes 1 positional argument but 2 were given`.
+  It only showed up on a machine still running 3.136.8 — exactly the situation
+  the command exists for. `sag()` now tries the two-argument form and falls back
+  to the one-argument form.
+* Checked end to end on a copy of 3.136.8: “Lade Fassung 3.136.9 …”, “Fassung
+  3.136.9 ist installiert (23 Dateien)”, and the copy reports 3.136.9 afterwards.
+
 ## 3.136.9 — 2026-11-22
 
 * **The desktop bundle stayed white on an Intel Mac.** `Verknuepfung-macOS.command`

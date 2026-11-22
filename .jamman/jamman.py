@@ -84,7 +84,7 @@ MAX_LOOP_SEKUNDEN = 600
 
 WOLL = (44100, 16, 2)          # was der JamMan erwartet: 44,1 kHz, 16 Bit, Stereo
 
-FASSUNG = "3.136.9 (22.11.2026)"
+FASSUNG = "3.136.10 (22.11.2026)"
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -10476,13 +10476,26 @@ def aktualisieren(melden=None):
     import zipfile
 
     def sag(wert, text=None):
-        """Meldung mit Anteil — oder nur Text (alte Aufrufer)."""
+        """Meldung mit Anteil — oder nur Text (alte Aufrufer).
+
+        Anlaß (22.11.2026, Intel-Mac): Der Aufruf von der Kommandozeile übergibt
+        melden=lambda t: print(...) — also eine Funktion mit EINEM Argument.
+        sag() rief sie mit zweien auf und der Befehl „aktualisieren" brach mit
+        TypeError ab. Jetzt wird zuerst die Zwei-Argument-Form versucht und bei
+        TypeError auf die Ein-Argument-Form zurückgefallen.
+        """
         if melden is None:
             return
         if isinstance(wert, (int, float)) and text is not None:
-            melden(wert, text)
+            try:
+                melden(wert, text)
+            except TypeError:
+                melden(text)
         else:
-            melden(0.0, wert)
+            try:
+                melden(0.0, wert)
+            except TypeError:
+                melden(wert)
     stand = neueste_fassung()
     if not stand.get("tag"):
         grund = stand.get("fehler") or T("unbekannter Grund")
