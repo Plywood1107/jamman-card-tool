@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.136.9 — 2026-11-22
+
+* **The desktop bundle stayed white on an Intel Mac.** `Verknuepfung-macOS.command`
+  built the icon itself with `iconutil` and silently gave up when that produced
+  nothing — the bundle then had no `jamman.icns` and Finder showed a blank page.
+* The package now carries `jamman.icns` (156 kB) next to `jamman.png` and
+  `jamman.ico`, and the creator copies it: package root first, then the copy
+  inside the shipped `.app`, and only if neither exists does it build one with
+  `iconutil`. It also reports the size of the icon it installed, or says clearly
+  that the icon is missing.
+* Checked on macOS: the created bundle carries a 156,661-byte `jamman.icns` and
+  `Info.plist` names it; the script prints “Symbol: jamman.icns, 156661 Bytes”.
+
 ## 3.136.8 — 2026-11-22
 
 * **The bridge package shipped flat — and the tool tidied itself up on first
@@ -78,7 +91,7 @@
 
 ## 3.136.4 — 2026-11-22 (withdrawn, see 3.136.5)
 
-*The releases 3.136.2 to 3.136.6 were withdrawn — each was replaced within minutes and their faults are fixed in 3.136.7 as well; the entries below stay as a record of what went wrong.*
+*The releases 3.136.2 to 3.136.7 were withdrawn — each was replaced within minutes and their faults are fixed in 3.136.8 as well; the entries below stay as a record of what went wrong.*
 
 * **The starter now keeps two interpreters apart.** 3.136.3 could find
   `pythonw.exe` and use it for everything — but `pythonw` has no console, so

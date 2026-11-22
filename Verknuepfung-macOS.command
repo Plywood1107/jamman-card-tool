@@ -9,8 +9,20 @@ ZIEL="$HOME/Desktop/JamMan Card Tool.app"
 rm -rf "$ZIEL"
 mkdir -p "$ZIEL/Contents/MacOS" "$ZIEL/Contents/Resources" || exit 1
 
-# Symbol aus jamman.png bauen (iconutil braucht einen iconset-Ordner)
-if [ -f "$ORDNER/jamman.png" ] && command -v iconutil >/dev/null 2>&1; then
+# Symbol: am liebsten das fertige jamman.icns aus dem Paket nehmen.
+# Anlaß (22.11.2026): Auf einem Intel-Mac blieb das Bündel weiß, weil
+# iconutil dort nichts brauchbares erzeugte. Das fertige Symbol liegt im
+# Paket — es wird nur kopiert.
+SYMBOL_OK=0
+if [ -f "$ORDNER/jamman.icns" ]; then
+    cp "$ORDNER/jamman.icns" "$ZIEL/Contents/Resources/jamman.icns" && SYMBOL_OK=1
+elif [ -f "$ORDNER/JamMan Card Tool.app/Contents/Resources/jamman.icns" ]; then
+    cp "$ORDNER/JamMan Card Tool.app/Contents/Resources/jamman.icns" \
+       "$ZIEL/Contents/Resources/jamman.icns" && SYMBOL_OK=1
+fi
+
+# Sonst aus jamman.png bauen (iconutil braucht einen iconset-Ordner)
+if [ "$SYMBOL_OK" -eq 0 ] && [ -f "$ORDNER/jamman.png" ] && command -v iconutil >/dev/null 2>&1; then
     TMP="$(mktemp -d)"
     mkdir -p "$TMP/icon.iconset"
     for g in 16 32 128 256 512; do
@@ -50,5 +62,10 @@ START
 chmod +x "$ZIEL/Contents/MacOS/start"
 
 echo ""
+if [ -f "$ZIEL/Contents/Resources/jamman.icns" ]; then
+    echo "Symbol: jamman.icns, $(stat -f%z "$ZIEL/Contents/Resources/jamman.icns" 2>/dev/null || echo "?") Bytes"
+else
+    echo "Symbol: FEHLT — bitte jamman.icns in den Werkzeugordner legen und erneut starten"
+fi
 echo "Angelegt: $ZIEL"
 echo "Das Buendel laesst sich ins Dock ziehen oder in den Ordner /Programme verschieben."
