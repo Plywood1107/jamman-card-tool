@@ -207,6 +207,10 @@ If it is missing, a double-click creates it: `Verknuepfung-macOS.command`,
 `Verknuepfung-Windows.bat` or `Verknuepfung-Linux.sh`. And without a shortcut
 the three starters in the folder always work.
 
+**On the first start on macOS** macOS may say the developer cannot be verified —
+the bundle is not signed. Then right-click it → **Open** → **Open** again.
+After that it starts normally.
+
 The package keeps only a few things in plain sight: the three starters (one per
 system), this guide, the licence and two folders.
 
