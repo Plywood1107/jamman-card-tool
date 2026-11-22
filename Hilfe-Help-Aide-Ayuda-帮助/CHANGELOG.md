@@ -1,6 +1,30 @@
 # Changelog
 
+## 3.136.5 — 2026-11-22
+
+* **A shortcut for the desktop, on all three systems.** Two clicks were too
+  many, so the package now carries the means to put the tool where it belongs:
+  * `Verknuepfung-Windows.bat` creates "JamMan Card Tool" on the desktop, with
+    its own icon, started through `wscript` and `starte-jamman.vbs` — no console
+    window flashes up.
+  * `Verknuepfung-macOS.command` builds "JamMan Card Tool.app" on the desktop:
+    real bundle, real icon (generated from `jamman.png` with `iconutil`), can be
+    dragged into the Dock or moved to `/Applications`.
+  * `Verknuepfung-Linux.sh` writes an entry to the application menu and to the
+    desktop, icon included.
+* New in the package: `jamman.ico` (seven sizes, 16–256 px), `jamman.png`,
+  `starte-jamman.vbs` (Windows, hides the console), `verknuepfung-anlegen.ps1`
+  (the Windows part in PowerShell, so the `.bat` stays readable).
+* Both READMEs gained the section "Shortcut on your desktop" / "Verknüpfung auf
+  dem Schreibtisch"; `readme_pruefen.py` knows the pair.
+* Checked: the flat package builds 18 files; the macOS bundle gets a valid
+  `Info.plist` (`plutil -lint`: OK) and a 156 kB `.icns`; the start script points
+  at the folder it was created from. On Windows 10 the shortcut was created and
+  the chain logged (`Quelle=…python.exe Fenster=…pythonw.exe`).
+
 ## 3.136.4 — 2026-11-22
+
+*The releases 3.136.2 and 3.136.3 were withdrawn — both were replaced within minutes and their faults are fixed here as well; their entries below stay as a record of what went wrong.*
 
 * **The starter now keeps two interpreters apart.** 3.136.3 could find
   `pythonw.exe` and use it for everything — but `pythonw` has no console, so

@@ -246,6 +246,24 @@ If `chmod` answers "command not found", the terminal is not in that folder —
 denied", the `chmod` was missing. Without the execute bit
 `bash JamMan-Linux.sh` also works.
 
+## Shortcut on your desktop
+
+So the tool does not have to be hunted down in the file manager every time, a
+small starter creates a shortcut with its own icon:
+
+| System | File | creates |
+|---|---|---|
+| Windows | `Verknuepfung-Windows.bat` | “JamMan Card Tool” on the desktop |
+| macOS | `Verknuepfung-macOS.command` | “JamMan Card Tool.app” on the desktop (with icon) |
+| Linux | `Verknuepfung-Linux.sh` | entry in the application menu and on the desktop |
+
+On Windows the start goes through `wscript` and `starte-jamman.vbs`, so no
+console window flashes up. On macOS the bundle can be dragged into the Dock or
+moved to `/Applications`; it starts `JamMan-macOS.command`.
+
+If the tool folder is moved later, the shortcut has to be created once more —
+the path is baked into it.
+
 ## Firmware from one pedal to another
 
 The pedal has no firmware server any more: the address JamManager XT used to

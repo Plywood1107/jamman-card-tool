@@ -246,6 +246,24 @@ diesem Ordner — erst `cd`, dann `ls` (dort muß `JamMan-Linux.sh` stehen).
 Kommt „Keine Berechtigung": `chmod +x` vergessen. Ohne Ausführbar-Recht geht es
 auch mit `bash JamMan-Linux.sh`.
 
+## Verknüpfung auf dem Schreibtisch
+
+Damit das Werkzeug nicht jedes Mal über den Dateimanager gesucht werden muß,
+legt ein kleiner Starter eine Verknüpfung mit eigenem Symbol an:
+
+| System | Datei | legt an |
+|---|---|---|
+| Windows | `Verknuepfung-Windows.bat` | „JamMan Card Tool" auf dem Desktop |
+| macOS | `Verknuepfung-macOS.command` | „JamMan Card Tool.app" auf dem Schreibtisch (mit Symbol) |
+| Linux | `Verknuepfung-Linux.sh` | Eintrag im Anwendungsmenü und auf dem Schreibtisch |
+
+Unter Windows läuft der Start über `wscript` und `starte-jamman.vbs` — dadurch
+blitzt kein Konsolenfenster auf. Unter macOS läßt sich das Bündel ins Dock
+ziehen oder nach `/Programme` verschieben; es startet `JamMan-macOS.command`.
+
+Wird der Werkzeugordner später verschoben, muß die Verknüpfung einmal neu
+angelegt werden — der Pfad steht fest darin.
+
 ## Firmware von einem Pedal auf das andere
 
 Das Pedal hat keinen Firmware-Server mehr: die Adresse, von der JamManager XT
