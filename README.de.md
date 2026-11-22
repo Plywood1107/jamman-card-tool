@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="jamman.png" alt="JamMan Card Tool" width="128">
+</p>
+
 # JamMan Card Tool — Speicherkarte des JamMan Solo XT, Stereo und Delay
 
 Für Speicherkarte und internen Speicher — auch über USB.
