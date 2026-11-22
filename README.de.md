@@ -395,6 +395,22 @@ Oder auf der Projektseite "Code" → "Download ZIP".
 
 * **Python 3** mit tkinter — tkinter nur für das Fenster; `menu` braucht es nicht
 
+**Läuft auf Intel und auf Apple Silicon.** Das Werkzeug ist reines Python, ohne
+übersetzte Teile: auf einem Intel-Mac (x86_64) genauso wie auf einem M1 bis M4
+(arm64). Auch das mitgelieferte Bündel `JamMan Card Tool.app` ist nur ein
+Startskript mit Symbol — es gibt keine Prozessorabhängigkeit, nichts zu wählen,
+keine zweite Fassung.
+
+| | unterstützt |
+|---|---|
+| macOS | Intel und Apple Silicon, ab macOS 10.13 (Bündel); Python 3 mit Tk 8.6 |
+| Windows | Windows 10 und 11, 64-bit; Python 3 mit Tk 8.6 |
+| Linux | x86_64 und arm64; `python3-tk` |
+
+**Wenn etwas fehlt, sagt das Werkzeug es:** fehlt Python, zeigt der Starter unter
+Windows die Adresse zum Herunterladen; fehlt Tk, weicht das Werkzeug auf das
+Textmenü aus, statt still zu bleiben.
+
 | System | Python | Start |
 |---|---|---|
 | macOS | `xcode-select --install` oder Python von [python.org](https://www.python.org/downloads/) | `JamMan-macOS.command` |
