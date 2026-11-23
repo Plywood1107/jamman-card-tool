@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.136.13 — 2026-11-23
+
+### Geändert
+
+- **Die Fensterbilder zeigen keine echten Patch-Namen mehr.** Die bisherigen Aufnahmen
+  waren mit einer echten Speicherkarte entstanden; auf ihnen standen Patch- und
+  Projektnamen sowie der Laufwerkspfad des Verfassers. Die neuen Aufnahmen stammen von
+  einer Demo-Karte mit „Example 01 … 12".
+
 ## 3.136.12 — 2026-11-22
 
 * **The guide now says “ARM”, not only “Apple Silicon”.** “Apple Silicon” is the
