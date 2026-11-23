@@ -4,6 +4,9 @@
 
 # JamMan Card Tool — memory card of the JamMan Solo XT, Stereo and Delay
 
+![The window](.jamman/docs/fenster-englisch.png)
+
+
 For the card and the internal memory — over USB as well.
 
 **Manage the SD card of a DigiTech JamMan Solo XT, Stereo or Delay from macOS,

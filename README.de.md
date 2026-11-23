@@ -4,6 +4,9 @@
 
 # JamMan Card Tool — Speicherkarte des JamMan Solo XT, Stereo und Delay
 
+![Das Fenster](.jamman/docs/fenster-deutsch.png)
+
+
 Für Speicherkarte und internen Speicher — auch über USB.
 
 Die Speicherkarte des **DigiTech JamMan Solo XT, Stereo und Delay** von macOS,
