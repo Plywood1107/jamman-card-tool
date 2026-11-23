@@ -9,7 +9,6 @@ Für Speicherkarte und internen Speicher — auch über USB.
 Die Speicherkarte des **DigiTech JamMan Solo XT, Stereo und Delay** von macOS,
 Windows oder Linux aus verwalten — ohne JamManager XT.
 
-![Fenster](.jamman/docs/fenster-deutsch.png)
 
 **Der Ausgang ist eingebaut:** Mit „Alles herausgeben …" wird die Karte zu
 gewöhnlichen WAV-Dateien plus einer Liste — lesbar ohne dieses Werkzeug. Wer

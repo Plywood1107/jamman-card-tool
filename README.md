@@ -9,7 +9,6 @@ For the card and the internal memory — over USB as well.
 **Manage the SD card of a DigiTech JamMan Solo XT, Stereo or Delay from macOS,
 Windows or Linux — without JamManager XT.**
 
-![Window](.jamman/docs/fenster-englisch.png)
 
 **The way out is built in:** "Export everything …" turns the card into ordinary
 WAV files plus a list — readable without this tool. Whoever stops, migrates or
